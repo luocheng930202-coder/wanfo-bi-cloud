@@ -1,0 +1,36 @@
+name: wanfo-bi-dev
+services:
+  mysql:
+    image: ${WANFO_MYSQL_IMAGE:-mysql:8.4}
+    environment:
+      MYSQL_DATABASE: ${WANFO_DB_NAME:-wanfo_bi}
+      MYSQL_USER: ${WANFO_DB_USER:-wanfo}
+      MYSQL_PASSWORD: ${WANFO_DB_PASSWORD:?Set WANFO_DB_PASSWORD in deploy/.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "127.0.0.1:${WANFO_MYSQL_PORT:-13306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    environment:
+      WANFO_REDIS_PASSWORD: ${WANFO_REDIS_PASSWORD:?Set WANFO_REDIS_PASSWORD in deploy/.env}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$WANFO_REDIS_PASSWORD\""]
+    ports:
+      - "127.0.0.1:${WANFO_REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$WANFO_REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes:
+  mysql-data:
+  redis-data:

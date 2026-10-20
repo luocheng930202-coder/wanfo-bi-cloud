@@ -1,0 +1,4 @@
+com.wanfo.system.api.factory.RemoteUserFallbackFactory
+com.wanfo.system.api.factory.RemoteLogFallbackFactory
+com.wanfo.system.api.factory.RemoteFileFallbackFactory
+com.wanfo.system.api.config.RemoteFileAutoConfiguration

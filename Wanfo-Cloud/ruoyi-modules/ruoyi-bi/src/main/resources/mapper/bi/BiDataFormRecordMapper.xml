@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wanfo.bi.mapper.BiDataFormRecordMapper">
+
+    <resultMap id="RecordResult" type="com.wanfo.bi.domain.BiDataFormRecordDO">
+        <id property="id" column="id"/>
+        <result property="reviewBy" column="review_by"/><result property="reviewNote" column="review_note"/><result property="reviewTime" column="review_time"/>
+        <result property="ownerPrincipal" column="owner_principal"/>
+        <result property="requestKey" column="request_key"/>
+        <result property="payloadHash" column="payload_hash"/>
+        <result property="submissionStatus" column="submission_status"/>
+        <result property="formId" column="form_id"/>
+        <result property="rowJson" column="row_json" jdbcType="LONGVARCHAR"/>
+        <result property="success" column="success"/>
+        <result property="errorMsg" column="error_msg"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        insert into bi_data_form_record (form_id, row_json, success, error_msg, create_by, owner_principal, request_key, payload_hash, submission_status)
+        values (#{formId}, #{rowJson}, #{success}, #{errorMsg}, #{createBy}, #{ownerPrincipal}, #{requestKey}, #{payloadHash}, #{submissionStatus})
+    </insert>
+
+    <select id="listByFormId" resultMap="RecordResult">
+        select id, form_id, row_json, success, error_msg, create_by, create_time,
+               owner_principal, request_key, payload_hash, submission_status, review_by, review_note, review_time
+        from bi_data_form_record
+        where form_id = #{formId}
+        order by id desc
+        limit 100
+    </select>
+
+    <select id="findSubmission" resultMap="RecordResult">
+        select id, form_id, row_json, success, error_msg, create_by, create_time,
+               owner_principal, request_key, payload_hash, submission_status, review_by, review_note, review_time
+        from bi_data_form_record
+        where form_id = #{formId}
+          and owner_principal = #{owner}
+          and request_key = #{requestKey}
+    </select>
+
+    <select id="listVisible" resultMap="RecordResult">
+        select id, form_id, row_json, success, error_msg, create_by, create_time,
+               owner_principal, request_key, payload_hash, submission_status, review_by, review_note, review_time
+        from bi_data_form_record
+        where form_id = #{formId}
+        <if test="!admin">
+            and owner_principal = #{owner}
+        </if>
+        order by id desc
+        limit 100
+    </select>
+</mapper>

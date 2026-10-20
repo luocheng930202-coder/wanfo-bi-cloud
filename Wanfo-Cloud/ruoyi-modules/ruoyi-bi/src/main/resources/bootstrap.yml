@@ -1,0 +1,51 @@
+# Tomcat
+server:
+  port: 9206
+
+# Spring
+spring:
+  application:
+    name: ruoyi-bi
+  profiles:
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+      config:
+        server-addr: 127.0.0.1:8848
+  config:
+    file-extension: yml
+    import:
+      - optional:nacos:application-${spring.profiles.active}.${spring.config.file-extension}
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
+
+---
+# ==================== BI 模块本地配置 ====================
+bi:
+  engine: calcite
+  engine-version: 1.42.0
+  default-max-rows: 5000
+  query-timeout-seconds: 60
+  # 数据源由管理页面配置；部署凭据通过外部配置注入。
+  datasources: []
+
+mybatis:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.wanfo.**.domain
+  configuration:
+    map-underscore-to-camel-case: true
+
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/bi
+    table: bi_flyway_history
+    baseline-on-migrate: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
+

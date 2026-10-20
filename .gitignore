@@ -1,0 +1,43 @@
+# Local environment and private operational material
+.local/
+logs/
+*.log
+ruoyi-nacos-config/
+seed_nacos.py
+design-audit/
+bi-poc/
+
+# Legacy directory shells retained while external tools release file handles
+RuoYi-Cloud/
+RuoYi-Cloud-Vue/
+
+# Credentials, generated files and machine-specific material
+**/.local-*
+**/.env.local
+**/.env.*.local
+**/node_modules/
+**/target/
+**/dist/
+**/logs/
+**/uploadPath/
+**/uploads/
+**/exports/
+**/coverage/
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pfx
+**/*.pem
+**/*.key
+**/*.dump
+**/*.sql.gz
+**/.DS_Store
+**/.idea/
+**/.vscode/
+**/design-qa.md
+/deploy/.env
+/deploy/config/*.yml
+!/deploy/config/*.yml.example
+
+**/__pycache__/
+**/*.pyc

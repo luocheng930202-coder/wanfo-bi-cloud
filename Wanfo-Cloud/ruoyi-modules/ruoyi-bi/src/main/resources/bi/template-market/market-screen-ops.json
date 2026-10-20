@@ -1,0 +1,85 @@
+{
+  "format": "datacenter-screen-template",
+  "version": 1,
+  "name": "运营监测大屏",
+  "scene": { "width": 1920, "height": 1080, "fit": "contain", "refreshSeconds": 0 },
+  "appearance": {
+    "theme": "dark",
+    "background": "#0B1426",
+    "cardBackground": "#14243B",
+    "textColor": "#E7F0FF",
+    "borderColor": "#284361",
+    "palette": "ocean",
+    "titleSize": 20,
+    "radius": 12,
+    "decimals": 2,
+    "grouping": true
+  },
+  "panels": [
+    {
+      "key": "hero",
+      "title": "运营监测大屏",
+      "componentType": "text",
+      "x": 40,
+      "y": 20,
+      "w": 1840,
+      "h": 90,
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "content": { "text": "市场模板 · 深色指挥席布局，绑定数据后即可投屏。" },
+      "locked": false,
+      "hidden": false
+    },
+    {
+      "key": "metric-a",
+      "title": "关键指标",
+      "componentType": "kpi",
+      "x": 40,
+      "y": 130,
+      "w": 520,
+      "h": 240,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false,
+      "hidden": false
+    },
+    {
+      "key": "metric-b",
+      "title": "监测指标",
+      "componentType": "kpi",
+      "x": 40,
+      "y": 410,
+      "w": 520,
+      "h": 240,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false,
+      "hidden": false
+    },
+    {
+      "key": "analysis-a",
+      "title": "分布分析",
+      "componentType": "chart",
+      "x": 600,
+      "y": 130,
+      "w": 1280,
+      "h": 520,
+      "chartType": "bar",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false,
+      "hidden": false
+    },
+    {
+      "key": "analysis-b",
+      "title": "监测明细",
+      "componentType": "chart",
+      "x": 40,
+      "y": 690,
+      "w": 1840,
+      "h": 350,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false,
+      "hidden": false
+    }
+  ]
+}

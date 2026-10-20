@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wanfo.bi.mapper.BiDatasourceMapper">
+
+    <resultMap id="BiDatasourceResult" type="com.wanfo.bi.domain.BiDatasourceDO">
+        <id     property="id"             column="id"/>
+        <result property="name"           column="name"/>
+        <result property="type"           column="type"/>
+        <result property="schemaName"     column="schema_name"/>
+        <result property="jdbcUrl"        column="jdbc_url"/>
+        <result property="driverClass"    column="driver_class"/>
+        <result property="username"       column="username"/>
+        <result property="password"       column="password"/>
+        <result property="sshHost"        column="ssh_host"/>
+        <result property="sshPort"        column="ssh_port"/>
+        <result property="sshUser"        column="ssh_user"/>
+        <result property="sshPassword"    column="ssh_password"/>
+        <result property="sshPrivateKey"  column="ssh_private_key"/>
+        <result property="poolMaxTotal"   column="pool_max_total"/>
+        <result property="poolMinIdle"    column="pool_min_idle"/>
+        <result property="queryTimeout"   column="query_timeout"/>
+        <result property="status"         column="status"/>
+        <result property="remark"         column="remark"/>
+        <result property="createBy"       column="create_by"/>
+        <result property="createTime"     column="create_time"/>
+        <result property="updateBy"       column="update_by"/>
+        <result property="updateTime"     column="update_time"/>
+        <result property="delFlag"        column="del_flag"/>
+    </resultMap>
+
+    <sql id="selectAllVo">
+        select id, name, type, schema_name, jdbc_url, driver_class, username, password,
+               ssh_host, ssh_port, ssh_user, ssh_password, ssh_private_key,
+               pool_max_total, pool_min_idle, query_timeout,
+               status, remark, create_by, create_time, update_by, update_time, del_flag
+        from bi_datasource
+    </sql>
+
+    <select id="selectAll" resultMap="BiDatasourceResult">
+        <include refid="selectAllVo"/>
+        where del_flag = '0'
+        order by id
+    </select>
+
+    <select id="selectEnabled" resultMap="BiDatasourceResult">
+        <include refid="selectAllVo"/>
+        where del_flag = '0' and status = '0'
+        order by id
+    </select>
+
+    <select id="selectById" parameterType="java.lang.Long" resultMap="BiDatasourceResult">
+        <include refid="selectAllVo"/>
+        where id = #{id} and del_flag = '0'
+    </select>
+
+    <select id="selectBySchemaName" parameterType="java.lang.String" resultMap="BiDatasourceResult">
+        <include refid="selectAllVo"/>
+        where schema_name = #{schemaName} and del_flag = '0'
+    </select>
+
+    <select id="countBySchemaName" parameterType="java.lang.String" resultType="int">
+        select count(1) from bi_datasource where schema_name = #{schemaName} and del_flag = '0'
+    </select>
+
+    <insert id="insert" parameterType="com.wanfo.bi.domain.BiDatasourceDO"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into bi_datasource
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null">name,</if>
+            <if test="type != null">type,</if>
+            <if test="schemaName != null">schema_name,</if>
+            <if test="jdbcUrl != null">jdbc_url,</if>
+            <if test="driverClass != null">driver_class,</if>
+            <if test="username != null">username,</if>
+            <if test="password != null">password,</if>
+            <if test="sshHost != null">ssh_host,</if>
+            <if test="sshPort != null">ssh_port,</if>
+            <if test="sshUser != null">ssh_user,</if>
+            <if test="sshPassword != null">ssh_password,</if>
+            <if test="sshPrivateKey != null">ssh_private_key,</if>
+            <if test="poolMaxTotal != null">pool_max_total,</if>
+            <if test="poolMinIdle != null">pool_min_idle,</if>
+            <if test="queryTimeout != null">query_timeout,</if>
+            <if test="status != null">status,</if>
+            <if test="remark != null">remark,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="updateBy != null">update_by,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="name != null">#{name},</if>
+            <if test="type != null">#{type},</if>
+            <if test="schemaName != null">#{schemaName},</if>
+            <if test="jdbcUrl != null">#{jdbcUrl},</if>
+            <if test="driverClass != null">#{driverClass},</if>
+            <if test="username != null">#{username},</if>
+            <if test="password != null">#{password},</if>
+            <if test="sshHost != null">#{sshHost},</if>
+            <if test="sshPort != null">#{sshPort},</if>
+            <if test="sshUser != null">#{sshUser},</if>
+            <if test="sshPassword != null">#{sshPassword},</if>
+            <if test="sshPrivateKey != null">#{sshPrivateKey},</if>
+            <if test="poolMaxTotal != null">#{poolMaxTotal},</if>
+            <if test="poolMinIdle != null">#{poolMinIdle},</if>
+            <if test="queryTimeout != null">#{queryTimeout},</if>
+            <if test="status != null">#{status},</if>
+            <if test="remark != null">#{remark},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="updateBy != null">#{updateBy},</if>
+        </trim>
+    </insert>
+
+    <update id="update" parameterType="com.wanfo.bi.domain.BiDatasourceDO">
+        update bi_datasource
+        <set>
+            <if test="name != null">name = #{name},</if>
+            <if test="type != null">type = #{type},</if>
+            <if test="jdbcUrl != null">jdbc_url = #{jdbcUrl},</if>
+            <if test="driverClass != null">driver_class = #{driverClass},</if>
+            <if test="username != null">username = #{username},</if>
+            <if test="password != null">password = #{password},</if>
+            <if test="sshHost != null">ssh_host = #{sshHost},</if>
+            <if test="sshPort != null">ssh_port = #{sshPort},</if>
+            <if test="sshUser != null">ssh_user = #{sshUser},</if>
+            <if test="sshPassword != null">ssh_password = #{sshPassword},</if>
+            <if test="sshPrivateKey != null">ssh_private_key = #{sshPrivateKey},</if>
+            <if test="poolMaxTotal != null">pool_max_total = #{poolMaxTotal},</if>
+            <if test="poolMinIdle != null">pool_min_idle = #{poolMinIdle},</if>
+            <if test="queryTimeout != null">query_timeout = #{queryTimeout},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            update_time = now()
+        </set>
+        where id = #{id} and del_flag = '0'
+    </update>
+
+    <update id="updateStatus">
+        update bi_datasource
+        set status = #{status}, update_by = #{updateBy}, update_time = now()
+        where id = #{id} and del_flag = '0'
+    </update>
+
+    <update id="deleteById">
+        update bi_datasource
+        set del_flag = '2', update_by = #{updateBy}, update_time = now()
+        where id = #{id} and del_flag = '0'
+    </update>
+
+</mapper>
+

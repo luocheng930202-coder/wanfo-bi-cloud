@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wanfo.bi.mapper.BiDashboardShareMapper">
+
+    <resultMap id="ShareResult" type="com.wanfo.bi.domain.BiDashboardShareDO">
+        <id property="id" column="id"/>
+        <result property="dashboardId" column="dashboard_id"/>
+        <result property="token" column="token"/>
+        <result property="dataScope" column="data_scope"/>
+        <result property="passwordHash" column="password_hash"/>
+        <result property="expireTime" column="expire_time"/>
+        <result property="publisherActorJson" column="publisher_actor_json" jdbcType="LONGVARCHAR"/>
+        <result property="status" column="status"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <select id="listByDashboard" resultMap="ShareResult">
+        select id, dashboard_id, token, data_scope, password_hash, expire_time, publisher_actor_json, status, create_by, create_time
+        from bi_dashboard_share
+        where dashboard_id = #{dashboardId} and status = '0'
+        order by id desc
+    </select>
+
+    <select id="selectByToken" resultMap="ShareResult">
+        select id, dashboard_id, token, data_scope, password_hash, expire_time, publisher_actor_json, status, create_by, create_time
+        from bi_dashboard_share where token = #{token} and status = '0'
+    </select>
+
+    <select id="selectById" resultMap="ShareResult">
+        select id, dashboard_id, token, data_scope, password_hash, expire_time, publisher_actor_json, status, create_by, create_time
+        from bi_dashboard_share where id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        insert into bi_dashboard_share
+        (dashboard_id, token, data_scope, password_hash, expire_time, publisher_actor_json, status, create_by)
+        values (#{dashboardId}, #{token}, #{dataScope}, #{passwordHash}, #{expireTime}, #{publisherActorJson}, '0', #{createBy})
+    </insert>
+
+    <update id="disable">
+        update bi_dashboard_share set status = '1' where id = #{id} and dashboard_id = #{dashboardId} and status = '0'
+    </update>
+</mapper>

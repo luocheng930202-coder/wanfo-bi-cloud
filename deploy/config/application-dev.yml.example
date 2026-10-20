@@ -1,0 +1,78 @@
+# Copy to an ignored local directory as application-dev.yml.
+# File-based single-host profile: no Nacos server is required for this profile.
+server:
+  address: ${WANFO_BIND_ADDRESS:127.0.0.1}
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+    sentinel:
+      enabled: false
+    discovery:
+      client:
+        simple:
+          instances:
+            ruoyi-system:
+              - uri: ${WANFO_SYSTEM_URL:http://127.0.0.1:9201}
+            ruoyi-auth:
+              - uri: ${WANFO_AUTH_URL:http://127.0.0.1:9200}
+            ruoyi-bi:
+              - uri: ${WANFO_BI_URL:http://127.0.0.1:9206}
+  datasource:
+    dynamic:
+      primary: master
+      strict: true
+      datasource:
+        master:
+          driver-class-name: com.mysql.cj.jdbc.Driver
+          url: jdbc:mysql://${WANFO_DB_HOST:127.0.0.1}:${WANFO_DB_PORT:3306}/${WANFO_DB_NAME:wanfo_bi}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+          username: ${WANFO_DB_USER}
+          password: ${WANFO_DB_PASSWORD}
+      druid:
+        initial-size: 1
+        min-idle: 1
+        max-active: 10
+        stat-view-servlet:
+          enabled: false
+  data:
+    redis:
+      host: ${WANFO_REDIS_HOST:127.0.0.1}
+      port: ${WANFO_REDIS_PORT:6379}
+      database: ${WANFO_REDIS_DATABASE:0}
+      password: ${WANFO_REDIS_PASSWORD}
+  flyway:
+    enabled: false
+    # Include BI V1 on a fresh database that already has system tables.
+    baseline-version: 0
+mybatis:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.wanfo.**.domain
+  configuration:
+    map-underscore-to-camel-case: true
+security:
+  ignore:
+    whites:
+      - /auth/login
+      - /auth/logout
+      - /auth/refresh
+      - /code
+      - /bi/share/**
+springdoc:
+  api-docs:
+    enabled: ${WANFO_API_DOCS:false}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+bi:
+  security:
+    mode: ruoyi
+gen:
+  packageName: com.wanfo.system

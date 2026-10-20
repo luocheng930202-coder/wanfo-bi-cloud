@@ -1,0 +1,79 @@
+{
+  "format": "datacenter-dashboard-template",
+  "version": 1,
+  "name": "零售陈列看板",
+  "appearance": {
+    "theme": "light",
+    "background": "#F1F5F9",
+    "cardBackground": "#FFFFFF",
+    "textColor": "#20324D",
+    "borderColor": "#D7E2F0",
+    "palette": "ocean",
+    "titleSize": 20,
+    "radius": 12,
+    "decimals": 2,
+    "grouping": true
+  },
+  "panels": [
+    {
+      "key": "hero",
+      "title": "零售陈列看板",
+      "componentType": "text",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 2,
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "content": { "text": "市场模板 · 使用前请为各数据槽绑定自己的数据集或图表。" },
+      "locked": false
+    },
+    {
+      "key": "metric-a",
+      "title": "核心指标",
+      "componentType": "kpi",
+      "x": 0,
+      "y": 2,
+      "w": 6,
+      "h": 3,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false
+    },
+    {
+      "key": "metric-b",
+      "title": "辅助指标",
+      "componentType": "kpi",
+      "x": 6,
+      "y": 2,
+      "w": 6,
+      "h": 3,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false
+    },
+    {
+      "key": "analysis-a",
+      "title": "品类趋势",
+      "componentType": "chart",
+      "x": 0,
+      "y": 5,
+      "w": 6,
+      "h": 6,
+      "chartType": "line",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false
+    },
+    {
+      "key": "analysis-b",
+      "title": "门店明细",
+      "componentType": "chart",
+      "x": 6,
+      "y": 5,
+      "w": 6,
+      "h": 6,
+      "chartType": "table",
+      "style": { "showTitle": true, "titleAlign": "left" },
+      "locked": false
+    }
+  ]
+}

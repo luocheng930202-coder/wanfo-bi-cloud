@@ -1,0 +1,3 @@
+title = "Wanfo BI Cloud secret scanning"
+[extend]
+useDefault = true

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "market-dashboard-retail",
+      "name": "零售陈列看板",
+      "category": "经营分析",
+      "description": "双指标与趋势、明细区，适合门店零售复盘。",
+      "kind": "dashboard",
+      "resource": "classpath:bi/template-market/market-dashboard-retail.json"
+    },
+    {
+      "id": "market-screen-ops",
+      "name": "运营监测大屏",
+      "category": "运营监测",
+      "description": "深色画布与四数据槽，适合指挥中心日常监测。",
+      "kind": "screen",
+      "resource": "classpath:bi/template-market/market-screen-ops.json"
+    }
+  ]
+}

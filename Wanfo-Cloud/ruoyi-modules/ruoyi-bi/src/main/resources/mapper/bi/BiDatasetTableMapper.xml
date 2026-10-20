@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wanfo.bi.mapper.BiDatasetTableMapper">
+
+    <resultMap id="TableResult" type="com.wanfo.bi.domain.BiDatasetTableDO">
+        <id     property="id"           column="id"/>
+        <result property="groupId"      column="group_id"/>
+        <result property="name"         column="name"/>
+        <result property="type"         column="type"/>
+        <result property="datasourceId" column="datasource_id"/>
+        <result property="sourceTable"  column="source_table"/>
+        <result property="sourceCatalog" column="source_catalog"/>
+        <result property="sqlText"      column="sql_text" jdbcType="LONGVARCHAR"/>
+        <result property="unionSql"     column="union_sql" jdbcType="LONGVARCHAR"/>
+        <result property="cacheEnabled" column="cache_enabled"/>
+        <result property="cacheTtl"     column="cache_ttl"/>
+        <result property="remark"       column="remark"/>
+        <result property="modelJson"    column="model_json" jdbcType="LONGVARCHAR"/>
+        <result property="createBy"     column="create_by"/>
+        <result property="createTime"   column="create_time"/>
+        <result property="updateBy"     column="update_by"/>
+        <result property="updateTime"   column="update_time"/>
+        <result property="delFlag"      column="del_flag"/>
+    </resultMap>
+
+    <sql id="cols">
+        id, group_id, name, type, datasource_id, source_table, source_catalog, sql_text, union_sql,
+        model_json, cache_enabled, cache_ttl, remark, create_by, create_time, update_by, update_time, del_flag
+    </sql>
+
+    <select id="selectAll" resultMap="TableResult">
+        select <include refid="cols"/> from bi_dataset_table
+        where del_flag = '0'
+        <if test="groupId != null">and group_id = #{groupId}</if>
+        order by group_id, id
+    </select>
+
+    <select id="selectById" parameterType="java.lang.Long" resultMap="TableResult">
+        select <include refid="cols"/> from bi_dataset_table
+        where id = #{id} and del_flag = '0'
+    </select>
+
+    <select id="countByName" resultType="int">
+        select count(1) from bi_dataset_table
+        where group_id = #{groupId} and name = #{name} and del_flag = '0'
+    </select>
+
+    <select id="countByGroupId" parameterType="java.lang.Long" resultType="int">
+        select count(1) from bi_dataset_table
+        where group_id = #{groupId} and del_flag = '0'
+    </select>
+
+    <select id="countChartRefs" parameterType="java.lang.Long"
+            resultType="java.util.Map">
+        select id as chart_id, name as chart_name
+        from bi_chart_view
+        where dataset_id = #{datasetId} and del_flag = '0'
+        union all
+        select d.id as chart_id, concat('看板：',d.name) as chart_name
+        from bi_dashboard_binding r join bi_dashboard d on d.id=r.dashboard_id
+        where r.dataset_id=#{datasetId} and d.del_flag='0'
+    </select>
+
+    <insert id="insert" parameterType="com.wanfo.bi.domain.BiDatasetTableDO"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into bi_dataset_table
+        (group_id, name, type, datasource_id, source_table, source_catalog, sql_text, union_sql,
+         cache_enabled, cache_ttl, remark, create_by, update_by, del_flag)
+        values (#{groupId}, #{name}, #{type}, #{datasourceId}, #{sourceTable}, #{sourceCatalog},
+                #{sqlText}, #{unionSql}, #{cacheEnabled}, #{cacheTtl}, #{remark},
+                #{createBy}, #{createBy}, '0')
+    </insert>
+
+    <update id="update" parameterType="com.wanfo.bi.domain.BiDatasetTableDO">
+        update bi_dataset_table
+        <set>
+            <if test="groupId != null">group_id = #{groupId},</if>
+            <if test="name != null">name = #{name},</if>
+            <if test="type != null">type = #{type},</if>
+            <if test="datasourceId != null">datasource_id = #{datasourceId},</if>
+            <if test="sourceTable != null">source_table = #{sourceTable},</if>
+            <if test="sqlText != null">sql_text = #{sqlText},</if>
+            <if test="unionSql != null">union_sql = #{unionSql},</if>
+            <if test="modelJson != null">model_json = #{modelJson},</if>
+            <if test="cacheEnabled != null">cache_enabled = #{cacheEnabled},</if>
+            <if test="cacheTtl != null">cache_ttl = #{cacheTtl},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            update_time = now()
+        </set>
+        where id = #{id} and del_flag = '0'
+    </update>
+
+    <update id="updateUnionAndModel">
+        update bi_dataset_table
+        set union_sql = #{unionSql}, model_json = #{modelJson}, update_by = #{updateBy}, update_time = now()
+        where id = #{id} and del_flag = '0'
+    </update>
+
+    <update id="deleteById">
+        update bi_dataset_table
+        set del_flag = '2', update_by = #{updateBy}, update_time = now()
+        where id = #{id} and del_flag = '0'
+    </update>
+
+</mapper>
+

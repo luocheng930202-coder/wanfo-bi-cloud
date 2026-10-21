@@ -39,7 +39,7 @@ import { CHART_TYPE_GROUPS, CHART_TYPE_LABELS, type ChartType, isChartType } fro
 const props = defineProps<{ modelValue: ChartType; disabled?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: ChartType): void; (e: 'change'): void }>()
 
-const expanded = ref(true)
+const expanded = ref(false)
 const groups = CHART_TYPE_GROUPS
 
 function label(type: ChartType | string) {

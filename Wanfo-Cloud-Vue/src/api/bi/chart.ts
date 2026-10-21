@@ -19,6 +19,21 @@ export interface ChartVisualStyle {
   title?: string
   palette?: 'business' | 'ocean' | 'warm'
   axisLabelRotate?: number
+  showLabels?: boolean
+  barMaxWidth?: number
+  barRadius?: number
+  lineWidth?: number
+  symbolSize?: number
+  showPoints?: boolean
+  areaOpacity?: number
+  pieInnerRadius?: number
+  pieOuterRadius?: number
+  pieLabelPosition?: 'inside' | 'outside'
+  startAngle?: number
+  ringShowTotal?: boolean
+  gaugeMin?: number
+  gaugeMax?: number
+  gaugeStyle?: 'pointer' | 'progress'
 }
 export interface ChartAdvancedOptions {
   nullMode?: 'keep' | 'zero' | 'hide'
@@ -45,8 +60,8 @@ export const saveChart = (definition: ChartDefinition, id?: number, version?: nu
 export const commitTemplateChartLeases = (chartIds: number[]): Promise<AjaxResult<{committed:number}>> => request({url:'/bi/chart/template-lease/commit',method:'post',data:{chartIds}})
 export const releaseTemplateChartLeases = (chartIds: number[]): Promise<AjaxResult<{released:number}>> => request({url:'/bi/chart/template-lease/release',method:'post',data:{chartIds}})
 export const deleteChart = (id: number): Promise<AjaxResult> => request({url:`/bi/chart/saved/${id}`,method:'delete'})
-export const previewChart = (query: QueryModel): Promise<AjaxResult<ChartResult>> => request({url:'/bi/chart/data',method:'post',data:query,timeout:60000})
-export const savedChartData = (id: number): Promise<AjaxResult<ChartResult>> => request({url:`/bi/chart/saved/${id}/data`,method:'post',timeout:60000})
+export const previewChart = (query: QueryModel, signal?: AbortSignal): Promise<AjaxResult<ChartResult>> => request({url:'/bi/chart/data',method:'post',data:query,timeout:60000,signal})
+export const savedChartData = (id: number, signal?: AbortSignal): Promise<AjaxResult<ChartResult>> => request({url:`/bi/chart/saved/${id}/data`,method:'post',timeout:60000,signal})
 export const searchChartPrincipals = (query=''): Promise<AjaxResult<GrantPrincipal[]>> => request({url:'/bi/chart/principals',params:{query}})
 export const listChartGrants = (id: number): Promise<AjaxResult<ResourceGrant[]>> => request({url:`/bi/chart/saved/${id}/grants`})
 export const grantChart = (id: number, principalId: number, action: string): Promise<AjaxResult> => request({url:`/bi/chart/saved/${id}/grants`,method:'post',data:{principalId,action}})

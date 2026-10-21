@@ -89,13 +89,21 @@ export function buildChartPreviewOption(params: {
     const raw = result.rows[0]?.[key]
     const value = normalizeValue(raw, key)
     if (value == null) throw new Error('仪表盘需要可绘制的数值')
-    const max = Math.max(value * 1.2, value + 1, 100)
+    const min = style?.gaugeMin ?? 0
+    const max = style?.gaugeMax ?? Math.max(value * 1.2, value + 1, min + 1, 100)
+    if(!Number.isFinite(min) || !Number.isFinite(max) || max<=min)throw new Error('仪表范围无效：最大值必须大于最小值')
+    const progress=style?.gaugeStyle==='progress'
     return {
       ...base,
       series: [{
         type: 'gauge',
-        min: 0,
-        max,
+        min, max,
+        startAngle: progress?210:225, endAngle: progress?-30:-45,
+        progress: {show:progress,width:16,roundCap:true},
+        pointer: {show:!progress},
+        axisLine: {lineStyle:{width:progress?16:10}},
+        axisTick: {show:!progress}, splitLine:{show:!progress},
+        axisLabel: {show:!progress},
         detail: { formatter: (v: number) => axisFormatter(v), color: textColor },
         data: [{ value, name: labels[key] || key }]
       }]
@@ -154,11 +162,19 @@ export function buildChartPreviewOption(params: {
       const name = categories[i]
       return typeof point === 'object' ? { name, ...point } : { name, value: point }
     }).filter((item): item is NonNullable<typeof item> => item != null)
-    const radius = type === 'ring' ? ['45%', '70%'] : ['35%', '65%']
+    const outer=style?.pieOuterRadius??(type==='ring'?72:70)
+    const inner=type==='ring'?(style?.pieInnerRadius??52):0
+    if(inner>=outer)throw new Error('内半径必须小于外半径')
+    const radius = [`${inner}%`,`${outer}%`]
     if (type === 'funnel') {
-      return { ...base, series: [{ type: 'funnel' as const, data, sort: 'descending' as const }] }
+      return { ...base, series: [{ type: 'funnel' as const, data, sort: 'none' as const }] }
     }
-    return { ...base, series: [{ type: 'pie' as const, radius, data }] }
+    const total=data.reduce((sum,p)=>sum+p.value,0)
+    return { ...base,
+      graphic: type==='ring' && style?.ringShowTotal ? [{type:'text',left:'center',top:'middle',style:{text:`合计\n${axisFormatter(total)}`,align:'center' as const,fill:textColor,fontSize:18,lineHeight:28}}] : undefined,
+      series: [{ type: 'pie' as const, radius, data, startAngle:style?.startAngle??90,
+        label:{show:style?.showLabels!==false,position:style?.pieLabelPosition??'outside',formatter:style?.pieLabelPosition==='inside'?'{d}%':'{b}'},
+        labelLine:{show:style?.pieLabelPosition!=='inside'},labelLayout:{hideOverlap:true},itemStyle:{borderWidth:2,borderColor:mergedAppearance?.cardBackground??'#fff'}}] }
   }
 
   const keys = metrics.map(metricResultKey)
@@ -177,11 +193,11 @@ export function buildChartPreviewOption(params: {
     const data = valueMatrix.map(row => row[mi])
     if (type === 'combo') {
       return mi === 0
-        ? { name, type: 'bar' as const, data, yAxisIndex: 0 }
-        : { name, type: 'line' as const, data, yAxisIndex: 1, smooth: smoothDefault }
+        ? { name, type: 'bar' as const, data, yAxisIndex: 0, barMaxWidth:style?.barMaxWidth??44, itemStyle:{borderRadius:[style?.barRadius??5,style?.barRadius??5,0,0]},label:{show:style?.showLabels??false,position:'top' as const} }
+        : { name, type: 'line' as const, data, yAxisIndex: 1, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6,lineStyle:{width:style?.lineWidth??3},label:{show:style?.showLabels??false,position:'top' as const} }
     }
     if (type === 'line' || type === 'area') {
-      return { name, type: 'line' as const, data, smooth: type === 'line' && smoothDefault, areaStyle: type === 'area' ? {} : undefined }
+      return { name, type: 'line' as const, data, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6, lineStyle:{width:style?.lineWidth??3}, label:{show:style?.showLabels??false,position:'top' as const}, areaStyle: type === 'area' ? {opacity:style?.areaOpacity??0.18} : undefined }
     }
     const stack = type === 'stack' || type === 'percent' ? 'total' : undefined
     let seriesData = data
@@ -193,12 +209,15 @@ export function buildChartPreviewOption(params: {
         return Math.round(v * 100) / 100
       })
     }
-    return { name, type: 'bar' as const, stack, data: seriesData }
+    const radius=style?.barRadius??5
+    return { name, type: 'bar' as const, stack, barMaxWidth:style?.barMaxWidth??44, data: seriesData,
+      label:{show:style?.showLabels??false,position:stack?'inside' as const:type==='hbar'?'right' as const:'top' as const,formatter:type==='percent'?'{c}%':undefined},
+      itemStyle: stack ? undefined : {borderRadius:type==='hbar'?[0,radius,radius,0]:[radius,radius,0,0]} }
   })
 
   const valueYAxis = { type: 'value' as const, axisLabel: { color: textColor, formatter: axisFormatter }, splitLine: { lineStyle: { color: appearance?.borderColor || '#e4e7ed' } } }
   const percentYAxis = { type: 'value' as const, max: 100, axisLabel: { color: textColor, formatter: (v: number) => `${v}%` }, splitLine: { lineStyle: { color: appearance?.borderColor || '#e4e7ed' } } }
-  const categoryYAxis = { type: 'category' as const, data: categories, axisLabel: { color: textColor }, axisLine: { lineStyle: { color: textColor } } }
+  const categoryYAxis = { type: 'category' as const, data: categories, axisLabel: { color: textColor, rotate: style?.axisLabelRotate ?? 0 }, axisLine: { lineStyle: { color: textColor } } }
   const categoryXAxis = {
     type: 'category' as const,
     data: categories,

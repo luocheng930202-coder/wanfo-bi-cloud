@@ -13,7 +13,7 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart, ScatterChart, RadarChart, FunnelChart, GaugeChart, MapChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, GeoComponent, VisualMapComponent, TitleComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, GeoComponent, VisualMapComponent, TitleComponent, GraphicComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { ChartResult, ChartDefinition } from '@/api/bi/chart'
 import type { DashboardAppearance, NumberFormat, MetricStyle } from '@/api/bi/dashboard'
@@ -23,7 +23,7 @@ import { buildPivotDataConfig, validatePivotConfig } from '@/utils/biPivotPrevie
 import { buildMapPreviewOption, validateMapConfig } from '@/utils/biMapPreview'
 import { defaultMapScope, ensureMapRegistered, type MapScopeId } from '@/utils/biMapGeo'
 import { PivotSheet } from '@antv/s2'
-echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,CanvasRenderer])
+echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,GraphicComponent,CanvasRenderer])
 const props=defineProps<{thumbnail?:boolean;result:ChartResult|null;definition:ChartDefinition;labels:Record<string,string>;appearance?:DashboardAppearance;numberFormat?:NumberFormat|null;metricStyles?:MetricStyle[];linkable?:boolean;drillable?:boolean;canDrillDown?:boolean}>()
 const emit=defineEmits<{(e:'select',value:string|number|null):void;(e:'drill',payload:{field:string;value:string|number|null}):void}>()
 function dimensionValue(row:Record<string,unknown>){const d=props.definition.query.dimensions[0];if(!d)return undefined;const v=row[d.alias || d.field];if(v===null)return null;if(typeof v==='string' || (typeof v==='number' && Number.isFinite(v) && Math.abs(v)<=Number.MAX_SAFE_INTEGER))return v;return undefined}
@@ -37,7 +37,7 @@ let renderVersion=0
 let instance:echarts.ECharts|undefined,pivotSheet:PivotSheet|undefined,observer:ResizeObserver|undefined
 function disposePivot(){pivotSheet?.destroy();pivotSheet=undefined}
 function dispose(){observer?.disconnect();observer=undefined;instance?.dispose();instance=undefined;disposePivot()}
-watch(()=>[props.result,props.definition.type,JSON.stringify(props.definition.query.metrics),JSON.stringify(props.definition.query.dimensions),JSON.stringify(props.definition.advanced),JSON.stringify(props.appearance),JSON.stringify(props.numberFormat),JSON.stringify(props.metricStyles)],async()=>{
+watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringify(props.definition.style),JSON.stringify(props.definition.query.metrics),JSON.stringify(props.definition.query.dimensions),JSON.stringify(props.definition.advanced),JSON.stringify(props.appearance),JSON.stringify(props.numberFormat),JSON.stringify(props.metricStyles)],async()=>{
   const v=++renderVersion;dispose();renderError.value='';await nextTick();if(v!==renderVersion)return
   if(!props.result?.rows.length || type.value==='table')return
   if(type.value==='pivot'){

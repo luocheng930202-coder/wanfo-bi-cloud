@@ -225,36 +225,39 @@ public class DashboardService {
         guardRuntimeInput(pub,input);
         var p=panel(pub,key);var d=p.chart();if(d==null)throw new IllegalArgumentException("静态组件不提供取数接口");var model=filtered(pub,key,input,null);
         var data=queries.queryForDashboard(model);
-        return rendered(d,data,pub,key,input);
+        return rendered(d,data,pub,key,input,true);
     }
     private Publication revisionPublished(Long id,Integer revision){var row=publishedRow(id);if(revision==null || !Objects.equals(revision,row.getPublishedVersion()))throw new BiAccessException(409,"看板发布版本已改变，请刷新看板");return snapshot(row);}
-    private Map<String,Object> rendered(ChartDefinitionService.Definition d,Map<String,Object> data,Publication pub,String panelKey,Map<String,Object> input) throws Exception {
+    private Map<String,Object> rendered(ChartDefinitionService.Definition d,Map<String,Object> data,Publication pub,String panelKey,Map<String,Object> input,boolean consume) throws Exception {
         var drillFields=ChartDrill.fields(d);
-        var path=drillFields.isEmpty()?List.<ChartDrill.Segment>of():ChartDrill.parsePath(input,panelKey,drillFields,fieldTypes(pub,panel(pub,panelKey)));
-        var view=drillFields.isEmpty()?d:ChartDrill.presentationDefinition(d,drillFields,path);
+        var path=GeoMapQuery.isMap(d)?GeoMapQuery.path(d,input,panelKey,fieldTypes(pub,panel(pub,panelKey),consume)):drillFields.isEmpty()?List.<ChartDrill.Segment>of():ChartDrill.parsePath(input,panelKey,drillFields,fieldTypes(pub,panel(pub,panelKey),consume));
+        var view=GeoMapQuery.isMap(d)?GeoMapQuery.presentation(d,path):drillFields.isEmpty()?d:ChartDrill.presentationDefinition(d,drillFields,path);
         var dimensions=view.query().getDimensions().stream().map(f->f.getAlias()==null || f.getAlias().isBlank()?f.getField():f.getAlias()).toList();
         var metrics=view.query().getMetrics().stream().map(f->f.getAlias()!=null && !f.getAlias().isBlank()?f.getAlias():f.getAgg()==null || f.getAgg().equalsIgnoreCase("NONE")?f.getField():f.getAgg().toLowerCase(Locale.ROOT)+"_"+f.getField()).toList();
         Map<String,Object> presentation=new LinkedHashMap<>();
+        presentation.put("style",view.style());presentation.put("advanced",view.advanced());
         presentation.put("type",view.type());presentation.put("dimensions",dimensions);presentation.put("metrics",metrics);
         var queryDims=view.query().getDimensions().stream().map(f->Map.of("field",f.getField(),"alias",f.getAlias()==null || f.getAlias().isBlank()?f.getField():f.getAlias())).toList();
         presentation.put("queryDimensions",queryDims);
+        presentation.put("queryMetrics",view.query().getMetrics());
         if(view.advanced()!=null && view.advanced().getPivotRowFields()!=null) {
             presentation.put("pivotRowFields",view.advanced().getPivotRowFields());
             presentation.put("pivotColFields",view.advanced().getPivotColFields()==null?List.of():view.advanced().getPivotColFields());
         }
         presentation.putAll(ChartDrill.presentationMeta(drillFields,path));
+        if(GeoMapQuery.isMap(d)){var context=GeoMapQuery.context(d,path);data=new LinkedHashMap<>(data);data.put("mapContext",context);presentation.put("canDrillDown",context.get("canDrillDown"));}
         @SuppressWarnings("unchecked")
         List<String> columns=(List<String>)data.get("columns");
         if(columns!=null) {
-            var fields=queries.datasetFieldEntities(view.query().getDatasetId());
+            var fields=consume?queries.datasetFieldEntitiesForDashboard(view.query().getDatasetId()):queries.datasetFieldEntities(view.query().getDatasetId());
             presentation.put("fieldLabels",FieldDisplayLabels.forChartResult(view,fields,columns));
         }
         return Map.of("data",data,"presentation",presentation);
     }
-    private Map<String,String> fieldTypes(Publication pub,PublishedPanel panel) throws Exception {
+    private Map<String,String> fieldTypes(Publication pub,PublishedPanel panel,boolean consume) throws Exception {
         if(panel.chart()==null)return Map.of();
         Map<String,String> types=new HashMap<>();
-        for(var f:queries.datasetFields(panel.chart().query().getDatasetId()))types.put((String)f.get("name"),String.valueOf(f.get("type")));
+        for(var f:consume?queries.datasetFieldsForDashboard(panel.chart().query().getDatasetId()):queries.datasetFields(panel.chart().query().getDatasetId()))types.put((String)f.get("name"),String.valueOf(f.get("type")));
         return types;
     }
     private Set<String> drillablePanels(Publication pub) {
@@ -286,8 +289,10 @@ public class DashboardService {
         }
         var chart=panel(pub,key).chart();
         var drillFields=ChartDrill.fields(chart);
-        if(!drillFields.isEmpty()) {
-            var path=ChartDrill.parsePath(input,key,drillFields,fieldTypes(pub,panel(pub,key)));
+        if(GeoMapQuery.isMap(chart)){
+            var types=fieldTypes(pub,panel(pub,key),consume);var path=GeoMapQuery.path(chart,input,key,types);GeoMapQuery.apply(chart,q,path,types);
+        }else if(!drillFields.isEmpty()) {
+            var path=ChartDrill.parsePath(input,key,drillFields,fieldTypes(pub,panel(pub,key),consume));
             ChartDrill.apply(q,drillFields,path);
         }
         return q;
@@ -322,7 +327,7 @@ public class DashboardService {
         var pub=previewContext(id,request);Map<String,Object> results=new LinkedHashMap<>();
         // Even a static-only preview rejects unknown input keys.
         guardRuntimeInput(pub,request.input());
-        for(var p:pub.panels())if(p.chart()!=null && !Boolean.TRUE.equals(p.layout().hidden())){var data=new LinkedHashMap<>(queries.query(filtered(pub,p.layout().key(),request.input(),null,false)));data.remove("executedSql");data.remove("params");results.put(p.layout().key(),rendered(p.chart(),data,pub,p.layout().key(),request.input()));}
+        for(var p:pub.panels())if(p.chart()!=null && !Boolean.TRUE.equals(p.layout().hidden())){var data=new LinkedHashMap<>(queries.query(filtered(pub,p.layout().key(),request.input(),null,false)));data.remove("executedSql");data.remove("params");results.put(p.layout().key(),rendered(p.chart(),data,pub,p.layout().key(),request.input(),false));}
         return Map.of("view",manifest(id==null?0L:id,0,pub),"payloads",results);
     }
     public Map<String,Object> previewOptions(Long id,String control,PreviewRequest request) throws Exception {

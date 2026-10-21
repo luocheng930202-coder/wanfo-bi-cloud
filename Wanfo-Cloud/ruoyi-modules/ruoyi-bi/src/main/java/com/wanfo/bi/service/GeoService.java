@@ -28,18 +28,7 @@ public class GeoService
 
     public Object load(String scope) throws Exception
     {
-        if (scope == null || !SCOPES.contains(scope))
-        {
-            throw new IllegalArgumentException("不支持的地图范围: " + scope);
-        }
-        String path = "/bi/geo/" + scope + ".json";
-        try (InputStream in = GeoService.class.getResourceAsStream(path))
-        {
-            if (in == null)
-            {
-                throw new IllegalArgumentException("地图数据不存在");
-            }
-            return objectMapper.readValue(in, Object.class);
-        }
+        return GeoCatalog.geometry(scope);
     }
+    public GeoCatalog.Index regions(){return GeoCatalog.catalog();}
 }

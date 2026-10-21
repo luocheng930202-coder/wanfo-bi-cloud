@@ -74,8 +74,10 @@ public class ChartController
     public Map<String,Object> create(@RequestBody ChartDefinitionService.SaveRequest request){return definitions.create(request);}
     @PutMapping("/saved/{id}") @BiPermission("bi:chart:edit")
     public Map<String,Object> update(@PathVariable Long id,@RequestBody ChartDefinitionService.SaveRequest request){return definitions.update(id,request);}
+    @PostMapping("/map-preview") @BiPermission("bi:dataset:query")
+    public Map<String,Object> previewMap(@RequestBody ChartDefinitionService.MapPreviewRequest request) throws Exception{return definitions.previewMap(request);}
     @PostMapping("/saved/{id}/data") @BiPermission("bi:chart:query")
-    public Map<String,Object> savedData(@PathVariable Long id) throws Exception{return definitions.data(id);}
+    public Map<String,Object> savedData(@PathVariable Long id,@RequestBody(required=false) Map<String,Object> input) throws Exception{return definitions.data(id,input);}
     @DeleteMapping("/saved/{id}") @BiPermission("bi:chart:remove")
     public Map<String,Object> delete(@PathVariable Long id){return definitions.delete(id);}
     @GetMapping("/principals") @BiPermission("bi:chart:grant")

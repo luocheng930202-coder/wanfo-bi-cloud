@@ -26,7 +26,7 @@ class DashboardDrillTest {
     void publishedDrill() throws Exception {
         var c = drillChart();
         when(f.charts.exportForDashboard(4L)).thenReturn(c);
-        when(f.queries.datasetFields(9L)).thenReturn(List.of(Map.of("name", "region", "type", "VARCHAR"), Map.of("name", "city", "type", "VARCHAR")));
+        when(f.queries.datasetFieldsForDashboard(9L)).thenReturn(List.of(Map.of("name", "region", "type", "VARCHAR"), Map.of("name", "city", "type", "VARCHAR")));
         var row = new BiDashboardDO();
         row.setId(7L);
         row.setVersion(2);
@@ -56,5 +56,12 @@ class DashboardDrillTest {
         var links = new DashboardInteraction.Settings(null,
                 List.of(new DashboardInteraction.Link("x", "a", "region", List.of(new DashboardInteraction.Target("b", "city")))));
         assertThrows(IllegalArgumentException.class, () -> DashboardInteraction.validate(links, panels, fields));
+    }
+    @Test void publishedPresentationPreservesMetricAggregationMetadata() throws Exception {
+        publishedDrill();var response=f.service.panelData(7L,"a",1,Map.of());
+        var presentation=(Map<?,?>)response.get("presentation");
+        var metrics=(List<?>)presentation.get("queryMetrics");var metric=(QueryModel.Metric)metrics.get(0);
+        assertEquals("COUNT",metric.getAgg());assertEquals("id",metric.getField());assertEquals("n",metric.getAlias());
+        assertFalse(presentation.containsKey("filters"));assertFalse(presentation.containsKey("sql"));
     }
 }

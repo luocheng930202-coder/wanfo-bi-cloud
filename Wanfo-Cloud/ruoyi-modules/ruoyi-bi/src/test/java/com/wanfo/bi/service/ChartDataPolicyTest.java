@@ -10,6 +10,18 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class ChartDataPolicyTest {
+    @Test void publishedMetadataUsesConsumeRightsAndStillHidesDeniedOrMaskedDrillFields() {
+        when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(),Set.of("city"),Set.of("id")));
+        assertTrue(service.datasetFieldsForDashboard(9L).isEmpty());
+        verify(resources).require("dataset",9L,"consume");verify(caps).require("bi:dashboard:consume");
+        verify(resources,never()).require("dataset",9L,"query");verify(caps,never()).require("bi:dataset:query");
+        verifyNoInteractions(engine);
+    }
+    @Test void revokedConsumptionCannotReadEvenPublishedFieldMetadata() {
+        doThrow(new BiAccessException(403,"revoked")).when(resources).require("dataset",9L,"consume");
+        assertThrows(BiAccessException.class,()->service.datasetFieldsForDashboard(9L));
+        assertThrows(BiAccessException.class,()->service.datasetFieldEntitiesForDashboard(9L));verifyNoInteractions(fields,policies,engine);
+    }
     BiDatasetTableMapper datasets=mock(BiDatasetTableMapper.class);
     BiDatasetFieldMapper fields=mock(BiDatasetFieldMapper.class);
     DataSourceProvider sources=mock(DataSourceProvider.class);

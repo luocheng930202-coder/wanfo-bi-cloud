@@ -16,7 +16,7 @@ public final class DashboardPresentation {
         public PanelStyle(Boolean showTitle,String titleAlign){this(showTitle,titleAlign,null);}
     }
     private static String literal(String value,String fallback){if(value==null)return fallback;if(value.length()>20 || value.chars().anyMatch(c->Character.isISOControl(c)))throw new IllegalArgumentException("格式文本最多 20 字符且不能含控制字符");return value;}
-    public static NumberFormat normalize(NumberFormat f){if(f==null)return null;String mode=choice(f.mode(),"number",Set.of("number","percent"));String scale=choice(f.scale(),"none",Set.of("none","thousand","wan","million"));if(mode.equals("percent") && !scale.equals("none"))throw new IllegalArgumentException("百分比不能同时使用单位缩放");return new NumberFormat(mode,scale,bounded(f.decimals(),2,0,6),f.grouping()==null?true:f.grouping(),f.fixed()==null?true:f.fixed(),literal(f.prefix(),""),literal(f.suffix(),""),literal(f.nullText(),"—"));}
+    public static NumberFormat normalize(NumberFormat f){if(f==null)return null;String mode=choice(f.mode(),"number",Set.of("number","percent"));String scale=choice(f.scale(),"none",Set.of("none","thousand","wan","million","yi"));if(mode.equals("percent") && !scale.equals("none"))throw new IllegalArgumentException("百分比不能同时使用单位缩放");return new NumberFormat(mode,scale,bounded(f.decimals(),2,0,6),f.grouping()==null?true:f.grouping(),f.fixed()==null?true:f.fixed(),literal(f.prefix(),""),literal(f.suffix(),""),literal(f.nullText(),"—"));}
 
     public static List<MetricStyle> normalizeMetrics(List<MetricStyle> values){
         if(values==null)return List.of();if(values.size()>20)throw new IllegalArgumentException("最多 20 个度量样式");

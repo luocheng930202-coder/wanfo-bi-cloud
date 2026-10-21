@@ -1,6 +1,13 @@
 package com.wanfo.bi.domain.chart;
 import java.util.List;
 public class ChartAdvancedOptions {
+    public record MapFields(String province,String city,String county) { }
+    private MapFields mapFields;
+    private String mapValueMode;
+    public MapFields getMapFields(){return mapFields;}
+    public void setMapFields(MapFields value){mapFields=value;}
+    public String getMapValueMode(){return mapValueMode;}
+    public void setMapValueMode(String value){mapValueMode=value;}
     /** keep | zero | hide */
     private String nullMode;
     private Boolean smoothLine;

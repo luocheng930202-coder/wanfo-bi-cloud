@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Public boundary metadata only; verified-session access also supports shared dashboard viewers. */
 @Tag(name = "BI 行政区地图")
 @RestController
 @RequestMapping("/bi/geo")
@@ -26,7 +27,7 @@ public class GeoController
 
     @Operation(summary = "可用地图范围")
     @GetMapping("/scopes")
-    @BiPermission("bi:chart:list")
+    @BiPermission
     public List<Map<String, String>> scopes()
     {
         return geo.listScopes();
@@ -34,9 +35,11 @@ public class GeoController
 
     @Operation(summary = "GeoJSON 边界数据")
     @GetMapping("/{scope}")
-    @BiPermission("bi:chart:list")
+    @BiPermission
     public Object geo(@PathVariable String scope) throws Exception
     {
         return geo.load(scope);
     }
+    @GetMapping("/regions") @BiPermission
+    public com.wanfo.bi.service.GeoCatalog.Index regions(){return geo.regions();}
 }

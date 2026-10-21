@@ -79,7 +79,14 @@ public class ChartDefinitionService {
             if(q.getFilterTree()==null)q.setFilterTree(c.filterTree());
             else {var group=new QueryModel.FilterNode();group.setLogic("AND");group.setChildren(List.of(q.getFilterTree(),c.filterTree()));q.setFilterTree(group);}
         }
-        var result=new Definition(1,source.name(),c.type(),q,source.style(),source.advanced());validate(result);return result;
+        var style=source.style()==null?null:json.readValue(json.writeValueAsString(source.style()),ChartVisualStyle.class);
+        var outputs=metricOutputs(q);
+        // A reused alias must never inherit formatting from a different field or aggregation.
+        for(var original:source.query().getMetrics())for(var changed:q.getMetrics()){
+            if(metricOutput(original).equals(metricOutput(changed)) && (!Objects.equals(original.getField(),changed.getField()) || !Objects.equals(original.getAgg(),changed.getAgg())))outputs.remove(metricOutput(original));
+        }
+        if(style!=null){if(style.getMetrics()!=null)style.setMetrics(style.getMetrics().stream().filter(m->outputs.contains(m.key())).toList());if(style.getReferenceLines()!=null)style.setReferenceLines(style.getReferenceLines().stream().filter(r->outputs.contains(r.key())).toList());}
+        var result=new Definition(1,source.name(),c.type(),q,style,source.advanced());validate(result);return result;
     }
     private void validate(Definition d) {
         if(d==null || !Objects.equals(d.schemaVersion(),1) || d.name()==null || d.name().isBlank() || d.name().trim().length()>200
@@ -92,6 +99,10 @@ public class ChartDefinitionService {
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");
         if(q.getLimit()!=null && q.getLimit()>1000) throw new IllegalArgumentException("基础图表最多查询 1000 行");
         ChartTypes.validateShape(d.type(), q);
+        com.wanfo.bi.domain.chart.ChartStyleValidator.validateBindings(d.style(),metricOutputs(q));
+        var tableOutputs=new java.util.HashSet<>(metricOutputs(q));
+        for(var dim:q.getDimensions())tableOutputs.add(dim.getAlias()==null || dim.getAlias().isBlank()?dim.getField():dim.getAlias());
+        com.wanfo.bi.domain.chart.ChartStyleValidator.validateTableBindings(d.style(),tableOutputs,metricOutputs(q));
         if("pivot".equals(d.type()))validatePivot(d);
         Map<String,String> fieldTypes=new HashMap<>();
         for(var f:queries.datasetFields(q.getDatasetId()))fieldTypes.put((String)f.get("name"),String.valueOf(f.get("type")));
@@ -104,6 +115,10 @@ public class ChartDefinitionService {
                     throw new IllegalArgumentException("图形度量须为数值或计数；文本请使用明细表");
             }
         }
+    }
+    private static String metricOutput(QueryModel.Metric m){String agg=m.getAgg()==null?"NONE":m.getAgg().toUpperCase(Locale.ROOT);return m.getAlias()!=null&&!m.getAlias().isBlank()?m.getAlias():"NONE".equals(agg)?m.getField():agg.toLowerCase(Locale.ROOT)+"_"+m.getField();}
+    private static Set<String> metricOutputs(QueryModel q){
+        var keys=new HashSet<String>();for(var m:q.getMetrics())keys.add(metricOutput(m));return keys;
     }
     private void validatePivot(Definition d) {
         var a=d.advanced();
@@ -124,6 +139,14 @@ public class ChartDefinitionService {
         for(var f:rows)if(!dims.contains(f))throw new IllegalArgumentException("透视行维度未加入查询分组："+f);
         for(var f:cols)if(!dims.contains(f))throw new IllegalArgumentException("透视列维度未加入查询分组："+f);
         for(var f:rows)if(cols.contains(f))throw new IllegalArgumentException("字段不能同时作为行与列维度："+f);
+        var axes=new HashSet<String>();axes.addAll(rows);axes.addAll(cols);
+        if(axes.size()!=rows.size()+cols.size() || dims.size()!=q.getDimensions().size() || !axes.equals(dims))throw new IllegalArgumentException("透视分组须与行列维度完全一致且不重复");
+        var style=d.style();
+        if(style!=null){
+            boolean totals="tree".equals(style.getPivotHierarchy()) || Boolean.TRUE.equals(style.getPivotRowTotals()) || Boolean.TRUE.equals(style.getPivotColTotals()) || Boolean.TRUE.equals(style.getPivotRowSubtotals()) || Boolean.TRUE.equals(style.getPivotColSubtotals());
+            if(totals && q.getMetrics().stream().anyMatch(m->!Set.of("SUM","COUNT","MIN","MAX").contains(m.getAgg().toUpperCase(Locale.ROOT))))throw new IllegalArgumentException("当前结果汇总仅支持SUM、COUNT、MIN、MAX；AVG及去重计数需从明细重新聚合");
+            if(Boolean.TRUE.equals(style.getPivotRowSubtotals()) && rows.size()<2 || Boolean.TRUE.equals(style.getPivotColSubtotals()) && cols.size()<2)throw new IllegalArgumentException("小计须至少两个对应层级维度");
+        }
     }
     private BiChartDO row(Definition d) {
         validate(d);String encoded=json.writeValueAsString(d);
@@ -146,8 +169,28 @@ public class ChartDefinitionService {
         if(mapper.update(row)!=1)throw new BiAccessException(409,"图表已被其他人修改，请重新打开后保存");
         return Map.of("id",id,"version",request.version()+1);
     }
-    public Map<String,Object> data(Long id) throws Exception {
-        caps.require("bi:chart:query");var row=require(id,"query");return queries.query(decode(row).query());
+    public Map<String,Object> data(Long id) throws Exception {return data(id,null);}
+    public Map<String,Object> data(Long id,Map<String,Object> input) throws Exception {
+        caps.require("bi:chart:query");var row=require(id,"query");var d=decode(row);
+        if(!GeoMapQuery.isMap(d))return queries.query(d.query());
+        return mapData(d,input);
+    }
+    public record MapPreviewRequest(Definition definition,Map<String,Object> input) { }
+    public Map<String,Object> previewMap(MapPreviewRequest request) throws Exception {
+        caps.require("bi:dataset:query");var d=request.definition();
+        if(!GeoMapQuery.isMap(d))throw new IllegalArgumentException("该接口仅用于行政区地图");
+        var checked=new Definition(d.schemaVersion(),d.name()==null||d.name().isBlank()?"地图预览":d.name(),d.type(),d.query(),d.style(),d.advanced());validate(checked);
+        return mapData(checked,request.input());
+    }
+    private Map<String,Object> mapData(Definition d,Map<String,Object> input) throws Exception {
+        if(input!=null && input.keySet().stream().anyMatch(k->!"drills".equals(k)))throw new IllegalArgumentException("地图运行参数无效");
+        DashboardInteraction.validateDrillMap(input,Set.of("chart"));
+        var availableFields=queries.datasetFields(d.query().getDatasetId());Map<String,String> types=new HashMap<>();for(var f:availableFields)types.put((String)f.get("name"),String.valueOf(f.get("type")));
+        var path=GeoMapQuery.path(d,input,"chart",types);
+        var q=json.readValue(json.writeValueAsString(d.query()),QueryModel.class);GeoMapQuery.apply(d,q,path,types);
+        var result=new LinkedHashMap<String,Object>(queries.query(q));var context=new LinkedHashMap<String,Object>(GeoMapQuery.context(d,path));
+        String currentField=String.valueOf(context.get("field"));String label=availableFields.stream().filter(f->currentField.equals(f.get("name"))).map(f->f.get("showName") instanceof String text&&!text.isBlank()?text:currentField).findFirst().orElse(currentField);context.put("fieldLabel",label);
+        result.put("mapContext",context);return result;
     }
     @Transactional
     public Map<String,Object> delete(Long id) {

@@ -53,6 +53,30 @@ class ChartDefinitionTest {
         assertEquals(8,adjusted.style().getBarRadius());assertTrue(adjusted.style().getShowLabels());
         assertNotSame(q,adjusted.query());
     }
+    @Test void savedMapQueriesReaggregateAtChildFieldThroughTheSameViewerQueryService() throws Exception {
+        var q=new QueryModel();q.setDatasetId(9L);q.addDimension("province","province");q.addMetric("id","COUNT","n");
+        var a=new com.wanfo.bi.domain.chart.ChartAdvancedOptions();a.setMapFields(new com.wanfo.bi.domain.chart.ChartAdvancedOptions.MapFields("province","city",null));
+        var d=new ChartDefinitionService.Definition(1,"地图","map",q,null,a);
+        var row=stored();row.setDefinitionJson(json.writeValueAsString(d));
+        when(queries.datasetFields(9L)).thenReturn(List.of(Map.of("name","province","type","VARCHAR"),Map.of("name","city","type","VARCHAR"),Map.of("name","id","type","INT")));
+        when(queries.query(any())).thenReturn(Map.of("columns",List.of("city","n"),"rows",List.of()));
+        var result=service.data(7L,Map.of("drills",Map.of("chart",List.of(Map.of("field","province","value","浙江省")))));
+        var capture=org.mockito.ArgumentCaptor.forClass(QueryModel.class);verify(queries).query(capture.capture());
+        assertEquals("city",capture.getValue().getDimensions().get(0).getField());assertEquals(9L,capture.getValue().getDatasetId());
+        assertTrue(capture.getValue().getFilters().stream().anyMatch(f->"province".equals(f.getField()) && "浙江省".equals(f.getValue())));
+        assertEquals("330000",((Map<?,?>)result.get("mapContext")).get("scope"));
+        verify(resources).require("chart",7L,"query");verify(resources).require("dataset",9L,"query");
+    }
+    @Test void dashboardOverrideDoesNotCarryMetricFormatOntoReusedAlias() {
+        var d=definition();var old=d.query().getMetrics().get(0);
+        var key=old.getAlias()!=null?old.getAlias():old.getAgg().toLowerCase()+"_"+old.getField();
+        var style=new com.wanfo.bi.domain.chart.ChartVisualStyle();
+        style.setMetrics(List.of(new com.wanfo.bi.domain.chart.ChartVisualStyle.MetricStyle(key,null,"line","right","#3366FF",null)));
+        var source=new ChartDefinitionService.Definition(1,d.name(),d.type(),d.query(),style,null);
+        var config=new ChartDefinitionService.PanelConfig("bar",d.query().getDimensions(),List.of(new QueryModel.Metric(old.getField(),"SUM",key)),List.of(),100,null);
+        var adjusted=service.configureForDashboard(source,config);
+        assertTrue(adjusted.style().getMetrics().isEmpty());assertEquals(1,source.style().getMetrics().size());
+    }
     @Test void invalidSchemaCannotPersist(){
         var d=definition();assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,new ChartDefinitionService.Definition(2,d.name(),d.type(),d.query()),null)));verify(mapper,never()).insert(any());
     }
@@ -108,4 +132,17 @@ class ChartDefinitionTest {
     @Test void componentConfigUsesCurrentVisibleFieldCompiler(){doThrow(new IllegalArgumentException("hidden field")).when(queries).compileOnly(any());assertThrows(IllegalArgumentException.class,()->service.configureForDashboard(definition(),config(null)));}
     @Test void componentGraphShapeIsValidated(){var c=config(null);assertThrows(IllegalArgumentException.class,()->service.configureForDashboard(definition(),new ChartDefinitionService.PanelConfig("bar",List.of(),c.metrics(),c.orderBys(),10,null)));}
     @Test void oldPanelJsonStillUsesSharedSource(){var p=json.readValue("{\"key\":\"old\",\"chartId\":7,\"title\":\"Old\",\"x\":0,\"y\":0,\"w\":6,\"h\":4}",DashboardService.Panel.class);assertNull(p.chartConfig());assertFalse(p.locked());}
+    @Test void pivotRejectsUnsupportedTotalsAndHiddenGrouping() {
+        var q=new QueryModel();q.setDatasetId(9L);q.addDimension("city","city");q.addDimension("province","province");q.addMetric("id","AVG","value");q.setLimit(100);
+        when(queries.datasetFields(9L)).thenReturn(List.of(Map.of("name","city","type","VARCHAR"),Map.of("name","province","type","VARCHAR"),Map.of("name","id","type","INT")));
+        var advanced=new com.wanfo.bi.domain.chart.ChartAdvancedOptions();advanced.setPivotRowFields(List.of("city"));advanced.setPivotColFields(List.of("province"));
+        var style=new com.wanfo.bi.domain.chart.ChartVisualStyle();style.setPivotRowTotals(true);
+        var d=new ChartDefinitionService.Definition(1,"透视测试","pivot",q,style,advanced);
+        assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        q.getMetrics().get(0).setAgg("COUNT_DISTINCT");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        style.setPivotRowTotals(false);style.setPivotHierarchy("tree");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));style.setPivotHierarchy("grid");
+        q.getMetrics().get(0).setAgg("COUNT");style.setPivotRowSubtotals(true);assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        style.setPivotRowSubtotals(false);q.addDimension("id","id");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        verify(mapper,never()).insert(any());
+    }
 }

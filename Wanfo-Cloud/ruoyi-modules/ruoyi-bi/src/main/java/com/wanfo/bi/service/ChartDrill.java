@@ -11,10 +11,12 @@ public final class ChartDrill {
     private ChartDrill() {}
 
     public static boolean enabled(Definition definition) {
+        if(GeoMapQuery.isMap(definition))return GeoMapQuery.enabled(definition);
         return definition != null && fields(definition).size() >= 2;
     }
 
     public static List<String> fields(Definition definition) {
+        if(GeoMapQuery.isMap(definition))return GeoMapQuery.enabled(definition)?GeoMapQuery.fields(definition):List.of();
         if (definition == null || definition.advanced() == null) return List.of();
         List<String> drill = definition.advanced().getDrillFields();
         if (drill == null || drill.isEmpty()) return List.of();
@@ -26,6 +28,7 @@ public final class ChartDrill {
     }
 
     public static void validate(Definition d, Map<String, String> datasetFieldTypes) {
+        if(GeoMapQuery.isMap(d)){GeoMapQuery.validate(d,datasetFieldTypes);return;}
         if (d == null || d.advanced() == null) return;
         List<String> drill = d.advanced().getDrillFields();
         if (drill == null || drill.isEmpty() || drill.size() < 2) {

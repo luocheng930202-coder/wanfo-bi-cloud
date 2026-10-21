@@ -74,13 +74,8 @@ public class ChartQueryService
 
     // Only DashboardService calls this with a model resolved from the current published snapshot.
     Map<String,Object> queryForDashboard(QueryModel model) throws Exception {
-        caps.require("bi:dashboard:consume");
         if(model==null || model.getDatasetId()==null) throw new IllegalArgumentException("发布查询定义无效");
-        resources.require("dataset",model.getDatasetId(),"consume");
-        var dataset=datasetMapper.selectById(model.getDatasetId());
-        if(dataset==null || !"table".equals(dataset.getType())) throw new BiAccessException(403,"看板数据集不可用");
-        var source=datasourceProvider.getById(dataset.getDatasourceId());
-        if(source==null || !"0".equals(source.getStatus())) throw new BiAccessException(403,"看板数据源不可用");
+        requireConsumption(model.getDatasetId());
         try {
             var result=execute(model);
             result.remove("executedSql");result.remove("params");result.remove("datasetName");
@@ -153,6 +148,24 @@ public class ChartQueryService
     /**
      * 数据集可用字段清单（前端配置图表时的字段选择器数据源）。
      */
+    private void requireConsumption(Long id){
+        if(id==null || id<1)throw new IllegalArgumentException("发布数据集无效");
+        caps.require("bi:dashboard:consume");resources.require("dataset",id,"consume");
+        var dataset=datasetMapper.selectById(id);
+        if(dataset==null || !"table".equals(dataset.getType()))throw new BiAccessException(403,"看板数据集不可用");
+        var source=datasourceProvider.getById(dataset.getDatasourceId());
+        if(source==null || !"0".equals(source.getStatus()))throw new BiAccessException(403,"看板数据源不可用");
+    }
+    // Package-private: only published snapshot consumers may use this metadata path.
+    List<BiDatasetFieldDO> datasetFieldEntitiesForDashboard(Long id){
+        requireConsumption(id);var scope=policies.resolve(id);
+        return fieldMapper.selectByDatasetId(id).stream().filter(f->!scope.denied().contains(f.getOriginName())).toList();
+    }
+    List<Map<String,Object>> datasetFieldsForDashboard(Long id){
+        requireConsumption(id);var scope=policies.resolve(id);var result=new ArrayList<Map<String,Object>>();
+        for(var f:fieldMapper.selectByDatasetId(id))if(!scope.denied().contains(f.getOriginName())&&!scope.masked().contains(f.getOriginName()))result.add(Map.of("name",f.getOriginName(),"type",String.valueOf(f.getOriginType())));
+        return result;
+    }
     public List<BiDatasetFieldDO> datasetFieldEntities(Long datasetId)
     {
         requireQuery(datasetId);

@@ -100,6 +100,7 @@ public class ChartDefinitionService {
             if(d.advanced()!=null && d.advanced().getDrillFields()!=null && !d.advanced().getDrillFields().isEmpty())
                 throw new IllegalArgumentException("时间粒度暂不支持维度下钻，请清除下钻字段或恢复原始时间");
         }
+        preparePivotQuery(d);
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
         var dataset=datasets.selectById(q.getDatasetId());
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");
@@ -126,6 +127,12 @@ public class ChartDefinitionService {
     private static Set<String> metricOutputs(QueryModel q){
         var keys=new HashSet<String>();for(var m:q.getMetrics())keys.add(metricOutput(m));return keys;
     }
+    static void preparePivotQuery(Definition d) {
+        if(!"pivot".equals(d.type())){d.query().setPivot(null);return;}
+        var a=d.advanced();
+        if(a==null || a.getPivotRowFields()==null || a.getPivotColFields()==null)throw new IllegalArgumentException("透视表须配置行列维度");
+        d.query().setPivot(new QueryModel.Pivot(a.getPivotRowFields(),a.getPivotColFields()));
+    }
     private void validatePivot(Definition d) {
         var a=d.advanced();
         if(a==null || a.getPivotRowFields()==null || a.getPivotColFields()==null)
@@ -150,7 +157,7 @@ public class ChartDefinitionService {
         var style=d.style();
         if(style!=null){
             boolean totals="tree".equals(style.getPivotHierarchy()) || Boolean.TRUE.equals(style.getPivotRowTotals()) || Boolean.TRUE.equals(style.getPivotColTotals()) || Boolean.TRUE.equals(style.getPivotRowSubtotals()) || Boolean.TRUE.equals(style.getPivotColSubtotals());
-            if(totals && q.getMetrics().stream().anyMatch(m->!Set.of("SUM","COUNT","MIN","MAX").contains(m.getAgg().toUpperCase(Locale.ROOT))))throw new IllegalArgumentException("当前结果汇总仅支持SUM、COUNT、MIN、MAX；AVG及去重计数需从明细重新聚合");
+
             if(Boolean.TRUE.equals(style.getPivotRowSubtotals()) && rows.size()<2 || Boolean.TRUE.equals(style.getPivotColSubtotals()) && cols.size()<2)throw new IllegalArgumentException("小计须至少两个对应层级维度");
         }
     }

@@ -7,14 +7,14 @@
     <el-form-item label="数据列宽"><el-input-number :model-value="style.pivotColumnWidth || 120" :min="60" :max="400" :precision="0" @update:model-value="v=>style.pivotColumnWidth=v"/></el-form-item>
     <el-form-item label="透视表头背景"><el-color-picker :model-value="style.pivotHeaderBackground || '#F1F5F9'" @update:model-value="v=>style.pivotHeaderBackground=v || undefined"/></el-form-item>
     <el-form-item label="透视表头文字"><el-color-picker :model-value="style.pivotHeaderColor || '#303133'" @update:model-value="v=>style.pivotHeaderColor=v || undefined"/></el-form-item>
-    <el-divider content-position="left">当前结果汇总</el-divider>
-    <el-alert v-if="!canTotal" title="AVG及去重计数需从明细重新聚合；当前组合仅支持平铺表头，不开放小计/总计。原始分组结果仍正常展示。" type="info" :closable="false"/>
+    <el-divider content-position="left">服务端完整汇总</el-divider>
+
     <el-form-item label="行总计"><el-switch :model-value="!!style.pivotRowTotals" :disabled="!canTotal" @update:model-value="v=>style.pivotRowTotals=!!v"/></el-form-item>
     <el-form-item label="列总计"><el-switch :model-value="!!style.pivotColTotals" :disabled="!canTotal" @update:model-value="v=>style.pivotColTotals=!!v"/></el-form-item>
     <el-form-item label="行层级小计"><el-switch :model-value="!!style.pivotRowSubtotals" :disabled="!canTotal || rows<2" @update:model-value="v=>style.pivotRowSubtotals=!!v"/></el-form-item>
     <el-form-item label="列层级小计"><el-switch :model-value="!!style.pivotColSubtotals" :disabled="!canTotal || cols<2" @update:model-value="v=>style.pivotColSubtotals=!!v"/></el-form-item>
     <el-form-item label="汇总放在前面"><el-switch :model-value="!!style.pivotTotalsFirst" @update:model-value="v=>style.pivotTotalsFirst=!!v"/></el-form-item>
-    <p class="hint">SUM求和、COUNT累加分组计数、MIN/MAX取极值。树形父级节点也按此口径汇总。仅汇总已加载结果；查询达到行数上限可能不完整。小计需至少两层对应维度；更换为不支持的聚合时自动关闭汇总。</p>
+    <p class="hint">各层小计、总计均由服务端按当前筛选与权限范围从原始输入重新聚合，支持 AVG 和去重计数，不能把分组均值平均或把去重数相加。明细达到展示上限时会提示；汇总分组超限时关闭汇总。小计需至少两层对应维度。</p>
     <el-divider content-position="left">条件色阶</el-divider>
     <el-form-item label="启用透视色阶"><el-switch :model-value="!!style.pivotColorScale" @update:model-value="v=>style.pivotColorScale=!!v"/></el-form-item>
     <template v-if="style.pivotColorScale">

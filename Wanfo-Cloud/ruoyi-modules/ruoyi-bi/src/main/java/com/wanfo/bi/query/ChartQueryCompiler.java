@@ -22,6 +22,7 @@ public class ChartQueryCompiler {
     public Compiled compile(QueryModel model,String base,Map<String,String> types) {
         validate(model,types);
         TimeGapFill.validate(model);
+        PivotQueryPlan.validate(model);
         if(base==null || base.isBlank()) throw invalid("数据集查询定义为空");
         var predicate=FilterTreeCompiler.compile(model.getFilters(),model.getFilterTree(),types);
         List<String> select=new ArrayList<>(),group=new ArrayList<>();
@@ -38,6 +39,7 @@ public class ChartQueryCompiler {
             String a=agg(m),name=alias(m.getAlias(),defaultAlias(m));addAlias(name,aliases);
             if(a.equals("NONE") && aggregate) throw invalid("原始度量不能与聚合度量混用，请选择明确的聚合方式");
             String col=FilterTreeCompiler.quote(m.getField());
+            if(a.equals("AVG") && types.getOrDefault(m.getField(),"").trim().toUpperCase(Locale.ROOT).matches("(?:TINYINT|SMALLINT|MEDIUMINT|INTEGER|BIGINT|INT)(?:\\(\\d+\\))?(?: UNSIGNED)?"))col="CAST("+col+" AS DECIMAL(38,12))";
             String expr=switch(a) {case "NONE"->col;case "COUNT_DISTINCT"->"COUNT(DISTINCT "+col+")";default->a+"("+col+")";};
             select.add(expr+" AS "+FilterTreeCompiler.quote(name));
             if(a.equals("NONE") && !model.getDimensions().isEmpty()) group.add(col);

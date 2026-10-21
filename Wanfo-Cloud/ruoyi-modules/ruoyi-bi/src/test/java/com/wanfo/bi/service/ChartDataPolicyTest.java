@@ -10,6 +10,17 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class ChartDataPolicyTest {
+    @Test void pivotConsumerRunsOneSecuredStatementAndNeverExposesItsPredicates() throws Exception {
+        when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","A","admin")),Set.of(),Set.of()));
+        var q=model("city");q.addDimension("id","group_id");q.addMetric("id","AVG","mean");q.addMetric("id","COUNT_DISTINCT","buyers");
+        q.setPivot(new QueryModel.Pivot(List.of("city"),List.of("id")));q.addFilter("id","GTE",0);
+        var raw=new QueryResult();raw.setColumns(List.of("city","group_id","mean","buyers","__bi_pivot_row_depth","__bi_pivot_col_depth"));raw.setRows(List.of(Map.of("__bi_pivot_row_depth",0,"__bi_pivot_col_depth",0,"mean",new java.math.BigDecimal("1.5"),"buyers",2L)));
+        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(raw);
+        var result=service.queryForDashboard(q);
+        verify(engine,times(1)).queryWithParams(any(),contains("UNION ALL"),eq(List.of("A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO)),eq(4004));
+        assertEquals(List.of("city","group_id","mean","buyers"),result.get("columns"));assertTrue(result.containsKey("pivotTotals"));assertFalse(result.containsKey("executedSql"));assertFalse(result.containsKey("params"));assertFalse(result.containsKey("datasetName"));
+        verify(resources).require("dataset",9L,"consume");verify(caps,never()).require("bi:dataset:query");
+    }
     @Test void publishedMetadataUsesConsumeRightsAndStillHidesDeniedOrMaskedDrillFields() {
         when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(),Set.of("city"),Set.of("id")));
         assertTrue(service.datasetFieldsForDashboard(9L).isEmpty());

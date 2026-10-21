@@ -106,7 +106,7 @@ export function validateChartQueryShape(
 
 export function applyTypeDefaults(
   type: ChartType,
-  dimensions: { field: string; alias?: string; timeGrain?:import('@/api/bi/chart').TimeGrain|null }[],
+  dimensions: import('@/api/bi/chart').QueryDimension[],
   metrics: { field: string; agg: string; alias?: string }[]
 ): { dimensions: typeof dimensions; metrics: typeof metrics } {
   let dims = dimensions

@@ -41,6 +41,8 @@ export function buildChartPreviewOption(params: {
   const mergedAppearance = chartAppearance(style, appearance)
   const metrics = definition.query.metrics
   const dimField = definition.query.dimensions[0]?.alias || definition.query.dimensions[0]?.field
+  const filledPeriods=new Set(result.timeFill?.periods||[])
+  const filledRow=(row:Record<string,unknown>)=>!!dimField && filledPeriods.has(String(row[dimField]))
   const categories = dimField ? result.rows.map(r => String(r[dimField] ?? '空值')) : result.rows.map((_, i) => String(i + 1))
   const visualTheme=resolveBiTheme(mergedAppearance)
   const textColor = visualTheme.text
@@ -62,7 +64,8 @@ export function buildChartPreviewOption(params: {
         const key = metric ? metricResultKey(metric) : ''
         const raw = isPieLike(type) ? item.value : item.dataIndex != null ? result.rows[item.dataIndex]?.[key] : item.value
         const label = key ? labels[key] || key : ''
-        return `${String(item.name ?? '')} · ${label}: ${String(formatMetric(raw, appearance, formatFor(key)))}`
+        const synthetic=item.dataIndex!=null && result.rows[item.dataIndex] && filledRow(result.rows[item.dataIndex])
+        return `${String(item.name ?? '')} · ${label}: ${String(formatMetric(raw, appearance, formatFor(key)))}${synthetic?'（缺失周期补'+(result.timeFill?.mode==='zero'?'零':'空值')+'，非实际记录）':''}`
       })
       .join('\n')
   }
@@ -209,7 +212,7 @@ export function buildChartPreviewOption(params: {
   const keys = metrics.map(metricResultKey)
   const valueMatrix = result.rows.map(row =>
     keys.map(key => {
-      const v = normalizeValue(row[key], key)
+      const v = filledRow(row) && result.timeFill?.mode==='null'?null:normalizeValue(row[key], key)
       if (v == null) return null
       const color = metricColor(row[key], key, metricStyles)
       return color ? { value: v, itemStyle: { color } } : v
@@ -226,15 +229,16 @@ export function buildChartPreviewOption(params: {
       const yAxisIndex=comboMetricAxis(style,key,mi)==='left'?0:1
       return seriesType==='bar'
         ? { name, type: 'bar' as const, data, yAxisIndex, barMaxWidth:style?.barMaxWidth??44, itemStyle:{borderRadius:[style?.barRadius??5,style?.barRadius??5,0,0]},label:{show:style?.showLabels??false,position:'top' as const} }
-        : { name, type: 'line' as const, data, yAxisIndex, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6,lineStyle:{width:style?.lineWidth??3},label:{show:style?.showLabels??false,position:'top' as const} }
+        : { name, type: 'line' as const, connectNulls:false, data, yAxisIndex, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6,lineStyle:{width:style?.lineWidth??3},label:{show:style?.showLabels??false,position:'top' as const} }
     }
     if (type === 'line' || type === 'area') {
-      return { name, type: 'line' as const, data, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6, lineStyle:{width:style?.lineWidth??3}, label:{show:style?.showLabels??false,position:'top' as const}, areaStyle: type === 'area' ? {opacity:style?.areaOpacity??0.18} : undefined }
+      return { name, type: 'line' as const, connectNulls:false, data, smooth: smoothDefault, showSymbol:style?.showPoints??categories.length<=20, symbolSize:style?.symbolSize??6, lineStyle:{width:style?.lineWidth??3}, label:{show:style?.showLabels??false,position:'top' as const}, areaStyle: type === 'area' ? {opacity:style?.areaOpacity??0.18} : undefined }
     }
     const stack = type === 'stack' || type === 'percent' ? 'total' : undefined
     let seriesData = data
     if (type === 'percent') {
-      seriesData = result.rows.map((_, rowIdx) => {
+      seriesData = result.rows.map((row, rowIdx) => {
+        if(filledRow(row) && result.timeFill?.mode==='null')return null
         const values = keys.map((_, k) => readNumber(result.rows[rowIdx][keys[k]]) ?? 0)
         const sum = values.reduce((a, b) => a + b, 0) || 1
         const v = values[mi] / sum * 100
@@ -248,7 +252,7 @@ export function buildChartPreviewOption(params: {
   }).map((series,index)=>{
     const key=keys[index],setting=style?.metrics?.find(m=>m.key===key)
     const lines=['bar','hbar','line','area','stack','combo'].includes(type)?(style?.referenceLines || []).filter(r=>r.key===key):[]
-    const values=result.rows.map(r=>normalizeValue(r[key],key)).filter((v):v is number=>v!=null)
+    const values=result.rows.filter(r=>!filledRow(r)).map(r=>normalizeValue(r[key],key)).filter((v):v is number=>v!=null)
     const markData=lines.flatMap((line,lineIndex)=>{
       if(line.kind!=='fixed' && !values.length)return []
       const value=line.kind==='fixed'?line.value:line.kind==='min'?Math.min(...values):line.kind==='max'?Math.max(...values):values.reduce((a,b)=>a+b,0)/values.length

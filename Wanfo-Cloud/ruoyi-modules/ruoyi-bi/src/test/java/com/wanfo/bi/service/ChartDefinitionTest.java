@@ -55,13 +55,13 @@ class ChartDefinitionTest {
     }
     @Test void calendarGrainRoundTripsAndDashboardOverrideIsIndependent() {
         var d=definition();d.query().getDimensions().get(0).setField("event_time");
-        d.query().getDimensions().get(0).setTimeGrain("month");
+        d.query().getDimensions().get(0).setTimeGrain("month");d.query().getDimensions().get(0).setTimeFill("zero");
         doAnswer(c->{((BiChartDO)c.getArgument(0)).setId(7L);return 1;}).when(mapper).insert(any());
         service.create(new ChartDefinitionService.SaveRequest(null,d,null));
         var capture=org.mockito.ArgumentCaptor.forClass(BiChartDO.class);verify(mapper).insert(capture.capture());
         var row=capture.getValue();row.setId(7L);row.setVersion(0);when(mapper.get(7L)).thenReturn(row);
         var restored=(ChartDefinitionService.Definition)service.detail(7L).get("definition");
-        assertEquals("month",restored.query().getDimensions().get(0).getTimeGrain());
+        assertEquals("month",restored.query().getDimensions().get(0).getTimeGrain());assertEquals("zero",restored.query().getDimensions().get(0).getTimeFill());
         var config=new ChartDefinitionService.PanelConfig("line",restored.query().getDimensions(),restored.query().getMetrics(),List.of(),100,null);
         var adjusted=service.configureForDashboard(restored,config);
         assertEquals("month",adjusted.query().getDimensions().get(0).getTimeGrain());

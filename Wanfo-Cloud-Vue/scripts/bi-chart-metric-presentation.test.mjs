@@ -11,6 +11,19 @@ const {formatMetric,resolveChartMetricFormat,buildChartPreviewOption,buildPivotD
 const money={mode:'number',scale:'wan',decimals:2,grouping:true,fixed:true,prefix:'',suffix:'元',nullText:'无数据'}
 const ratio={...money,mode:'percent',scale:'none',suffix:''}
 const count={...money,scale:'none',decimals:0,suffix:'件'}
+
+test('synthetic null gaps stay disconnected despite global zero mode and synthetic zeros do not alter reference averages',()=>{
+  const fixture=chart('line',{referenceLines:[{key:'sales',kind:'average',name:'平均',color:'#123456',lineType:'solid'}]})
+  fixture.definition.advanced={nullMode:'zero'}
+  fixture.result.rows=[{category:'A',sales:10},{category:'B',sales:null},{category:'C',sales:20}]
+  fixture.result.timeFill={mode:'null',status:'complete',sourceRows:2,addedRows:1,periods:['B']}
+  let option=fixture.option();assert.deepEqual(option.series[0].data,[10,null,20]);assert.equal(option.series[0].connectNulls,false)
+  assert.match(option.tooltip.formatter([{seriesIndex:0,dataIndex:1,name:'B',value:null}]),/非实际记录/)
+  fixture.result.rows[1].sales=0;fixture.result.timeFill.mode='zero';option=fixture.option()
+  assert.deepEqual(option.series[0].data,[10,0,20]);assert.equal(option.series[0].markLine.data[0].yAxis,15)
+  fixture.definition.type='percent';option=buildChartPreviewOption({type:'percent',definition:fixture.definition,result:{...fixture.result,timeFill:{...fixture.result.timeFill,mode:'null'}},labels:{},formatFor:()=>undefined})
+  assert.equal(option.series[0].data[1],null)
+})
 function chart(type='combo',style={}){
   const definition={schemaVersion:1,name:'零售',type,style,query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'amount',agg:'SUM',alias:'sales'},{field:'rate',agg:'AVG',alias:'rate'}]}}
   const result={columns:['category','sales','rate'],rows:[{category:'A',sales:10000,rate:0.25},{category:'B',sales:30000,rate:null}],rowCount:2,costMs:1}

@@ -75,7 +75,7 @@ async function handleAccountCommand(command: string) {
 </script>
 
 <style scoped>
-.bi-workspace{--bi-content-height:calc(100dvh - 64px);--el-color-primary:#3563e9;--el-color-primary-light-3:#7292f0;--el-color-primary-light-5:#9ab1f4;--el-color-primary-light-7:#c2d0f8;--el-color-primary-light-8:#d7e0fb;--el-color-primary-light-9:#edf2ff;--el-color-primary-dark-2:#2a4fba;--el-border-radius-base:6px;--bi-surface:#fff;--bi-background:#f6f8fc;--bi-text:#182230;--bi-muted:#667085;--bi-border:#e6ebf3;display:flex;min-height:100dvh;color:var(--bi-text);background:var(--bi-background);font-family:Inter,'PingFang SC','Microsoft YaHei',sans-serif}
+.bi-workspace{--bi-content-height:calc(100dvh - 64px);--el-color-primary:#3563e9;--el-color-primary-light-3:#7292f0;--el-color-primary-light-5:#9ab1f4;--el-color-primary-light-7:#c2d0f8;--el-color-primary-light-8:#d7e0fb;--el-color-primary-light-9:#edf2ff;--el-color-primary-dark-2:#2a4fba;--el-border-radius-base:6px;--bi-surface:#fff;--bi-background:#f6f8fc;--bi-text:#182230;--bi-muted:#667085;--bi-border:#e6ebf3;display:flex;min-height:100dvh;color:var(--bi-text);background:var(--bi-background);font-family:var(--bi-font)}
 .bi-navigation{padding:0;margin:0;line-height:normal;font-family:inherit;border-radius:0;width:190px;flex-shrink:0;background:var(--bi-surface);border-right:1px solid var(--bi-border);position:fixed;inset:0 auto 0 0;z-index:20;display:flex;flex-direction:column}
 .bi-brand{height:64px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--bi-border);font-weight:700;font-size:20px;color:var(--bi-text);white-space:nowrap}
 .bi-brand>.el-icon{font-size:30px;color:var(--el-color-primary)}
@@ -95,3 +95,5 @@ async function handleAccountCommand(command: string) {
 @media(max-width:700px){.bi-workspace{--bi-content-height:calc(100dvh - 106px);display:block}.bi-navigation{width:auto;position:static;border-right:0}.bi-brand,.bi-admin-link{display:none}.bi-navigation nav{display:flex;overflow-x:auto;padding:6px 12px;border-bottom:1px solid var(--bi-border)}.bi-nav-link{white-space:nowrap;gap:7px;min-height:38px;padding:0 12px;margin:0}.bi-nav-link>.el-icon{font-size:17px}.bi-nav-link.active:before{display:none}.bi-workspace-main{margin-left:0}.bi-topbar{height:54px;padding:0 16px;justify-content:space-between}.bi-mobile-brand{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700}.bi-mobile-brand>.el-icon{color:var(--el-color-primary);font-size:22px}.bi-workspace :deep(.app-main){min-height:calc(100dvh - 106px)}}
 @media(prefers-reduced-motion:reduce){.bi-nav-link{transition:none}}
 </style>
+
+<style lang="scss" src="../../views/bi/components/BiTheme.scss"></style>

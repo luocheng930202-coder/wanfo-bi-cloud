@@ -4,7 +4,7 @@ import ts from 'typescript'
 import { test } from 'node:test'
 
 let bundle=''
-for(const file of ['biPresentation.ts','biChartTypes.ts','biChartPresentation.ts','biEchartsPreview.ts','biChartStylePresets.ts']) {
+for(const file of ['biTheme.ts','biPresentation.ts','biChartTypes.ts','biChartPresentation.ts','biEchartsPreview.ts','biChartStylePresets.ts']) {
   const source=(await fs.readFile(new URL('../src/utils/'+file,import.meta.url),'utf8')).split('\n').filter(line=>!line.startsWith('import ')).join('\n')
   bundle+=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText+'\n'
 }
@@ -42,4 +42,41 @@ test('presets preserve titles and legends while replacing incompatible shape set
   assert.deepEqual(option('ring',restored).series[0].radius,['52%','70%'])
   applyChartStylePreset(style)
   assert.equal(style.pieInnerRadius,undefined);assert.equal(style.title,'用户标题')
+})
+
+test('funnel layout and formatted labels preserve business stage order rather than sorting by value',()=>{
+  const definition={schemaVersion:1,name:'流程',type:'funnel',style:{funnelAlign:'left',funnelGap:8,funnelMinSize:10,funnelMaxSize:90,funnelLabelPosition:'inside',funnelLabelContent:'nameValue'},query:{datasetId:1,dimensions:[{field:'stage'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}}
+  const rows=[{stage:'申请',value:20},{stage:'审核',value:100},{stage:'完成',value:50}]
+  const o=buildChartPreviewOption({type:'funnel',definition,result:{columns:['stage','value'],rows,rowCount:3,costMs:1},labels:{},formatFor:()=>({mode:'number',scale:'none',decimals:0,grouping:true,fixed:true,prefix:'',suffix:'人',nullText:'—'})})
+  const s=o.series[0];assert.equal(s.sort,'none');assert.deepEqual(s.data.map(d=>d.name),['申请','审核','完成'])
+  assert.equal(s.funnelAlign,'left');assert.equal(s.gap,8);assert.equal(s.minSize,'10%');assert.equal(s.maxSize,'90%')
+  assert.equal(s.label.formatter({name:'申请',value:20}),'申请\n20人');assert.equal(s.labelLine.show,false)
+  assert.throws(()=>option('funnel',{funnelMinSize:70,funnelMaxSize:50}),/最小宽度/)
+})
+
+test('radar styling changes grids and fills while keeping negative measurements inside indicator ranges',()=>{
+  const definition={schemaVersion:1,name:'雷达',type:'radar',style:{radarShape:'circle',radarSplitNumber:4,radarShowSplitArea:false,radarShowAxisName:false,lineWidth:4,areaOpacity:0.25,showPoints:false},query:{datasetId:1,dimensions:[{field:'name'}],metrics:['a','b','c'].map(field=>({field,agg:'SUM',alias:field}))}}
+  const rows=[{name:'甲',a:-10,b:0,c:5},{name:'乙',a:20,b:0,c:-2}]
+  const o=buildChartPreviewOption({type:'radar',definition,result:{columns:[],rows,rowCount:2,costMs:1},labels:{},formatFor:()=>undefined})
+  assert.equal(o.radar.shape,'circle');assert.equal(o.radar.splitNumber,4);assert.equal(o.radar.splitArea.show,false);assert.equal(o.radar.axisName.show,false)
+  assert.ok(o.radar.indicator[0].min<-10);assert.ok(o.radar.indicator[0].max>20);assert.equal(o.radar.indicator[1].max,1)
+  assert.equal(o.series[0].symbol,'none');assert.equal(o.series[0].areaStyle.opacity,0.25);assert.equal(o.series[0].lineStyle.width,4)
+  assert.deepEqual(o.series[0].data[0].value,[-10,0,5])
+})
+
+test('scatter point appearance and coordinate labels do not transform numeric point values',()=>{
+  const definition={schemaVersion:1,name:'分布',type:'scatter',style:{scatterSymbol:'diamond',scatterSize:18,scatterOpacity:0.45,scatterBorderWidth:2,scatterBorderColor:'#3366FF',showLabels:true,scatterLabelContent:'coordinates'},query:{datasetId:1,dimensions:[{field:'name'}],metrics:[{field:'x',agg:'SUM',alias:'x'},{field:'y',agg:'SUM',alias:'y'}]}}
+  const rows=[{name:'客户甲',x:-10,y:20}]
+  const o=buildChartPreviewOption({type:'scatter',definition,result:{columns:[],rows,rowCount:1,costMs:1},labels:{},formatFor:()=>undefined})
+  const s=o.series[0];assert.equal(s.symbol,'diamond');assert.equal(s.symbolSize,18);assert.equal(s.itemStyle.opacity,0.45)
+  assert.equal(s.itemStyle.borderWidth,2);assert.equal(s.itemStyle.borderColor,'#3366FF');assert.equal(s.label.formatter({dataIndex:0}),'-10, 20')
+  assert.deepEqual(s.data[0],[-10,20,'客户甲']);assert.match(o.tooltip.formatter({dataIndex:0}),/客户甲/)
+})
+
+test('specialized presets reset other shapes but preserve metric formats, references and chart chrome',()=>{
+  for(const type of ['funnel','radar','scatter'])assert.equal(chartStylePresets(type).length,2)
+  const style={title:'保留标题',metrics:[{key:'value',format:{mode:'percent'}}],referenceLines:[{key:'value'}],funnelGap:20,radarShape:'circle',scatterSize:40}
+  applyChartStylePreset(style,chartStylePresets('scatter')[1])
+  assert.equal(style.funnelGap,undefined);assert.equal(style.radarShape,undefined);assert.equal(style.scatterSize,6)
+  assert.equal(style.title,'保留标题');assert.equal(style.metrics[0].format.mode,'percent');assert.equal(style.referenceLines.length,1)
 })

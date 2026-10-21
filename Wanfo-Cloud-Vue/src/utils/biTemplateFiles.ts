@@ -26,7 +26,7 @@ function numberFormat(v:unknown):NumberFormat {
   const n=object(v,['mode','scale','decimals','grouping','fixed','prefix','suffix','nullText'],'数值格式')
   if(n.mode==='percent' && n.scale!=='none')throw Error('百分比不能同时缩放单位')
   if([n.prefix,n.suffix,n.nullText].some(v=>typeof v==='string' && /[\u0000-\u001f\u007f-\u009f]/.test(v)))throw Error('格式文本不能包含控制字符')
-  return {mode:choice(n.mode,['number','percent'],'数值模式'),scale:choice(n.scale,['none','thousand','wan','million'],'单位'),decimals:integer(n.decimals,0,6,'小数位'),grouping:bool(n.grouping,'千分位'),fixed:bool(n.fixed,'补零'),prefix:text(n.prefix,20,'前缀',true),suffix:text(n.suffix,20,'后缀',true),nullText:text(n.nullText,20,'空值文本',true)}
+  return {mode:choice(n.mode,['number','percent'],'数值模式'),scale:choice(n.scale,['none','thousand','wan','million','yi'],'单位'),decimals:integer(n.decimals,0,6,'小数位'),grouping:bool(n.grouping,'千分位'),fixed:bool(n.fixed,'补零'),prefix:text(n.prefix,20,'前缀',true),suffix:text(n.suffix,20,'后缀',true),nullText:text(n.nullText,20,'空值文本',true)}
 }
 function style(v:unknown):PanelStyle {
   const s=object(v,['showTitle','titleAlign','numberFormat'],'组件样式')

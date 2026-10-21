@@ -24,10 +24,10 @@ export const CHART_CAPABILITIES: Record<ChartType, ChartCapabilities> = {
   radar: { ...circular, dimension: '对比对象', metric: '雷达轴指标', hint: '一个对象维度，1～5 个指标；每个指标形成一个雷达轴，注意量纲。' },
   scatter: { ...axis, dimension: '点标识 / 分组（可选）', metric: '坐标指标', hint: '两个数值指标分别映射 X、Y 轴；可选一个维度标识数据点。' },
   gauge: { legend: false, axis: false, smooth: false, dimension: null, metric: '仪表数值', hint: '仅一个聚合指标，不需要维度；仪表展示汇总结果。' },
-  combo: { ...axis, smooth: true, dimension: '共享分类 / 时间', metric: '柱线指标', hint: '2～5 个指标；当前首指标为左轴柱，其余指标为右轴折线。' },
+  combo: { ...axis, smooth: true, dimension: '共享分类 / 时间', metric: '柱线指标', hint: '2～5 个指标；可在样式页逐指标配置柱线图形、左右轴与数字格式。' },
   table: { legend: false, axis: false, smooth: false, dimension: null, metric: '展示字段', hint: '明细展示可选择原始字段；需要汇总时显式选择聚合方式。' },
   pivot: { legend: false, axis: false, smooth: false, dimension: null, metric: '汇总指标', hint: '分别设置行、列维度及聚合指标；不要重复选择同一行列字段。' },
-  map: { legend: false, axis: false, smooth: false, dimension: '地区维度', metric: '区域数值', hint: '一个地区维度和一个数值指标；当前仅支持中国省级行政区。' }
+  map: { legend: false, axis: false, smooth: false, dimension: '地区维度', metric: '区域数值', hint: '一个地区维度和一个数值指标；支持省市县范围，在高级页绑定层级字段。' }
 }
 
 export function allowedAggregations(fieldType: string, type: ChartType): string[] {

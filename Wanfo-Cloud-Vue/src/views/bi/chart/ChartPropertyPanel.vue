@@ -15,7 +15,7 @@
           </template>
           <el-form-item v-else-if="capabilities.dimension" :label="capabilities.dimension">
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
-            <small v-if="definition.type==='map'" class="hint">地区维度取值须与省级名称一致（如 广东省、北京市、内蒙古自治区）。</small>
+            <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
           <div class="section-head"><span>{{ capabilities.metric }}</span><el-button v-if="definition.type==='table'" link @click="emit('raw-table')">原始字段</el-button><el-button v-if="definition.type==='scatter' && definition.query.metrics.length<2" link @click="emit('ensure-scatter')">补齐散点轴</el-button><el-button link :disabled="metricAddDisabled(definition.type, definition.query.metrics.length)" @click="emit('add-metric')">添加</el-button></div>
           <div v-for="(metric,index) in definition.query.metrics" :key="index" class="metric-row">
@@ -33,6 +33,7 @@
       </el-tab-pane>
       <el-tab-pane label="样式" name="style">
         <el-form label-position="top" :disabled="disabled">
+          <ChartMetricStyleEditor :definition="definition" :labels="labels"/>
           <section v-if="presets.length" class="style-presets" aria-label="图表样式预设">
             <h4>推荐样式</h4><button v-for="preset in presets" :key="preset.id" type="button" :disabled="disabled" :title="preset.description" @click="applyPreset(preset)"><strong>{{ preset.name }}</strong><small>{{ preset.description }}</small></button>
             <el-button link :disabled="disabled" @click="resetShape">恢复图形默认</el-button>
@@ -44,7 +45,10 @@
           <el-form-item v-if="definition.type!=='table' && definition.type!=='pivot'" label="配色"><el-select v-model="styleModel.palette" style="width:100%"><el-option value="business" label="商务"/><el-option value="ocean" label="海洋"/><el-option value="warm" label="暖色"/></el-select></el-form-item>
           <el-form-item v-if="capabilities.axis && definition.type!=='scatter'" label="轴标签旋转"><el-input-number v-model="styleModel.axisLabelRotate" :min="0" :max="90" :precision="0" placeholder="自动"/></el-form-item>
           <el-divider v-if="presets.length" content-position="left">图形细节</el-divider>
-          <el-form-item v-if="barType || lineType || pieType" label="显示数据标签"><el-switch :model-value="styleModel.showLabels??pieType" @update:model-value="v=>styleModel.showLabels=!!v"/></el-form-item>
+          <el-form-item v-if="barType || lineType || pieType || ['funnel','scatter'].includes(definition.type)" label="显示数据标签"><el-switch :model-value="styleModel.showLabels??(pieType || definition.type==='funnel')" @update:model-value="v=>styleModel.showLabels=!!v"/></el-form-item>
+          <ChartSpecializedStyleEditor :definition="definition"/>
+          <ChartTableStyleEditor :definition="definition" :labels="labels"/>
+          <ChartPivotStyleEditor :definition="definition"/>
           <template v-if="barType">
             <el-form-item label="柱条最大宽度"><el-input-number v-model="styleModel.barMaxWidth" :min="4" :max="120" :precision="0" placeholder="默认 44"/></el-form-item>
             <el-form-item v-if="!['stack','percent'].includes(definition.type)" label="柱条圆角"><el-input-number v-model="styleModel.barRadius" :min="0" :max="30" :precision="0" placeholder="默认 5"/></el-form-item>
@@ -72,12 +76,11 @@
       </el-tab-pane>
       <el-tab-pane label="高级" name="advanced">
         <el-form label-position="top" :disabled="disabled">
+          <ChartReferenceLineEditor v-if="['bar','hbar','line','area','stack','combo'].includes(definition.type)" :definition="definition" :labels="labels"/>
           <el-form-item label="空值处理"><el-select v-model="advancedModel.nullMode" style="width:100%"><el-option value="keep" label="保持为空"/><el-option value="zero" label="置为 0"/><el-option value="hide" label="隐藏类目（饼图等）"/></el-select></el-form-item>
           <el-form-item v-if="capabilities.smooth" label="折线平滑"><el-switch v-model="advancedModel.smoothLine"/></el-form-item>
           <template v-if="definition.type==='map'">
-            <el-form-item label="地图范围">
-              <el-select v-model="advancedModel.mapScope" style="width:100%"><el-option value="china-provinces" label="中国省级行政区"/></el-select>
-            </el-form-item>
+            <ChartMapSettings :definition="definition" :fields="fields"/>
           </template>
           <el-form-item v-if="supportsDrill(definition.type)" label="下钻维度（2～5）">
             <el-select v-model="drillFields" multiple filterable collapse-tags :max-collapse-tags="3" style="width:100%">
@@ -98,11 +101,19 @@ import type { ChartDefinition, Field } from '@/api/bi/chart'
 import type { DatasetSummary } from '@/api/bi/dataset'
 import FilterTreeEditor from './FilterTreeEditor.vue'
 import ChartTypePicker from './ChartTypePicker.vue'
+import ChartMetricStyleEditor from './ChartMetricStyleEditor.vue'
+import ChartReferenceLineEditor from './ChartReferenceLineEditor.vue'
+import ChartPivotStyleEditor from './ChartPivotStyleEditor.vue'
+import ChartTableStyleEditor from './ChartTableStyleEditor.vue'
+import ChartSpecializedStyleEditor from './ChartSpecializedStyleEditor.vue'
+import ChartMapSettings from './ChartMapSettings.vue'
+import {metricResultKey} from '@/utils/biEchartsPreview'
 import { allowsClearDimension, metricAddDisabled, supportsDrill } from '@/utils/biChartTypes'
-import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation } from '@/utils/biChartPresentation'
+import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,retainChartMetricBindings } from '@/utils/biChartPresentation'
 const props = defineProps<{ definition: ChartDefinition; fields: Field[]; datasets: DatasetSummary[]; labels: Record<string,string>; disabled?: boolean; previewing?: boolean; canPreview?: boolean; fieldLabel: (n: string) => string }>()
 const emit = defineEmits<{ (e:'type-changed'):void; (e:'dataset-changed', id:number):void; (e:'set-dimension', field:string):void; (e:'add-metric'):void; (e:'remove-metric', index:number):void; (e:'set-sort', field:string):void; (e:'raw-table'):void; (e:'ensure-scatter'):void; (e:'pivot-fields'):void; (e:'preview'):void }>()
 const tab = ref('data')
+watch(()=>props.definition.query.metrics.map(m=>({...m})),(current,previous)=>retainChartMetricBindings(props.definition.style,current,previous))
 const barType=computed(()=>BAR_TYPES.includes(props.definition.type))
 const lineType=computed(()=>LINE_TYPES.includes(props.definition.type))
 const pieType=computed(()=>PIE_TYPES.includes(props.definition.type))
@@ -143,10 +154,10 @@ watch(() => props.definition.query.dimensions[0]?.field, (dim) => {
 })
 </script>
 <style scoped>
-.style-presets{margin-bottom:18px;padding:12px;background:#f6f8fc;border-radius:8px}.style-presets h4{margin:0 0 8px}.style-presets>button:not(.el-button){width:100%;text-align:left;background:#fff;border:1px solid #dce4f2;border-radius:6px;padding:10px;margin-bottom:8px;cursor:pointer}.style-presets strong,.style-presets small{display:block}.style-presets small{margin-top:4px;line-height:1.5;color:#667085}.style-presets>button:hover{border-color:#3370ff}.property-panel{height:100%;background:#fff;border-left:1px solid #e7ebf2}
+.style-presets{margin-bottom:18px;padding:12px;background:var(--bi-soft,#f8fafc);border-radius:8px}.style-presets h4{margin:0 0 8px}.style-presets>button:not(.el-button){width:100%;text-align:left;background:var(--bi-surface,#fff);border:1px solid var(--bi-border,#dce4f2);border-radius:6px;padding:10px;margin-bottom:8px;cursor:pointer}.style-presets strong,.style-presets small{display:block}.style-presets small{margin-top:4px;line-height:1.5;color:#667085}.style-presets>button:hover{border-color:#3370ff}.property-panel{height:100%;background:var(--bi-surface,#fff);border-left:1px solid var(--bi-border,#e7ebf2)}
 .panel-tabs :deep(.el-tabs__header){margin:0;padding:0 12px}
 .panel-tabs :deep(.el-tabs__content){padding:12px;max-height:calc(var(--bi-content-height,100vh) - 220px);overflow:auto}
 .section-head{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
 .metric-row{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
-.hint{display:block;margin-top:6px;color:#909399;font-size:12px;line-height:1.4}
+.hint{display:block;margin-top:6px;color:var(--bi-muted,#667085);font-size:12px;line-height:1.4}
 </style>

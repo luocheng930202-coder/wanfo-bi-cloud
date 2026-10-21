@@ -10,7 +10,9 @@ geoSrc = geoSrc.replace(/export async function fetchMapGeo[\s\S]*?^}/m, '').repl
 let previewSrc = await fs.readFile(new URL('../src/utils/biMapPreview.ts', import.meta.url), 'utf8')
 previewSrc = previewSrc.split('\n').filter(line => !line.includes('@/')).join('\n')
 const metricStub = `export function metricResultKey(m){return m.alias || (m.agg==='NONE'?m.field:m.agg.toLowerCase()+'_'+m.field)}`
-const bundle = metricStub + '\n' + ts.transpileModule(geoSrc, opts).outputText + '\n' + ts.transpileModule(previewSrc, opts).outputText
+const regionSource=(await fs.readFile(new URL('../src/utils/biMapRegions.ts',import.meta.url),'utf8')).split('\n').filter(line=>!line.startsWith('import ')).join('\n')
+geoSrc=geoSrc.split('\n').filter(line=>!line.startsWith('import ')).join('\n');previewSrc=previewSrc.split('\n').filter(line=>!line.startsWith('import ')).join('\n')
+const bundle = ts.transpileModule(regionSource,opts).outputText+'\n'+metricStub + '\n' + ts.transpileModule(geoSrc, opts).outputText + '\n' + ts.transpileModule(previewSrc, opts).outputText
 const { normalizeProvinceName, validateMapConfig } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle).toString('base64')
 )

@@ -30,7 +30,7 @@ export function normalizeDashboard(d: DashboardDefinition): DashboardDefinition 
 export function presentationVars(value?: DashboardAppearance) {
   const a = { ...defaultAppearance(value?.theme), ...value }
   return { '--bi-background': a.background, '--bi-card': a.cardBackground, '--bi-text': a.textColor,
-    '--bi-border': a.borderColor, '--bi-radius': `${a.radius}px`, '--bi-title-size': `${a.titleSize}px` }
+    '--bi-border': a.borderColor, '--bi-link': a.theme==='dark'?'#A8C1FF':'#3563E9', '--bi-radius': `${a.radius}px`, '--bi-title-size': `${a.titleSize}px` }
 }
 
 export function chartPalette(value?: DashboardAppearance) {
@@ -53,14 +53,14 @@ export function formatMetric(value:unknown,appearance?:DashboardAppearance,forma
   const text=String(value),match=/^([+-]?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(text)
   if(!match || text.length>500)return value
   const exponent=Number(match[4] || 0);if(Math.abs(exponent)>308)return value
-  const decimals=Math.max(0,Math.min(6,Math.trunc(format.decimals))),shift=format.mode==='percent'?-2:({none:0,thousand:3,wan:4,million:6}[format.scale])
+  const decimals=Math.max(0,Math.min(6,Math.trunc(format.decimals))),shift=format.mode==='percent'?-2:({none:0,thousand:3,wan:4,million:6,yi:8}[format.scale])
   let integer=BigInt(match[2]+(match[3] || ''));const power=decimals-(match[3]?.length || 0)+exponent-shift
   if(power>=0)integer*=10n**BigInt(power)
   else {const divisor=10n**BigInt(-power);integer=(integer+divisor/2n)/divisor}
   const digits=integer.toString().padStart(decimals+1,'0');let whole=decimals?digits.slice(0,-decimals):digits,fraction=decimals?digits.slice(-decimals):''
   if(!format.fixed)fraction=fraction.replace(/0+$/,'')
   if(format.grouping)whole=whole.replace(/\B(?=(\d{3})+(?!\d))/g,',')
-  const unit=format.mode==='percent'?'%':({none:'',thousand:'千',wan:'万',million:'百万'}[format.scale])
+  const unit=format.mode==='percent'?'%':({none:'',thousand:'千',wan:'万',million:'百万',yi:'亿'}[format.scale])
   return format.prefix+(match[1]==='-' && integer!==0n?'-':'')+whole+(fraction?'.'+fraction:'')+unit+format.suffix
 }
 

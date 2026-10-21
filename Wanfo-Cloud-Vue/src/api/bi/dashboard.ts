@@ -4,7 +4,7 @@ import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
 import type { ChartResult, ChartDefinition, QueryModel } from './chart'
 export interface DashboardAppearance {theme:'light'|'dark';background:string;cardBackground:string;textColor:string;borderColor:string;palette:'business'|'ocean'|'warm';titleSize:number;radius:number;decimals:number;grouping:boolean}
-export interface NumberFormat {mode:'number'|'percent';scale:'none'|'thousand'|'wan'|'million';decimals:number;grouping:boolean;fixed:boolean;prefix:string;suffix:string;nullText:string}
+export interface NumberFormat {mode:'number'|'percent';scale:'none'|'thousand'|'wan'|'million'|'yi';decimals:number;grouping:boolean;fixed:boolean;prefix:string;suffix:string;nullText:string}
 export interface Threshold {op:'GT'|'GTE'|'LT'|'LTE'|'EQ'|'NE';value:string;color:string}
 export interface MetricStyle {key:string;format?:NumberFormat|null;rules:Threshold[]}
 export interface PanelStyle {metrics?:MetricStyle[];numberFormat?:NumberFormat|null;showTitle:boolean;titleAlign:'left'|'center'|'right'}
@@ -28,7 +28,7 @@ export interface DashboardDefinition {schemaVersion:1;name:string;panels:Panel[]
 export interface DashboardSummary {id:number;name:string;version:number;published:boolean;resourceActions:string[]}
 export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
 export interface DashboardView {id:number;name:string;revision:number;panels:ViewPanel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;controls?:ViewControl[];links?:{key:string;sourcePanel:string}[]}
-export interface PanelResult {data:ChartResult;presentation:{type:ChartDefinition['type'];dimensions:string[];metrics:string[];fieldLabels?:Record<string,string>;queryDimensions?:{field:string;alias?:string}[];pivotRowFields?:string[];pivotColFields?:string[];drillFields?:string[];drillPath?:DrillPathSegment[];drillLevel?:number;canDrillDown?:boolean}}
+export interface PanelResult {data:ChartResult;presentation:{style?:ChartDefinition['style'];advanced?:ChartDefinition['advanced'];type:ChartDefinition['type'];dimensions:string[];metrics:string[];fieldLabels?:Record<string,string>;queryDimensions?:{field:string;alias?:string}[];queryMetrics?:QueryModel['metrics'];pivotRowFields?:string[];pivotColFields?:string[];drillFields?:string[];drillPath?:DrillPathSegment[];drillLevel?:number;canDrillDown?:boolean}}
 export const listDashboards=():Promise<AjaxResult<DashboardSummary[]>>=>request({url:'/bi/dashboard'})
 export const getDashboardDraft=(id:number):Promise<AjaxResult<{id:number;version:number;definition:DashboardDefinition;published:boolean;resourceActions?:string[]}>>=>request({url:`/bi/dashboard/${id}/draft`})
 export const saveDashboard=(definition:DashboardDefinition,id?:number,version?:number):Promise<AjaxResult<{id:number;version:number}>>=>request({url:id?`/bi/dashboard/${id}`:'/bi/dashboard',method:id?'put':'post',data:{definition,version}}).then((response:AjaxResult<{id:number;version:number}>)=>{notifyBiSaved('dashboard',response.data.id);return response})

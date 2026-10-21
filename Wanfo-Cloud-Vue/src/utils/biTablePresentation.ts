@@ -1,0 +1,8 @@
+import type {ChartDefinition,ChartVisualStyle} from '@/api/bi/chart'
+import {metricResultKey} from './biEchartsPreview'
+import {metricColor} from './biPresentation'
+export function tableOutputs(d:ChartDefinition){return [...d.query.dimensions.map(v=>({key:v.alias || v.field,identity:v.field,metric:false})),...d.query.metrics.map(v=>({key:metricResultKey(v),identity:v.field+':'+v.agg,metric:true}))]}
+export function retainTableColumns(style:ChartVisualStyle|undefined,current:ReturnType<typeof tableOutputs>,previous:ReturnType<typeof tableOutputs>){if(!style?.tableColumns)return;style.tableColumns=style.tableColumns.filter(c=>current.some(n=>n.key===c.key && (!previous.some(p=>p.key===c.key) || previous.some(p=>p.key===c.key && p.identity===n.identity))))}
+export function tableColumn(style:ChartVisualStyle|undefined,key:string){return style?.tableColumns?.find(c=>c.key===key)}
+export function tableBackground(style:ChartVisualStyle|undefined,key:string,value:unknown){const rules=tableColumn(style,key)?.backgroundRules;return rules?.length?metricColor(value,key,[{key,rules}]):undefined}
+export function validateTableStyle(d:ChartDefinition){const s=d.style;if(!s)return null;const outputs=tableOutputs(d);const seen=new Set<string>();for(const c of s.tableColumns || []){const o=outputs.find(v=>v.key===c.key);if(!o || seen.has(c.key))return '列样式引用失效或重复，请重新配置';seen.add(c.key);if(c.width!=null && (!Number.isInteger(c.width) || c.width<60 || c.width>800))return '列宽须为60至800像素';if(c.backgroundRules?.length && !o.metric)return '条件背景色仅支持指标列';for(const r of c.backgroundRules || [])if(!/^[+-]?[0-9]+(?:\.[0-9]+)?$/.test(r.value))return '背景阈值须填写有效十进制原始数值'}return null}

@@ -1,13 +1,23 @@
 import * as echarts from 'echarts/core'
 import request from '@/utils/request'
+import {mapScopeCode,type GeoCatalogIndex,type GeoFeature} from './biMapRegions'
 
 export const MAP_SCOPES = {
   'china-provinces': '中国省级行政区'
 } as const
 
-export type MapScopeId = keyof typeof MAP_SCOPES
+export type MapScopeId = string
 
 const registered = new Set<string>()
+const features=new Map<string,GeoFeature[]>(),pending=new Map<string,Promise<string>>()
+let catalogRequest:Promise<GeoCatalogIndex>|undefined
+export function fetchGeoCatalog():Promise<GeoCatalogIndex>{
+  if(catalogRequest)return catalogRequest
+  const task=(async()=>{const response:GeoCatalogIndex|{data:GeoCatalogIndex}=await request({url:'/bi/geo/regions',timeout:60000});const value='data' in response?response.data:response;if(!Array.isArray(value.regions))throw new Error('地图目录格式无效');return value})()
+  catalogRequest=task;void task.catch(()=>{if(catalogRequest===task)catalogRequest=undefined})
+  return task
+}
+export function registeredGeoFeatures(scope:MapScopeId):GeoFeature[]{return features.get(mapScopeCode(scope)) || []}
 
 const ALIASES: Record<string, string> = {
   北京: '北京市',
@@ -47,15 +57,19 @@ export function defaultMapScope(): MapScopeId {
 }
 
 export async function fetchMapGeo(scope: MapScopeId): Promise<unknown> {
-  const res = await request({ url: `/bi/geo/${scope}`, method: 'get', timeout: 60000 })
+  const code=mapScopeCode(scope)
+  const res = await request({ url: `/bi/geo/${code==='100000'?'china-provinces':code}`, method: 'get', timeout: 60000 })
   return res.data ?? res
 }
 
 export async function ensureMapRegistered(scope: MapScopeId = defaultMapScope()): Promise<string> {
-  const mapName = `bi_${scope}`
+  const code=mapScopeCode(scope),mapName = `bi_${code}`
   if (registered.has(mapName)) return mapName
-  const geo = await fetchMapGeo(scope)
-  echarts.registerMap(mapName, geo as Parameters<typeof echarts.registerMap>[1])
-  registered.add(mapName)
-  return mapName
+  if(pending.has(code))return pending.get(code)!
+  const task=(async()=>{const geo=await fetchMapGeo(scope) as {features?:{properties?:GeoFeature}[]};
+    if(!Array.isArray(geo.features))throw new Error('地图边界格式无效')
+    features.set(code,geo.features.map(f=>f.properties).filter((p):p is GeoFeature=>!!p && /^[0-9]{6}$/.test(String(p.adcode)) && !!p.name))
+    echarts.registerMap(mapName,geo as Parameters<typeof echarts.registerMap>[1]);registered.add(mapName);return mapName
+  })();pending.set(code,task)
+  try{return await task}finally{pending.delete(code)}
 }

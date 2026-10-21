@@ -44,9 +44,10 @@
             <el-dropdown-item v-if="canExportResource" command="pdf" :disabled="dirty || !canPreview">导出 PDF</el-dropdown-item>
           </el-dropdown-menu></template>
         </el-dropdown><el-button v-if="editable" type="primary" :loading="saving" :disabled="busy || !dirty" @click="save">保存图表</el-button></div></div></template>
+      <nav v-if="definition.type==='map' && (chartMapPath.length || result?.mapContext)" aria-label="地图下钻路径" class="query-status"><el-button link :disabled="busy || !chartMapPath.length" @click="mapBack(0)">{{ result?.mapContext?.rootName || mapRootName || '初始地图' }}</el-button><template v-for="(segment,i) in chartMapPath" :key="i"><span>›</span><el-button link :disabled="busy" @click="mapBack(i+1)">{{ result?.mapContext?.breadcrumbs[i]?.name || mapPathNames[i] || segment.value }}</el-button></template></nav>
       <div class="query-status" role="status"><span>{{ lastQueryAt ? '数据更新于 '+lastQueryAt : '尚未查询' }}</span><span v-if="result">{{ result.rowCount }} 行 · {{ result.costMs }} ms</span><el-switch v-if="editable" v-model="autoQuery" active-text="自动查询"/></div>
-      <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else :definition="definition" :result="result" :labels="labels"/></section>
-      <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview"/>
+      <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else :loading="previewing || loading" :definition="definition" :result="result" :labels="labels" :drillable="definition.type==='map'" :can-drill-down="result?.mapContext?.canDrillDown" @drill="mapDrill"/></section>
+      <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" :map-drillable="definition.type==='map'" :map-can-drill-down="result?.mapContext?.canDrillDown" @map-drill="mapDrill" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview"/>
     </el-card>
     <el-dialog v-model="grantDialog.visible" :title="'图表授权 · '+grantDialog.name" width="min(700px, calc(100vw - 24px))">
       <el-alert title="图表授权不自动授予数据集权限；使用者还需对应数据集的查看、查询及若依功能权限。" :closable="false" class="mb8"/>
@@ -61,12 +62,15 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
 import { listDatasets, type DatasetSummary } from '@/api/bi/dataset'
-import { listCharts, getChart, saveChart, deleteChart, previewChart, savedChartData, chartFields, searchChartPrincipals, listChartGrants, grantChart, revokeChartGrant, type ChartDefinition, type ChartSummary, type Field, type ChartResult } from '@/api/bi/chart'
+import { listCharts, getChart, saveChart, deleteChart, previewChart, savedChartData,previewMapChart, chartFields, searchChartPrincipals, listChartGrants, grantChart, revokeChartGrant, type ChartDefinition, type ChartSummary, type Field, type ChartResult } from '@/api/bi/chart'
 import { submitExport, type ExportFormat } from '@/api/bi/export'
+import type {DrillPathSegment} from '@/api/bi/dashboard'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
 import ChartEditorWorkspace from './ChartEditorWorkspace.vue'
 import ChartActions from './ChartActions.vue'
 import ChartPreview from './ChartPreview.vue'
+import {registeredGeoFeatures} from '@/utils/biMapGeo'
+import {matchGeoFeature} from '@/utils/biMapRegions'
 import { metricResultKey } from '@/utils/biEchartsPreview'
 import { BI_SAVED_EVENT } from '@/utils/biThumbnail'
 import { chartWorkspacePath,readLibraryPosition,saveLibraryPosition } from '@/utils/biWorkspaceNavigation'
@@ -74,7 +78,7 @@ import useUserStore from '@/store/modules/user'
 import BiResourceThumbnail from '../components/BiResourceThumbnail.vue'
 import { Search, Refresh, Grid, List, Plus, Histogram, View, Close, MoreFilled, ArrowDown, Lock } from '@element-plus/icons-vue'
 import { CHART_TYPE_LABELS, applyTypeDefaults, isChartType, metricAddDisabled, validateChartQueryShape } from '@/utils/biChartTypes'
-import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation } from '@/utils/biChartPresentation'
+import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,validateChartMetricPresentation,nextChartMetricAlias } from '@/utils/biChartPresentation'
 import { syncPivotQueryDimensions, validatePivotConfig } from '@/utils/biPivotPreview'
 import { validateMapConfig } from '@/utils/biMapPreview'
 const route=useRoute(), router=useRouter()
@@ -84,7 +88,10 @@ const autoQuery=ref(false),lastQueryAt=ref('')
 let queryController:AbortController|undefined,autoQueryTimer:ReturnType<typeof setTimeout>|undefined
 const baselineQuery=ref('')
 let loadedType:ChartDefinition['type']='bar'
-const queryFingerprint=()=>JSON.stringify(definition.query)
+const chartMapPath=ref<DrillPathSegment[]>([]),mapRootName=ref(''),mapPathNames=ref<string[]>([])
+const queryFingerprint=()=>JSON.stringify({...definition.query,...(definition.type==='map'?{__map:{scope:definition.advanced?.mapScope,fields:definition.advanced?.mapFields,mode:definition.advanced?.mapValueMode}}:{})})
+async function mapDrill(payload:{field:string;value:string|number|null}){if(busy.value || definition.type!=='map' || !result.value?.mapContext?.canDrillDown)return;const context=result.value.mapContext;mapRootName.value=context.rootName;mapPathNames.value=[...context.breadcrumbs.map(v=>v.name),matchGeoFeature(registeredGeoFeatures(context.scope),payload.value,definition.advanced?.mapValueMode || 'name')?.name || String(payload.value)];chartMapPath.value=[...chartMapPath.value,payload];await preview()}
+async function mapBack(level:number){if(busy.value)return;mapPathNames.value=mapPathNames.value.slice(0,level);chartMapPath.value=chartMapPath.value.slice(0,level);await preview()}
 function workspaceHref(id?:number, mode='view', datasetId?:number){
   return router.resolve({path:chartWorkspacePath(id,mode),query:datasetId?{datasetId}:undefined}).href
 }
@@ -129,7 +136,7 @@ const canPreview=computed(()=>currentId.value && queryFingerprint()===baselineQu
 const fieldLabel=(name:string)=>{const f=fields.value.find(f=>f.name===name);const show=f?.showName?.trim();return show||name}
 const labels=computed(()=>{const names:Record<string,string>={};for(const d of definition.query.dimensions)names[d.alias||d.field]=fieldLabel(d.field);for(const m of definition.query.metrics)names[metricResultKey(m)]=`${fieldLabel(m.field)} · ${aggregations[m.agg]}`;return names})
 watch(queryFingerprint,()=>{
-  revision++;queryController?.abort();previewing.value=false;result.value=null;error.value='';lastQueryAt.value=''
+  chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];revision++;queryController?.abort();previewing.value=false;result.value=null;error.value='';lastQueryAt.value=''
   clearTimeout(autoQueryTimer)
   if(autoQuery.value && editorVisible.value && !loading.value)autoQueryTimer=setTimeout(()=>{if(canPreview.value)void preview()},500)
 })
@@ -160,7 +167,7 @@ async function datasetChanged(id:number){
 }
 async function openChart(row:ChartSummary){
   if(!standalone.value){openWindow(row.id);return}
-  const v=++loadVersion;++revision;queryController?.abort();loading.value=true;result.value=null;error.value='';editorVisible.value=false
+  const v=++loadVersion;++revision;queryController?.abort();loading.value=true;chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];result.value=null;error.value='';editorVisible.value=false
   try {
     const r=await getChart(row.id);if(v!==loadVersion)return
     Object.assign(definition,r.data.definition);loadedType=definition.type;ensureChartPresentation(definition)
@@ -173,10 +180,10 @@ async function openChart(row:ChartSummary){
   if(v===loadVersion && editorVisible.value && canPreview.value)await preview()
 }
 
-function setDimension(field:string){definition.query.dimensions=field?[{field,alias:'dimension'}]:[];definition.query.orderBys=[]}
-function addMetric(){if(fields.value[0])definition.query.metrics.push({field:fields.value[0].name,agg:'COUNT',alias:'value_'+(definition.query.metrics.length+1)})}
-function addMetricField(name:string){if(!name || metricAddDisabled(definition.type, definition.query.metrics.length))return;definition.query.metrics.push({field:name,agg:'SUM',alias:'value_'+(definition.query.metrics.length+1)})}
-function removeMetric(index:number){definition.query.metrics.splice(index,1);definition.query.metrics.forEach((m,i)=>m.alias='value_'+(i+1));definition.query.orderBys=[]}
+function setDimension(field:string){if(definition.type==='map' && definition.advanced?.mapFields){const old=definition.query.dimensions[0]?.field;for(const level of ['province','city','county'] as const)if(definition.advanced.mapFields[level]===old)definition.advanced.mapFields[level]=field || undefined}definition.query.dimensions=field?[{field,alias:'dimension'}]:[];definition.query.orderBys=[]}
+function addMetric(){if(fields.value[0])definition.query.metrics.push({field:fields.value[0].name,agg:'COUNT',alias:nextChartMetricAlias(definition.query.metrics)})}
+function addMetricField(name:string){if(!name || metricAddDisabled(definition.type, definition.query.metrics.length))return;definition.query.metrics.push({field:name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})}
+function removeMetric(index:number){definition.query.metrics.splice(index,1);definition.query.orderBys=[]}
 function setSort(field:string){definition.query.orderBys=field?[{field,order:'asc'}]:[]}
 function rawTable(){definition.query.dimensions=[];definition.query.metrics=fields.value.slice(0,5).map((f,i)=>({field:f.name,agg:'NONE',alias:'value_'+(i+1)}));definition.query.orderBys=[]}
 function ensurePivotDefaults(){
@@ -212,7 +219,7 @@ function ensureScatterMetrics(){
   while(definition.query.metrics.length<2 && fields.value.length){
     const used=new Set(definition.query.metrics.map(m=>m.field))
     const pick=fields.value.find(numeric) || fields.value.find(f=>!used.has(f.name)) || fields.value[0]
-    definition.query.metrics.push({field:pick.name,agg:'SUM',alias:'value_'+(definition.query.metrics.length+1)})
+    definition.query.metrics.push({field:pick.name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})
   }
 }
 async function preview(){
@@ -222,7 +229,7 @@ async function preview(){
   if(!canPreview.value)return
   queryController?.abort();const controller=new AbortController();queryController=controller
   const snapshot=queryFingerprint(),r=revision;previewing.value=true;result.value=null;error.value=''
-  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal):await previewChart(JSON.parse(snapshot),controller.signal);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value);if(latest.data.version!==version.value)throw new Error('version-changed')}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;lastQueryAt.value=new Date().toLocaleTimeString()}}
+  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal,definition.type==='map'?{drills:{chart:chartMapPath.value}}:undefined):definition.type==='map'?await previewMapChart(JSON.parse(fingerprint()),{drills:{chart:chartMapPath.value}},controller.signal):await previewChart(JSON.parse(snapshot),controller.signal);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value);if(latest.data.version!==version.value)throw new Error('version-changed')}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;if(response.data.mapContext){mapRootName.value=response.data.mapContext.rootName;mapPathNames.value=response.data.mapContext.breadcrumbs.map(v=>v.name)}lastQueryAt.value=new Date().toLocaleTimeString()}}
   catch{if(!controller.signal.aborted && r===revision)error.value='查询失败，请检查字段、筛选条件及数据权限，或点击更新数据重试'}finally{if(queryController===controller)previewing.value=false}
 }
 async function exportSaved(format:ExportFormat){
@@ -232,6 +239,7 @@ async function exportSaved(format:ExportFormat){
   finally{saving.value=false}
 }
 async function save(){
+  const presentationError=validateChartMetricPresentation(definition);if(presentationError){ElMessage.warning(presentationError);return}
   if(!definition.name.trim()){ElMessage.warning('请填写图表名称');return}
   const snapshot=JSON.parse(fingerprint()) as ChartDefinition;snapshot.name=snapshot.name.trim();saving.value=true;error.value=''
   try {const r=await saveChart(snapshot,currentId.value,version.value);currentId.value=r.data.id;version.value=r.data.version;Object.assign(definition,snapshot);await nextTick();baseline.value=fingerprint();baselineQuery.value=queryFingerprint();await refresh();if(standalone.value && route.path==='/bi-admin/chart-workspace/new')await router.replace(chartWorkspacePath(currentId.value,'edit'));ElMessage.success('图表已保存')}
@@ -281,7 +289,9 @@ onActivated(()=>{if(!activatedOnce){activatedOnce=true;return}if(!standalone.val
 </script>
 <style scoped lang="scss" src="../components/BiLibrary.scss"></style>
 <style scoped>
-.chart-workspace-page{padding:20px;background:#f4f6fa;min-height:var(--bi-content-height,100vh)}.chart-workspace-page .editor-card{margin-top:0}.query-status{display:flex;align-items:center;gap:20px;padding:10px 18px;color:#667085;border-bottom:1px solid #edf0f5;font-size:12px}.chart-view-canvas{padding:24px;background:#fff;min-height:70vh}.chart-workspace-page :deep(.toolbar){flex-wrap:wrap;gap:8px}.chart-type{display:inline-flex;align-items:center;padding:3px 9px;background:#edf2ff;color:#3563e9;font-size:12px;line-height:20px;border-radius:4px}.meta-divider{margin:0 8px;color:#c5cbd5}.chart-cover{position:relative}.chart-cover-action{position:absolute;inset:0;background:#1023444d;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .16s;pointer-events:none}.chart-cover-action>.el-button{pointer-events:auto;border:0;color:#254dcc}.chart-cover:hover .chart-cover-action,.chart-cover:focus-within .chart-cover-action{opacity:1}.editor-card{margin-top:30px;scroll-margin-top:20px;border-radius:10px}.editor-card :deep(.el-card__body){padding:0}.board-card-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart-workspace-page{padding:24px 32px;background:var(--bi-background,#f6f8fc);min-height:var(--bi-content-height,100vh)}.chart-workspace-page .editor-card{margin-top:0}.query-status{display:flex;align-items:center;gap:20px;padding:12px 20px;color:var(--bi-muted,#667085);border-bottom:1px solid var(--bi-border,#edf0f5);font-size:12px}.chart-view-canvas{padding:24px;background:var(--bi-surface,#fff);min-height:70vh}.chart-workspace-page :deep(.toolbar){flex-wrap:wrap;gap:8px}.chart-type{display:inline-flex;align-items:center;padding:3px 9px;background:#edf2ff;color:#3563e9;font-size:12px;line-height:20px;border-radius:4px}.meta-divider{margin:0 8px;color:#c5cbd5}.chart-cover{position:relative}.chart-cover-action{position:absolute;inset:0;background:#1023444d;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .16s;pointer-events:none}.chart-cover-action>.el-button{pointer-events:auto;border:0;color:#254dcc}.chart-cover:hover .chart-cover-action,.chart-cover:focus-within .chart-cover-action{opacity:1}.editor-card{margin-top:30px;scroll-margin-top:20px;border-radius:10px}.editor-card :deep(.el-card__body){padding:0}.board-card-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(hover:none){.chart-cover-action{opacity:1;inset:auto auto 8px 8px;background:transparent}.chart-cover-action>.el-button{height:28px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){.chart-cover-action{transition:none}}
 </style>
+
+<style scoped>@media(max-width:700px){.chart-workspace-page{padding:16px}.chart-view-canvas{padding:16px}.query-status{padding:12px;gap:12px;flex-wrap:wrap}}</style>

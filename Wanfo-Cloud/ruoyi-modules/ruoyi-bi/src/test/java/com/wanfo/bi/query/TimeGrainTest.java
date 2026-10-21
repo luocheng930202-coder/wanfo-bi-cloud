@@ -47,4 +47,12 @@ class TimeGrainTest {
     @Test void legacyQueriesRetainMetricOrderingAndNoBucket() {
         String sql=compile(model(null)).sql;assertFalse(sql.contains("FLOOR"));assertTrue(sql.contains("ORDER BY \"total\" DESC"));
     }
+    @Test void calendarDatesAreStableDateStringsWithoutChangingRawValuesOrSourceRows() {
+        var date=java.sql.Date.valueOf("2026-01-01");Map<String,Object> row=new LinkedHashMap<>();
+        row.put("period",date);row.put("other_date",date);row.put("total",12);
+        var rows=List.of(row);var normalized=TimeGrain.calendarRows(model("month"),rows);
+        assertEquals("2026-01-01",normalized.get(0).get("period"));assertSame(date,normalized.get(0).get("other_date"));
+        assertSame(date,row.get("period"));assertSame(rows,TimeGrain.calendarRows(model(null),rows));
+        row.put("period",null);assertNull(TimeGrain.calendarRows(model("month"),rows).get(0).get("period"));
+    }
 }

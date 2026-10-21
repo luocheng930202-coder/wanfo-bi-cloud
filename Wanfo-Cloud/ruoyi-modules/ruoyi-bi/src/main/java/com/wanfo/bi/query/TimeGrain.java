@@ -2,12 +2,26 @@ package com.wanfo.bi.query;
 
 import java.util.Locale;
 import java.util.Set;
+import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import com.wanfo.bi.domain.query.QueryModel;
 
 /** Calendar buckets are compiled by Calcite, after the secured input relation. */
 public final class TimeGrain {
     private TimeGrain() { }
     private static final Set<String> ALLOWED = Set.of("day", "week", "month", "quarter", "year");
+
+    public static List<Map<String,Object>> calendarRows(QueryModel model,List<Map<String,Object>> rows) {
+        var keys=model.getDimensions().stream().filter(d->d.getTimeGrain()!=null)
+                .map(d->d.getAlias()==null || d.getAlias().isBlank()?d.getField():d.getAlias()).toList();
+        if(keys.isEmpty())return rows;
+        return rows.stream().map(row->{
+            Map<String,Object> copy=new LinkedHashMap<>(row);
+            for(String key:keys)if(copy.get(key) instanceof java.sql.Date date)copy.put(key,date.toLocalDate().toString());
+            return copy;
+        }).toList();
+    }
 
     public static String expression(QueryModel.Dimension dimension, String type) {
         String column = FilterTreeCompiler.quote(dimension.getField());

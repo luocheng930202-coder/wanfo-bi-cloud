@@ -84,18 +84,17 @@ const useUserStore = defineStore(
         })
       },
       // 退出系统
-      logOut() {
-        return new Promise<void>((resolve, reject) => {
-          logout().then(() => {
-            this.token = ''
-            this.roles = []
-            this.permissions = []
-            removeToken()
-            resolve()
-          }).catch((error: any) => {
-            reject(error)
-          })
-        })
+      async logOut() {
+        try {
+          await logout()
+        } catch {
+          // Expired or rotated credentials must not prevent a local sign-out.
+        } finally {
+          this.token = ''
+          this.roles = []
+          this.permissions = []
+          removeToken()
+        }
       }
     }
   })

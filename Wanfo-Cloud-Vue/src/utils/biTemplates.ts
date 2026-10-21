@@ -29,7 +29,7 @@ export function templateAppearance(theme:'light'|'dark'):DashboardAppearance {
 export function templateSlotPanel(slot:TemplateSlot,binding:TemplateBinding):Panel {
   return {key:slot.key,title:slot.label,componentType:slot.kind,x:slot.x,y:slot.y,w:slot.w,h:slot.h,
     chartId:binding.chartId,chartConfig:JSON.parse(JSON.stringify({type:binding.config.type,
-      dimensions:binding.config.dimensions.map(({field,alias})=>({field,alias})),
+      dimensions:binding.config.dimensions.map(({field,alias,timeGrain})=>({field,alias,...(timeGrain?{timeGrain}:{})})),
       metrics:binding.config.metrics.map(({field,alias,agg})=>({field,alias,agg})),
       orderBys:binding.config.orderBys.map(({field,order})=>({field,order})),limit:binding.config.limit,
       filterTree:binding.config.filterTree})),style:{showTitle:true,titleAlign:'left'}}

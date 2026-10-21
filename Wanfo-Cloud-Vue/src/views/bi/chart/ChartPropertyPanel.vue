@@ -17,6 +17,7 @@
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
+          <ChartTimeGrainEditor :definition="definition" :fields="fields"/>
           <div class="section-head"><span>{{ capabilities.metric }}</span><el-button v-if="definition.type==='table'" link @click="emit('raw-table')">原始字段</el-button><el-button v-if="definition.type==='scatter' && definition.query.metrics.length<2" link @click="emit('ensure-scatter')">补齐散点轴</el-button><el-button link :disabled="metricAddDisabled(definition.type, definition.query.metrics.length)" @click="emit('add-metric')">添加</el-button></div>
           <div v-for="(metric,index) in definition.query.metrics" :key="index" class="metric-row">
             <span v-if="definition.type==='scatter'" class="metric-axis">{{ index===0 ? 'X 轴' : 'Y 轴' }}</span><el-select v-model="metric.field" filterable @change="normalizeAggregation(index)"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
@@ -27,6 +28,8 @@
           <FilterTreeEditor v-if="definition.query.filterTree" v-model="definition.query.filterTree" :fields="fields" :disabled="disabled" @remove="definition.query.filterTree=undefined"/>
           <el-button v-else size="small" @click="definition.query.filterTree={logic:'AND',children:[{field:'',op:'EQ',value:''}]}">添加筛选</el-button>
           <el-form-item label="排序"><el-select :model-value="definition.query.orderBys?.[0]?.field" clearable style="width:100%" @change="v => emit('set-sort', v || '')"><el-option v-for="(label,key) in labels" :key="key" :value="key" :label="label"/></el-select></el-form-item>
+          <el-form-item v-if="definition.query.orderBys?.length" label="排序方向"><el-select v-model="definition.query.orderBys[0].order" style="width:100%"><el-option value="asc" label="升序"/><el-option value="desc" label="降序"/></el-select></el-form-item>
+          <small class="hint">清除排序时，时间汇总默认按周期升序；其他查询保留原默认排序。</small>
           <el-form-item label="最多行数"><el-input-number v-model="definition.query.limit" :min="1" :max="1000" :precision="0" style="width:100%"/></el-form-item>
           <el-button type="primary" :loading="previewing" :disabled="!canPreview" style="width:100%" @click="emit('preview')">更新数据</el-button>
         </el-form>
@@ -107,6 +110,7 @@ import ChartPivotStyleEditor from './ChartPivotStyleEditor.vue'
 import ChartTableStyleEditor from './ChartTableStyleEditor.vue'
 import ChartSpecializedStyleEditor from './ChartSpecializedStyleEditor.vue'
 import ChartMapSettings from './ChartMapSettings.vue'
+import ChartTimeGrainEditor from './ChartTimeGrainEditor.vue'
 import {metricResultKey} from '@/utils/biEchartsPreview'
 import { allowsClearDimension, metricAddDisabled, supportsDrill } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,retainChartMetricBindings } from '@/utils/biChartPresentation'

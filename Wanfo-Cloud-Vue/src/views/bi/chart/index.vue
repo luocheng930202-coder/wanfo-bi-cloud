@@ -81,6 +81,7 @@ import { CHART_TYPE_LABELS, applyTypeDefaults, isChartType, metricAddDisabled, v
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,validateChartMetricPresentation,nextChartMetricAlias } from '@/utils/biChartPresentation'
 import { syncPivotQueryDimensions, validatePivotConfig } from '@/utils/biPivotPreview'
 import { validateMapConfig } from '@/utils/biMapPreview'
+import {validateTimeGrain} from '@/utils/biTimeGrain'
 const route=useRoute(), router=useRouter()
 const standalone=computed(()=>route.meta.chartWorkspace===true)
 const readOnly=computed(()=>standalone.value && route.params.mode==='view')
@@ -224,7 +225,7 @@ function ensureScatterMetrics(){
 }
 async function preview(){
   if(!definition.query.datasetId){ElMessage.warning('请选择数据集');return}
-  const shape=validateChartQueryShape(definition.type,definition.query.dimensions,definition.query.metrics) || validatePivotConfig(definition) || validateMapConfig(definition)
+  const shape=validateChartQueryShape(definition.type,definition.query.dimensions,definition.query.metrics) || validatePivotConfig(definition) || validateMapConfig(definition) || validateTimeGrain(definition,fields.value)
   if(shape){ElMessage.warning(shape);return}
   if(!canPreview.value)return
   queryController?.abort();const controller=new AbortController();queryController=controller
@@ -239,7 +240,7 @@ async function exportSaved(format:ExportFormat){
   finally{saving.value=false}
 }
 async function save(){
-  const presentationError=validateChartMetricPresentation(definition);if(presentationError){ElMessage.warning(presentationError);return}
+  const presentationError=validateChartMetricPresentation(definition) || validateTimeGrain(definition,fields.value);if(presentationError){ElMessage.warning(presentationError);return}
   if(!definition.name.trim()){ElMessage.warning('请填写图表名称');return}
   const snapshot=JSON.parse(fingerprint()) as ChartDefinition;snapshot.name=snapshot.name.trim();saving.value=true;error.value=''
   try {const r=await saveChart(snapshot,currentId.value,version.value);currentId.value=r.data.id;version.value=r.data.version;Object.assign(definition,snapshot);await nextTick();baseline.value=fingerprint();baselineQuery.value=queryFingerprint();await refresh();if(standalone.value && route.path==='/bi-admin/chart-workspace/new')await router.replace(chartWorkspacePath(currentId.value,'edit'));ElMessage.success('图表已保存')}

@@ -15,6 +15,7 @@ export type TimeGrain = 'day'|'week'|'month'|'quarter'|'year'
 export type TimeFill = 'none'|'null'|'zero'
 export interface QueryDimension { field:string; alias?:string; timeGrain?:TimeGrain|null; timeFill?:TimeFill|null }
 export interface QueryModel {
+  pivot?:{rows:string[];columns:string[]}
   datasetId: number; dimensions: QueryDimension[]
   metrics: { field: string; agg: string; alias?: string }[]
   filters?: Condition[]; filterTree?: FilterNode; orderBys?: {field: string; order: string}[]; limit?: number
@@ -115,7 +116,8 @@ export interface ChartDefinition {
 }
 export interface ChartSummary { id: number; name: string; type: ChartDefinition['type']; datasetId: number; version: number; resourceActions: string[] }
 export interface MapContext {fieldLabel?:string;scope:string;rootScope:string;rootName:string;field:string;canDrillDown:boolean;drillableRegions:string[];breadcrumbs:{name:string;code:string}[]}
-export interface ChartResult { columns: string[]; rows: Record<string, unknown>[]; rowCount: number; costMs: number;mapContext?:MapContext; timeFill?:{mode:'null'|'zero';status:'complete'|'skipped';sourceRows:number;addedRows:number;periods:string[];reason?:string} }
+export interface PivotTotals {status:'complete'|'unavailable';scope:'filtered';rowFields:string[];colFields:string[];metricKeys:string[];detailTruncated:boolean;reason?:string;cells:{rowDepth:number;colDepth:number;dimensions:Record<string,unknown>;values:Record<string,unknown>}[]}
+export interface ChartResult { pivotTotals?:PivotTotals; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; costMs: number;mapContext?:MapContext; timeFill?:{mode:'null'|'zero';status:'complete'|'skipped';sourceRows:number;addedRows:number;periods:string[];reason?:string} }
 export const chartFields = (id: number): Promise<AjaxResult<Field[]>> => request({url:`/bi/chart/dataset/${id}/fields`})
 export const listCharts = (): Promise<AjaxResult<ChartSummary[]>> => request({url:'/bi/chart/saved'})
 export const getChart = (id: number): Promise<AjaxResult<{id:number;version:number;definition:ChartDefinition}>> => request({url:`/bi/chart/saved/${id}`})

@@ -153,15 +153,18 @@ class ChartDefinitionTest {
     @Test void componentConfigUsesCurrentVisibleFieldCompiler(){doThrow(new IllegalArgumentException("hidden field")).when(queries).compileOnly(any());assertThrows(IllegalArgumentException.class,()->service.configureForDashboard(definition(),config(null)));}
     @Test void componentGraphShapeIsValidated(){var c=config(null);assertThrows(IllegalArgumentException.class,()->service.configureForDashboard(definition(),new ChartDefinitionService.PanelConfig("bar",List.of(),c.metrics(),c.orderBys(),10,null)));}
     @Test void oldPanelJsonStillUsesSharedSource(){var p=json.readValue("{\"key\":\"old\",\"chartId\":7,\"title\":\"Old\",\"x\":0,\"y\":0,\"w\":6,\"h\":4}",DashboardService.Panel.class);assertNull(p.chartConfig());assertFalse(p.locked());}
-    @Test void pivotRejectsUnsupportedTotalsAndHiddenGrouping() {
+    @Test void pivotAllowsServerTotalsAndRejectsHiddenGrouping() {
         var q=new QueryModel();q.setDatasetId(9L);q.addDimension("city","city");q.addDimension("province","province");q.addMetric("id","AVG","value");q.setLimit(100);
         when(queries.datasetFields(9L)).thenReturn(List.of(Map.of("name","city","type","VARCHAR"),Map.of("name","province","type","VARCHAR"),Map.of("name","id","type","INT")));
         var advanced=new com.wanfo.bi.domain.chart.ChartAdvancedOptions();advanced.setPivotRowFields(List.of("city"));advanced.setPivotColFields(List.of("province"));
         var style=new com.wanfo.bi.domain.chart.ChartVisualStyle();style.setPivotRowTotals(true);
         var d=new ChartDefinitionService.Definition(1,"透视测试","pivot",q,style,advanced);
-        assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
-        q.getMetrics().get(0).setAgg("COUNT_DISTINCT");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
-        style.setPivotRowTotals(false);style.setPivotHierarchy("tree");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));style.setPivotHierarchy("grid");
+        doAnswer(c->{((BiChartDO)c.getArgument(0)).setId(7L);return 1;}).when(mapper).insert(any());
+        assertDoesNotThrow(()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        assertEquals(List.of("city"),d.query().getPivot().rows());
+        q.getMetrics().get(0).setAgg("COUNT_DISTINCT");assertDoesNotThrow(()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
+        style.setPivotRowTotals(false);style.setPivotHierarchy("tree");assertDoesNotThrow(()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));style.setPivotHierarchy("grid");
+        clearInvocations(mapper);
         q.getMetrics().get(0).setAgg("COUNT");style.setPivotRowSubtotals(true);assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
         style.setPivotRowSubtotals(false);q.addDimension("id","id");assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,d,null)));
         verify(mapper,never()).insert(any());

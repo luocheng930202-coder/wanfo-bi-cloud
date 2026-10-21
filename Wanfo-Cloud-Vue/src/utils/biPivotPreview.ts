@@ -21,7 +21,7 @@ export function buildPivotDataConfig(definition: ChartDefinition, result: ChartR
   const fields = pivotFieldKeys(definition)
   const seen=new Set<string>()
   for(const row of result.rows){const identity=JSON.stringify([...fields.rows,...fields.columns].map(k=>row[k] ?? null));if(seen.has(identity))throw new Error('透视单元格出现重复分组，请统一查询维度与行列维度');seen.add(identity)}
-  return { fields:{...fields,valueInCols:definition.style?.pivotValuesInCols!==false}, data: result.rows as Record<string, string | number>[],meta:[...fields.rows,...fields.columns,...fields.values].map(key=>({field:key,name:labels[key] || key,...(fields.values.includes(key) && format?{formatter:(value:unknown)=>typeof value==='number' && !Number.isFinite(value)?'—':format(key,value)}:{})})) }
+  return { fields:{...fields,valueInCols:definition.style?.pivotValuesInCols!==false}, data: [...result.rows,...pivotServerData(definition,result)] as Record<string, string | number>[],meta:[...fields.rows,...fields.columns,...fields.values].map(key=>({field:key,name:labels[key] || key,...(fields.values.includes(key) && format?{formatter:(value:unknown)=>typeof value==='number' && !Number.isFinite(value)?'—':format(key,value)}:{})})) }
 }
 
 export function validatePivotConfig(definition: ChartDefinition): string | null {
@@ -39,7 +39,7 @@ export function validatePivotConfig(definition: ChartDefinition): string | null 
   const overlap = rows.find(f => cols.includes(f))
   if (overlap) return `字段 ${overlap} 不能同时作为行与列维度`
   if(new Set([...rows,...cols]).size!==rows.length+cols.length || names.size!==definition.query.dimensions.length || names.size!==rows.length+cols.length)return '透视查询分组须与行列维度完全一致且不重复'
-  if(pivotTotalsRequested(definition) && !pivotTotalsAvailable(definition))return '当前结果汇总仅支持 SUM、COUNT、MIN、MAX；AVG及去重计数需从明细重新聚合'
+
   if(definition.style?.pivotRowSubtotals && rows.length<2 || definition.style?.pivotColSubtotals && cols.length<2)return '小计须至少两个对应层级维度'
   return null
 }
@@ -49,10 +49,11 @@ export function syncPivotQueryDimensions(definition: ChartDefinition): void {
   const ordered = [...(definition.advanced?.pivotRowFields || []), ...(definition.advanced?.pivotColFields || [])]
   const prev = definition.query.dimensions
   definition.query.dimensions = ordered.map(field => prev.find(d => d.field === field) || { field, alias: field })
+  definition.query.pivot={rows:[...(definition.advanced?.pivotRowFields||[])],columns:[...(definition.advanced?.pivotColFields||[])]}
 }
 
 export function pivotTotalsRequested(d:ChartDefinition){const s=d.style;return !!(s?.pivotHierarchy==='tree' || s?.pivotRowTotals || s?.pivotColTotals || s?.pivotRowSubtotals || s?.pivotColSubtotals)}
-export function pivotTotalsAvailable(d:ChartDefinition){return !!d.query.metrics.length && d.query.metrics.every(m=>['SUM','COUNT','MIN','MAX'].includes(m.agg.toUpperCase()))}
+export function pivotTotalsAvailable(d:ChartDefinition){return !!d.query.metrics.length && d.query.metrics.every(m=>['SUM','COUNT','MIN','MAX','AVG','COUNT_DISTINCT'].includes(m.agg.toUpperCase()))}
 function pivotDecimal(value:unknown){if(value==null || value==='')return null;const m=String(value).match(/^([+-]?)([0-9]+)(?:\.([0-9]*))?(?:[eE]([+-]?[0-9]+))?$/);if(!m)throw new Error('汇总包含无效数值');const exponent=Number(m[4] || 0);if(Math.abs(exponent)>1000)throw new Error('汇总数值超出安全精度');return {n:BigInt((m[1]==='-'?'-':'')+m[2]+(m[3] || '')),p:(m[3]?.length || 0)-exponent}}
 function pivotDecimalEqual(a:{n:bigint;p:number},b:{n:bigint;p:number}){const p=Math.max(a.p,b.p);return a.n*10n**BigInt(p-a.p)===b.n*10n**BigInt(p-b.p)}
 export function pivotTotalValue(d:ChartDefinition,key:string,values:unknown[]):number {
@@ -64,12 +65,21 @@ export function pivotTotalValue(d:ChartDefinition,key:string,values:unknown[]):n
  if(!Number.isFinite(value) || Math.abs(value)>Number.MAX_SAFE_INTEGER || !roundtrip || !pivotDecimalEqual({n,p},roundtrip))throw new Error('汇总数值超出安全显示精度，请关闭汇总或调整数据口径')
  return value
 }
+export function pivotServerReady(d:ChartDefinition,result:ChartResult):boolean {
+ const totals=result.pivotTotals,fields=pivotFieldKeys(d)
+ return totals?.status==='complete' && JSON.stringify(totals.rowFields)===JSON.stringify(fields.rows) && JSON.stringify(totals.colFields)===JSON.stringify(fields.columns) && JSON.stringify(totals.metricKeys)===JSON.stringify(fields.values)
+}
+function pivotServerData(d:ChartDefinition,result:ChartResult):Record<string,unknown>[] {
+ if(!pivotServerReady(d,result))return []
+ return result.pivotTotals!.cells.filter(cell=>result.rows.some(row=>Object.entries(cell.dimensions).every(([key,value])=>JSON.stringify(row[key]??null)===JSON.stringify(value??null)))).map(cell=>({...cell.dimensions,...cell.values}))
+}
 export function buildPivotOptions(d:ChartDefinition,result:ChartResult,width:number,styles:MetricStyle[]=[]):S2Options {
- const s=d.style,fields=pivotFieldKeys(d)
- const calc=(query:Record<string,unknown>,data:{'$$value$$'?:unknown}[])=>pivotTotalValue(d,String(query['$$extra$$']),data.map(v=>v['$$value$$']))
- const total=(row:boolean)=>({showGrandTotals:row?!!s?.pivotRowTotals:!!s?.pivotColTotals,showSubTotals:row?!!s?.pivotRowSubtotals:!!s?.pivotColSubtotals,subTotalsDimensions:(row?fields.rows:fields.columns).slice(0,-1),calcGrandTotals:{calcFunc:calc},calcSubTotals:{calcFunc:calc},grandTotalsLabel:'当前结果总计',subTotalsLabel:'当前结果小计',reverseGrandTotalsLayout:!!s?.pivotTotalsFirst,reverseSubTotalsLayout:!!s?.pivotTotalsFirst})
+ const s=d.style,fields=pivotFieldKeys(d),server=pivotServerReady(d,result),unavailable=!!result.pivotTotals && !server
+ if(pivotTotalsRequested(d) && !server && !unavailable && d.query.metrics.some(m=>['AVG','COUNT_DISTINCT'].includes(m.agg.toUpperCase())))throw new Error('此指标需要服务端完整汇总，请更新数据后重试')
+ const calc=(query:Record<string,unknown>,data:{'$$value$$'?:unknown}[])=>server || unavailable?NaN:pivotTotalValue(d,String(query['$$extra$$']),data.map(v=>v['$$value$$']))
+ const total=(row:boolean)=>({showGrandTotals:!unavailable && (row?!!s?.pivotRowTotals:!!s?.pivotColTotals),showSubTotals:!unavailable && (row?!!s?.pivotRowSubtotals:!!s?.pivotColSubtotals),subTotalsDimensions:(row?fields.rows:fields.columns).slice(0,-1),calcGrandTotals:{calcFunc:calc},calcSubTotals:{calcFunc:calc},grandTotalsLabel:server?'筛选范围总计':'当前结果总计',subTotalsLabel:server?'筛选范围小计':'当前结果小计',reverseGrandTotalsLayout:!!s?.pivotTotalsFirst,reverseSubTotalsLayout:!!s?.pivotTotalsFirst})
  const background=fields.values.map(key=>{const values=result.rows.map(r=>r[key]).filter(v=>v!=null && v!=='').map(Number).filter(Number.isFinite);const min=values.length?Math.min(...values):0,max=values.length?Math.max(...values):0;return {field:key,mapping:(value:unknown)=>{if(value==null || value==='' || !Number.isFinite(Number(value)))return undefined;const t=max===min?0.5:Math.max(0,Math.min(1,(Number(value)-min)/(max-min)));const low=s?.pivotLowColor || '#EFF6FF',high=s?.pivotHighColor || '#2563EB';const fill='#'+[0,2,4].map(i=>Math.round(parseInt(low.slice(i+1,i+3),16)*(1-t)+parseInt(high.slice(i+1,i+3),16)*t).toString(16).padStart(2,'0')).join('');return {fill,intelligentReverseTextColor:true}}}})
- return {width,height:420,hierarchyType:s?.pivotHierarchy || 'grid',interaction:{hoverHighlight:true},style:{dataCell:{width:s?.pivotColumnWidth || 120,height:s?.pivotRowHeight || 32},colCell:{width:s?.pivotColumnWidth || 120}},totals:{row:total(true),col:total(false)},conditions:{background:s?.pivotColorScale?background:[],text:fields.values.map(key=>({field:key,mapping:(value:unknown)=>{const fill=metricColor(value,key,styles);return fill?{fill}:undefined}}))}}
+ return {width,height:420,hierarchyType:unavailable?'grid':s?.pivotHierarchy || 'grid',interaction:{hoverHighlight:true},style:{dataCell:{width:s?.pivotColumnWidth || 120,height:s?.pivotRowHeight || 32},colCell:{width:s?.pivotColumnWidth || 120}},totals:{row:total(true),col:total(false)},conditions:{background:s?.pivotColorScale?background:[],text:fields.values.map(key=>({field:key,mapping:(value:unknown)=>{const fill=metricColor(value,key,styles);return fill?{fill}:undefined}}))}}
 }
 export function pivotTheme(d:ChartDefinition,appearance?:DashboardAppearance):ThemeCfg {
  const s=d.style,dark=appearance?.theme==='dark',bg=appearance?.cardBackground || (dark?'#1F2937':'#FFFFFF'),text=appearance?.textColor || (dark?'#F3F4F6':'#303133'),border=appearance?.borderColor || (dark?'#4B5563':'#E2E8F0')

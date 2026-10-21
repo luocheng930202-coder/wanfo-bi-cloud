@@ -58,6 +58,10 @@ public class QueryModel implements Serializable
 
     /** 返回行数上限 */
     private Integer limit;
+    private Pivot pivot;
+    public Pivot getPivot() { return pivot; }
+    public void setPivot(Pivot pivot) { this.pivot=pivot; }
+    public record Pivot(List<String> rows,List<String> columns) implements Serializable { }
 
     public QueryModel addDimension(String field, String alias) {
         dimensions.add(new Dimension(field, alias));

@@ -94,6 +94,7 @@ public class ChartQueryService
         {
             throw new IllegalArgumentException("数据集不存在: " + model.getDatasetId());
         }
+        if(model.getPivot()!=null && !"table".equals(ds.getType()))throw new IllegalArgumentException("完整透视汇总仅支持表数据集");
         if (datasourceProvider.getById(ds.getDatasourceId()) == null)
         {
             throw new IllegalArgumentException("数据集绑定的数据源不存在或已停用");
@@ -119,8 +120,9 @@ public class ChartQueryService
         var scope=policies.resolve(model.getDatasetId());
         var restricted=restrictedBase(unionSql,fields,scope);
         scope.denied().forEach(valid::remove);scope.masked().forEach(valid::remove);
-        ChartQueryCompiler.Compiled compiled = compiler.compile(model, restricted.sql(), valid);
-        List<Object> params=new ArrayList<>(restricted.params());params.addAll(compiled.params);
+        var pivot=model.getPivot()==null?null:com.wanfo.bi.query.PivotQueryPlan.compile(model,restricted.sql(),valid,compiler,restricted.params());
+        ChartQueryCompiler.Compiled compiled = pivot==null?compiler.compile(model, restricted.sql(), valid):pivot.query();
+        List<Object> params=new ArrayList<>();if(pivot==null)params.addAll(restricted.params());params.addAll(compiled.params);
         String sql = compiled.sql;
 
         long start = System.currentTimeMillis();
@@ -131,13 +133,15 @@ public class ChartQueryService
                 ? List.of(datasourceProvider.getById(ds.getDatasourceId()))
                 : datasourceProvider.listEnabled()))
         {
-            qr = engine.queryWithParams(conn, sql, params, model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
+            qr = engine.queryWithParams(conn, sql, params, pivot!=null?pivot.maxRows():model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
         }
 
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("columns", qr.getColumns());
-        var filled=com.wanfo.bi.query.TimeGapFill.apply(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
+        result.put("columns", pivot==null?qr.getColumns():qr.getColumns().stream().filter(column->!column.equals(pivot.rowDepthKey()) && !column.equals(pivot.colDepthKey())).toList());
+        var pivotResult=pivot==null?null:com.wanfo.bi.query.PivotQueryPlan.decode(model,pivot,qr.getRows());
+        if(pivotResult!=null)result.put("pivotTotals",pivotResult.totals());
+        var filled=com.wanfo.bi.query.TimeGapFill.apply(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,pivotResult==null?qr.getRows():pivotResult.rows()));
         result.put("rows", filled.rows());
         result.put("rowCount", filled.rows().size());
         if(filled.metadata()!=null)result.put("timeFill",filled.metadata());
@@ -230,7 +234,7 @@ public class ChartQueryService
         var scope=policies.resolve(model.getDatasetId());
         var restricted=restrictedBase(unionSql, compileFields, scope);
         scope.denied().forEach(valid::remove);scope.masked().forEach(valid::remove);
-        return compiler.compile(model, restricted.sql(), valid).sql;
+        return model.getPivot()==null?compiler.compile(model, restricted.sql(), valid).sql:com.wanfo.bi.query.PivotQueryPlan.compile(model,restricted.sql(),valid,compiler,restricted.params()).query().sql;
     }
 
     private void requireQuery(Long id) {

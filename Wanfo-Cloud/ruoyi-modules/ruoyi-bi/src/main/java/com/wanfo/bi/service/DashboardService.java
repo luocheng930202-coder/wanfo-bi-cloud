@@ -125,7 +125,7 @@ public class DashboardService {
             if(p.componentType().equals("kpi")) {
                 var q=read(json.writeValueAsString(chart.query()),com.wanfo.bi.domain.query.QueryModel.class);
                 if(q.getMetrics().isEmpty() || q.getMetrics().get(0).getAgg()==null || q.getMetrics().get(0).getAgg().equalsIgnoreCase("NONE"))throw new IllegalArgumentException("指标卡须使用聚合度量");
-                q.setDimensions(new ArrayList<>());q.setMetrics(new ArrayList<>(List.of(q.getMetrics().get(0))));q.setOrderBys(new ArrayList<>());
+                q.setPivot(null);q.setDimensions(new ArrayList<>());q.setMetrics(new ArrayList<>(List.of(q.getMetrics().get(0))));q.setOrderBys(new ArrayList<>());
                 chart=new ChartDefinitionService.Definition(1,chart.name(),"table",q);
             }
             var outputs=new HashSet<String>();if(chart!=null)for(var m:chart.query().getMetrics())outputs.add(m.getAlias()!=null && !m.getAlias().isBlank()?m.getAlias():(m.getAgg()==null || m.getAgg().equalsIgnoreCase("NONE")?m.getField():m.getAgg().toLowerCase(Locale.ROOT)+"_"+m.getField()));
@@ -273,6 +273,7 @@ public class DashboardService {
     }
     private com.wanfo.bi.domain.query.QueryModel filtered(Publication pub,String key,Map<String,Object> input,String skip) throws Exception {return filtered(pub,key,input,skip,true);}
     private com.wanfo.bi.domain.query.QueryModel filtered(Publication pub,String key,Map<String,Object> input,String skip,boolean consume) throws Exception {
+        ChartDefinitionService.preparePivotQuery(panel(pub,key).chart());
         var q=read(json.writeValueAsString(panel(pub,key).chart().query()),com.wanfo.bi.domain.query.QueryModel.class);
         if(q.getFilters()==null)q.setFilters(new ArrayList<>());
         var filters=DashboardInteraction.inputs(input,"filters",pub.interaction().controls().stream().map(DashboardInteraction.Control::key).collect(java.util.stream.Collectors.toSet()));
@@ -310,7 +311,7 @@ public class DashboardService {
         guardRuntimeInput(pub,input);
         var c=pub.interaction().controls().stream().filter(v->v.key().equals(control) && v.type().equals("enum")).findFirst().orElseThrow(()->new IllegalArgumentException("枚举控件不存在"));
         var target=c.targets().get(0);var q=filtered(pub,target.panel(),input,c.key(),consume);
-        q.setDimensions(new ArrayList<>(List.of(new com.wanfo.bi.domain.query.QueryModel.Dimension(target.field(),"option_value"))));q.setMetrics(new ArrayList<>());q.setOrderBys(new ArrayList<>(List.of(new com.wanfo.bi.domain.query.QueryModel.OrderBy("option_value","asc"))));q.setLimit(101);
+        q.setPivot(null);q.setDimensions(new ArrayList<>(List.of(new com.wanfo.bi.domain.query.QueryModel.Dimension(target.field(),"option_value"))));q.setMetrics(new ArrayList<>());q.setOrderBys(new ArrayList<>(List.of(new com.wanfo.bi.domain.query.QueryModel.OrderBy("option_value","asc"))));q.setLimit(101);
         var data=consume?queries.queryForDashboard(q):queries.query(q);
         @SuppressWarnings("unchecked") var rows=(List<Map<String,Object>>)data.get("rows");
         return Map.of("values",rows.stream().map(r->r.get("option_value")).filter(Objects::nonNull).limit(100).toList(),"truncated",rows.size()>100);

@@ -3,7 +3,7 @@
     <div v-if="board || chart" class="thumbnail-viewport" :style="viewportStyle" aria-hidden="true" inert>
       <div class="thumbnail-document" :style="documentStyle">
         <ChartPreview v-if="chart" thumbnail :definition="chart" :result="chartData" :labels="chartLabels" />
-        <DashboardCanvas v-else-if="board" readonly :scene="board.scene ? {...board.scene,fit:'contain'} : undefined" :panels="board.panels" :appearance="board.appearance">
+        <DashboardCanvas v-else-if="board" readonly :scene="board.scene ? {...board.scene,fit:'contain'} : undefined" :panels="canvasPanels" :appearance="board.appearance">
           <template #default="{panel}"><DashboardCard thumbnail :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="board.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" /></template>
         </DashboardCanvas>
       </div>
@@ -21,7 +21,7 @@ import { checkPermi } from '@/utils/permission'
 import useUserStore from '@/store/modules/user'
 import { BI_SAVED_EVENT, thumbnailTask, versionedThumbnail } from '@/utils/biThumbnail'
 import { getChart, savedChartData, type ChartDefinition, type ChartResult } from '@/api/bi/chart'
-import { getDashboardDraft, getDashboardView, previewDashboard, dashboardPanelData, type DashboardView, type DashboardDefinition, type PanelResult } from '@/api/bi/dashboard'
+import { getDashboardDraft, getDashboardView, previewDashboard, dashboardPanelData, type DashboardView, type DashboardDefinition, type PanelResult, type Panel, type ViewPanel } from '@/api/bi/dashboard'
 import { runPanelQueue } from '@/utils/biPanelQueue'
 import DashboardCanvas from '../dashboard/DashboardCanvas.vue'
 import DashboardCard from '../dashboard/DashboardCard.vue'
@@ -30,6 +30,7 @@ const props = defineProps<{kind:'chart'|'dashboard';id:number;version:number;nam
 const user = useUserStore()
 const host=ref<HTMLElement>(),width=ref(0),height=ref(0),visible=ref(false),active=ref(true)
 const board=shallowRef<DashboardDefinition|DashboardView>(),chart=shallowRef<ChartDefinition>(),chartData=shallowRef<ChartResult|null>(null)
+const canvasPanels=computed<(Panel|ViewPanel)[]>(()=>board.value?.panels || [])
 const payloads=shallowRef<Record<string,PanelResult>>({}),panelErrors=shallowRef<Record<string,string>>({})
 const loading=ref(false),error=ref(''),warning=ref(''),actualVersion=ref(0),source=ref('saved')
 let generation=0,observer:IntersectionObserver|undefined,resize:ResizeObserver|undefined

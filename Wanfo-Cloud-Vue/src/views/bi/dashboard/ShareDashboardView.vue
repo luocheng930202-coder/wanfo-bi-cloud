@@ -20,7 +20,7 @@
       </div>
       <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly>
         <template #default="{ panel }">
-          <DashboardCard :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshPanel(panel.key)" :linkable="view.links?.some(l => l.sourcePanel === panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v => selectLink(panel.key, v)" @drill="p => drillDown(panel.key, p.field, p.value)" @drill-up="lvl => drillUp(panel.key, lvl)" />
+          <DashboardCard :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshPanel(panel.key)" :linkable="view.links?.some(l => l.sourcePanel === panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v => selectLink(panel.key, v)" @drill="p => drillDown(panel.key, p.field, p.value)" @drill-up="(lvl:number) => drillUp(panel.key, lvl)" />
         </template>
       </DashboardCanvas>
     </el-card>

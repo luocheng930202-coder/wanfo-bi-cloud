@@ -3,6 +3,8 @@
 export const BI_SAVED_EVENT = 'bi:saved-resource'
 export function notifyBiSaved(kind: 'chart' | 'dashboard', id: number) {
   window.dispatchEvent(new CustomEvent(BI_SAVED_EVENT, { detail: { kind, id } }))
+  // Only broadcast identity, never definitions, data or credentials.
+  try { localStorage.setItem(BI_SAVED_EVENT, JSON.stringify({ kind, id, at: Date.now() })) } catch { /* storage may be disabled */ }
 }
 
 // Bound background preview work across all cards; obsolete queued cards never query.

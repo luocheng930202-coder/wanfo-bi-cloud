@@ -24,6 +24,6 @@ function onPickMetric(name: string) { emit('pick-metric', name) }
 </script>
 <style scoped>
 .chart-editor{display:grid;grid-template-columns:240px minmax(0,1fr) min(360px,34vw);min-height:520px;border:1px solid #e7ebf2;border-radius:12px;overflow:hidden;background:#fff}
-.chart-editor__center{padding:16px;min-width:0;background:#f4f6fa}
-@media (max-width: 1100px){.chart-editor{grid-template-columns:1fr}.chart-editor__left,.chart-editor__right{display:none}}
+.chart-editor__right{max-height:calc(var(--bi-content-height,100vh) - 180px);overflow:auto}.chart-editor__center{padding:16px;min-width:0;background:#f4f6fa}
+@media (max-width: 1100px){.chart-editor{grid-template-columns:1fr}.chart-editor__left{display:none}.chart-editor__right{max-height:none}.chart-editor__center{min-height:380px}}
 </style>

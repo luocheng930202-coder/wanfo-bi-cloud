@@ -109,6 +109,7 @@ service.interceptors.response.use((res: any) => {
     }
   },
   (error: any) => {
+    if (axios.isCancel(error)) return Promise.reject(error)
     console.log('err' + error)
     let { message } = error
     if (message == "Network Error") {

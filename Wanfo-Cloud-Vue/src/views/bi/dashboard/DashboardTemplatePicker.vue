@@ -137,7 +137,7 @@ async function importFile(event:Event){
   if(busy.value){input.value='';return}const g=++generation;error.value='';busy.value=true
   try{if(upload.size>TEMPLATE_MAX_BYTES)throw Error('模板文件不能超过2MB');const candidate=parseLayoutTemplate(await upload.text());if((candidate.format==='datacenter-dashboard-template')!==dashboard.value)throw Error(dashboard.value?'请导入本项目 v1 看板模板':'请导入本项目 v1 大屏模板');if(g!==generation)return;file.value=candidate;search.value='';category.value=dashboard.value?'导入看板模板':'导入模板'}catch(e){if(g===generation)error.value=e instanceof Error?e.message:'模板读取失败'}finally{input.value='';if(g===generation)busy.value=false}
 }
-function blank(){visible.value=false;router.push(dashboard.value?'/bi-designer':'/bi-designer?kind=screen')}
+function blank(){visible.value=false;router.push(dashboard.value?'/bi-admin/dashboard-workspace/new':'/bi-admin/dashboard-workspace/new?kind=screen')}
 function clear(){for(const map of [bindings,verified,summaries,slotErrors,slotLoading,validating,impacts])for(const key of Object.keys(map))delete map[key];for(const key of Object.keys(sources))delete sources[key]}
 async function back(){await releaseLeased();++generation;selected.value=undefined;wizardStep.value=1;batchDatasetId.value=undefined;error.value='';clear()}
 async function select(id:string){const g=++generation;busy.value=true;error.value=''
@@ -187,7 +187,7 @@ async function validateSlot(slot:TemplateSlot){
 }
 async function create(){
   if(!selected.value || (!ready.value && !createdId.value) || busy.value)return;busy.value=true;error.value=''
-  try{if(!createdId.value){const resolved:Record<string,TemplateBinding>={};for(const slot of selected.value.slots)resolved[slot.key]=await resolveBinding(slot,bindings[slot.key]);const definition=selectedFile.value?instantiateImportedTemplate(selectedFile.value,name.value,resolved):dashboard.value?instantiateDashboardTemplate(selected.value.id,name.value,resolved):instantiateScreenTemplate(selected.value.id,name.value,resolved);await previewDashboard(definition,{filters:{},links:{}});const result=(await saveDashboard(definition)).data;createdId.value=result.id;emit('created',result.id);const leased=Object.values(resolved).filter(b=>b.source==='dataset' && b.chartId).map(b=>b.chartId!);if(leased.length)await commitTemplateChartLeases(leased)}await router.push('/bi-designer/'+createdId.value);visible.value=false;selected.value=undefined;++generation}
+  try{if(!createdId.value){const resolved:Record<string,TemplateBinding>={};for(const slot of selected.value.slots)resolved[slot.key]=await resolveBinding(slot,bindings[slot.key]);const definition=selectedFile.value?instantiateImportedTemplate(selectedFile.value,name.value,resolved):dashboard.value?instantiateDashboardTemplate(selected.value.id,name.value,resolved):instantiateScreenTemplate(selected.value.id,name.value,resolved);await previewDashboard(definition,{filters:{},links:{}});const result=(await saveDashboard(definition)).data;createdId.value=result.id;emit('created',result.id);const leased=Object.values(resolved).filter(b=>b.source==='dataset' && b.chartId).map(b=>b.chartId!);if(leased.length)await commitTemplateChartLeases(leased)}await router.push('/bi-admin/dashboard-workspace/'+createdId.value+'/edit');visible.value=false;selected.value=undefined;++generation}
   catch{error.value='创建失败，请检查当前权限和数据绑定后重试；若页面跳转失败，请在看板列表确认是否已创建';await releaseLeased()}finally{busy.value=false}
 }
 </script>

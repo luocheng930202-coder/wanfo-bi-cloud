@@ -1,4 +1,4 @@
-import { createWebHistory, createRouter } from 'vue-router'
+import { createWebHistory, createRouter, type RouteLocationGeneric } from 'vue-router'
 /* Layout */
 import Layout from '@/layout/index.vue'
 
@@ -26,7 +26,24 @@ import Layout from '@/layout/index.vue'
 
 // 公共路由
 export const constantRoutes = [
-  {path:'/bi-designer/:id?',name:'BiDashboardDesigner',component:()=>import('@/views/bi/dashboard/DashboardDesigner.vue'),hidden:true,meta:{title:'看板设计器',noCache:true}},
+  {
+    path:'/bi-admin/chart-workspace',component:Layout,hidden:true,
+    children:[
+      {path:'new',name:'BiChartCreate',component:()=>import('@/views/bi/chart/index.vue'),meta:{title:'新建图表',noCache:true,workspaceEditor:true,chartWorkspace:true,activeMenu:'/bi-admin/chart'}},
+      {path:':id(\\d+)/:mode(view|edit)',name:'BiChartWorkspace',component:()=>import('@/views/bi/chart/index.vue'),meta:{title:'图表工作区',noCache:true,workspaceEditor:true,chartWorkspace:true,activeMenu:'/bi-admin/chart'}}
+    ]
+  },
+  {
+    path:'/bi-admin/dashboard-workspace',component:Layout,hidden:true,
+    children:[
+      {path:'new',name:'BiDashboardCreate',component:()=>import('@/views/bi/dashboard/DashboardDesigner.vue'),meta:{title:'新建看板',noCache:true,workspaceEditor:true,activeMenu:'/bi-admin/dashboard'}},
+      {path:':id(\\d+)/edit',name:'BiDashboardDesigner',component:()=>import('@/views/bi/dashboard/DashboardDesigner.vue'),meta:{title:'看板设计器',noCache:true,workspaceEditor:true,activeMenu:'/bi-admin/dashboard'}},
+      {path:':id(\\d+)/view',name:'BiDashboardView',component:()=>import('@/views/bi/dashboard/index.vue'),meta:{title:'查看看板',noCache:true,workspaceEditor:true,dashboardView:true,activeMenu:'/bi-admin/dashboard'}}
+    ]
+  },
+  {path:'/bi-chart/new',redirect:(to:RouteLocationGeneric)=>({path:'/bi-admin/chart-workspace/new',query:to.query}),hidden:true},
+  {path:'/bi-chart/:id(\\d+)/:mode(view|edit)',redirect:(to:RouteLocationGeneric)=>({path:`/bi-admin/chart-workspace/${to.params.id}/${to.params.mode}`,query:to.query}),hidden:true},
+  {path:'/bi-designer/:id?',redirect:(to:RouteLocationGeneric)=>({path:to.params.id?`/bi-admin/dashboard-workspace/${to.params.id}/edit`:'/bi-admin/dashboard-workspace/new',query:to.query}),hidden:true},
   {path:'/bi-share/:token',name:'BiShareDashboard',component:()=>import('@/views/bi/dashboard/ShareDashboardView.vue'),hidden:true,meta:{title:'分享看板',noCache:true}},
   {
     path: '/redirect',

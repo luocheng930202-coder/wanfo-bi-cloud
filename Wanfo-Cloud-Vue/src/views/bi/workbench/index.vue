@@ -229,7 +229,7 @@ function openRecent(row: WorkbenchRecentItem) {
     return
   }
   if (checkPermi(['bi:dashboard:edit'])) {
-    router.push('/bi-designer/' + row.id)
+    router.push('/bi-admin/dashboard-workspace/' + row.id+'/edit')
     return
   }
   if (row.published && checkPermi(['bi:dashboard:consume'])) {

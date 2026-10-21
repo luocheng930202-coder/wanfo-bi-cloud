@@ -1,5 +1,6 @@
 <template>
-  <div class="board-library">
+  <div class="board-library" :class="{'workspace-view-page':workspaceView}">
+    <template v-if="!workspaceView">
     <header class="library-heading">
       <h1>看板管理</h1>
       <p>管理企业内的可视化看板，支持新建、编辑、发布与权限设置。</p>
@@ -57,9 +58,11 @@
       <span role="status">共 {{ filteredBoards.length }} 个看板</span>
       <el-pagination v-model:current-page="page" :page-size="pageSize" :total="filteredBoards.length" layout="prev, pager, next" background />
     </footer>
+    </template>
+    <section v-if="workspaceView && !view" class="view-loading-state"><el-button @click="closeView">返回看板管理</el-button><el-skeleton v-if="loading" :rows="8" animated/><el-button v-else-if="error" @click="openView(Number(route.params.id))">重新加载</el-button></section>
     <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb8"/>
     <el-card v-if="mode==='view' && view" ref="viewCard" class="board-view">
-      <template #header><div class="toolbar"><span>{{ view.name }} <el-tag size="small">发布版本 {{ view.revision }}</el-tag> <small v-if="view.scene" role="status">{{ refreshStatus }}</small></span><div class="toolbar"><el-button :icon="Close" @click="closeView">关闭预览</el-button><el-button v-hasPermi="['bi:export:add']" :disabled="busy || !queryPanels.length" @click="openExport">导出数据</el-button><el-button :loading="loading" @click="openView(view.id,true)">刷新看板</el-button></div></div></template>
+      <template #header><div class="toolbar"><span>{{ view.name }} <el-tag size="small">发布版本 {{ view.revision }}</el-tag> <small v-if="view.scene" role="status">{{ refreshStatus }}</small></span><div class="toolbar"><el-button :icon="Close" @click="closeView">返回看板管理</el-button><el-button v-hasPermi="['bi:export:add']" :disabled="busy || !queryPanels.length" @click="openExport">导出数据</el-button><el-button :loading="loading" @click="openView(view.id,true)">刷新看板</el-button></div></div></template>
       <div v-if="queryPanels.length" class="toolbar mb8" role="status" aria-live="polite"><span>数据组件 {{ queryPanels.length }} · 已加载 {{ loadedCount }} · 加载中 {{ loadingCount }} · 失败 {{ failedKeys.length }}</span><el-button v-if="failedKeys.length" type="warning" :disabled="loading || loadingCount>0" @click="retryFailed">重试失败组件</el-button></div>
       <div v-if="view.controls?.length" class="filter-bar">
         <div v-for="c in view.controls" :key="c.key" class="filter-item"><label>{{ c.label }}</label><DashboardFilterInput v-model="filterInputs[c.key]" :type="c.type" :label="c.label" :options="filterOptions[c.key] || []" :loading="optionLoading[c.key]" @options="loadOptions(c.key)"/><span v-if="optionErrors[c.key]" class="filter-error">{{ optionErrors[c.key] }}</span></div>
@@ -67,7 +70,7 @@
       </div>
       <div v-if="Object.keys(activeLinks).length" class="toolbar mb8"><el-tag v-for="(value,key) in activeLinks" :key="key" closable @close="removeActiveLink(String(key))">联动：{{ value ?? '空值' }}</el-tag><el-button link type="primary" @click="clearLinks">清除全部联动</el-button></div>
       <p v-if="view.links?.length" class="interaction-hint">点击柱形、折线点、扇区或明细可下钻或联动（下钻图不可作联动来源）。</p>
-      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="lvl=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
+      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
     </el-card>
     <DashboardTemplatePicker v-if="templateOpen" v-model="templateOpen" :kind="templateKind" :initial-select-id="templatePickId" @created="onTemplateCreated"/>
     <DashboardShareDialog v-model:visible="shareDialog.visible" :dashboard-id="shareDialog.id" :name="shareDialog.name" />
@@ -90,7 +93,9 @@
 import { ref, reactive, computed, onMounted, onActivated, onBeforeUnmount, watch, nextTick } from 'vue'
 import {runPanelQueue} from '@/utils/biPanelQueue'
 import {useBiRefresh} from '@/composables/useBiRefresh'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import {dashboardWorkspacePath,readLibraryPosition,saveLibraryPosition} from '@/utils/biWorkspaceNavigation'
+import useUserStore from '@/store/modules/user'
 import { checkPermi } from '@/utils/permission'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Grid, List, Plus, Monitor, DataAnalysis, Close } from '@element-plus/icons-vue'
@@ -123,11 +128,14 @@ function openViewFromQuery(){
   if(viewId>0 && checkPermi(['bi:dashboard:consume'])){void openView(viewId)}
   else if(viewId>0){const q={...route.query};delete q.view;router.replace({path:route.path,query:q})}
 }
+const workspaceView=computed(()=>route.meta.dashboardView===true)
+const libraryActor=String(useUserStore().id)
+const libraryPosition=readLibraryPosition('dashboard',libraryActor)
 const boards=ref<DashboardSummary[]>([]),view=ref<DashboardView|null>(null)
-const search = ref('')
-const statusFilter = ref<'all' | 'published' | 'draft'>('all')
-const displayMode = ref<'grid' | 'list'>('grid')
-const page = ref(1)
+const search = ref(libraryPosition.search)
+const statusFilter = ref<'all' | 'published' | 'draft'>(['published','draft'].includes(libraryPosition.filter)?libraryPosition.filter as 'published'|'draft':'all')
+const displayMode = ref<'grid' | 'list'>(libraryPosition.display)
+const page = ref(libraryPosition.page)
 const pageSize = 6
 const listError = ref('')
 const thumbnailRefresh = ref(0)
@@ -147,7 +155,7 @@ function canBoardAction(board: DashboardSummary, resource: string, permission: s
 function handleBoardAction(command: string, board: DashboardSummary) {
   if (busy.value) return
   if (command === 'view' && board.published && canBoardAction(board, 'consume', 'bi:dashboard:consume')) return openView(board.id)
-  if (command === 'edit' && canBoardAction(board, 'edit', 'bi:dashboard:edit')) return router.push('/bi-designer/' + board.id)
+  if (command === 'edit' && canBoardAction(board, 'edit', 'bi:dashboard:edit')) return router.push('/bi-admin/dashboard-workspace/' + board.id+'/edit')
   if (command === 'publish' && canBoardAction(board, 'publish', 'bi:dashboard:publish')) return publishRow(board)
   if (command === 'offline' && board.published && canBoardAction(board, 'publish', 'bi:dashboard:publish')) return takeOffline(board)
   if (command === 'share' && board.published && canBoardAction(board, 'publish', 'bi:dashboard:publish')) return openShare(board)
@@ -155,6 +163,7 @@ function handleBoardAction(command: string, board: DashboardSummary) {
   if (command === 'remove' && canBoardAction(board, 'remove', 'bi:dashboard:remove')) return removeBoard(board)
 }
 function closeView() {
+  if(workspaceView.value){void router.push('/bi-admin/dashboard');return}
   invalidate(); loading.value = false; mode.value = null; currentId.value = undefined; view.value = null
   if (route.query.view) { const query = { ...route.query }; delete query.view; router.replace({ path: route.path, query }) }
 }
@@ -220,10 +229,11 @@ async function removeBoard(row:DashboardSummary){
   finally{saving.value=false}
 }
 async function openView(id:number,force=false){
+  if(!workspaceView.value){await router.push(dashboardWorkspacePath(id,'view'));return}
   if(loading.value)return
   const preserve=force && view.value?.id===id
   currentId.value=id;invalidate(preserve);const e=epoch;loading.value=true;if(!preserve)mode.value=null;inFlight.value++
-  try{const previous=view.value,r=await getDashboardView(id);if(e!==epoch)return;const keep=force && previous?.id===id && previous.revision===r.data.revision;view.value=r.data;currentId.value=id;mode.value='view';if(!force){await nextTick();viewCard.value?.$el.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',block:'start'})}if(!keep){clearPanels();resetFilters();replaceMap(appliedFilters,JSON.parse(JSON.stringify(filterInputs)));replaceMap(activeLinks,{});replaceMap(activeDrills,{})}replaceMap(filterOptions,{});replaceMap(optionErrors,{});replaceMap(optionLoading,{});await runPanelQueue(r.data.panels,panel=>refreshViewPanel(panel.key,true,keep),()=>e===epoch && (!refreshSeconds.value || available.value))}
+  try{const previous=view.value,r=await getDashboardView(id);if(e!==epoch)return;const keep=force && previous?.id===id && previous.revision===r.data.revision;view.value=r.data;currentId.value=id;mode.value='view';if(!force){await nextTick();window.scrollTo({top:0})}if(!keep){clearPanels();resetFilters();replaceMap(appliedFilters,JSON.parse(JSON.stringify(filterInputs)));replaceMap(activeLinks,{});replaceMap(activeDrills,{})}replaceMap(filterOptions,{});replaceMap(optionErrors,{});replaceMap(optionLoading,{});await runPanelQueue(r.data.panels,panel=>refreshViewPanel(panel.key,true,keep),()=>e===epoch && (!refreshSeconds.value || available.value))}
   catch{if(e===epoch){clearPanels();mode.value=null;error.value='看板加载失败，请检查是否已下线或权限已改变；自动刷新开启时将按周期重试'}}finally{inFlight.value--;if(e===epoch)loading.value=false}
 }
 async function refreshViewPanel(key:string,internal=false,preserve=false){
@@ -254,9 +264,15 @@ async function submitBoardExport(){
   try{await submitExport({sourceType:'dashboard',sourceId:current.id,panelKey:exportDialog.panelKey||undefined,revision:current.revision,format:exportDialog.format,name:current.name,input:runtimeInput()});exportDialog.visible=false;ElMessage.success('已提交导出任务，请到导出中心下载')}
   finally{exportDialog.saving=false}
 }
-onMounted(async()=>{await refreshList();openTemplateFromQuery();openViewFromQuery()})
+onBeforeRouteLeave(()=>{if(!workspaceView.value)saveLibraryPosition('dashboard',libraryActor,{search:search.value,filter:statusFilter.value,display:displayMode.value,page:page.value,scroll:window.scrollY})})
+onMounted(async()=>{
+  if(workspaceView.value){await openView(Number(route.params.id));return}
+  await refreshList();openTemplateFromQuery();openViewFromQuery();await nextTick();requestAnimationFrame(()=>window.scrollTo({top:libraryPosition.scroll}))
+})
 let activatedOnce=false
-onActivated(()=>{if(!activatedOnce){activatedOnce=true;return}refreshList();if(!refreshSeconds.value && view.value && mode.value==='view')openView(view.value.id,true)})
+onActivated(()=>{if(!activatedOnce){activatedOnce=true;return}if(workspaceView.value)return;refreshList();if(!refreshSeconds.value && view.value && mode.value==='view')openView(view.value.id,true)})
 </script>
 <style scoped lang="scss" src="../components/BiLibrary.scss"></style>
 
+
+<style scoped>.workspace-view-page .board-view{margin-top:0}.view-loading-state{padding:12px 0;display:grid;gap:16px}</style>

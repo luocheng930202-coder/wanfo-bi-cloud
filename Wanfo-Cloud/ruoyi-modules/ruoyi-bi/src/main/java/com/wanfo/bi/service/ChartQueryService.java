@@ -137,7 +137,7 @@ public class ChartQueryService
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("columns", qr.getColumns());
-        result.put("rows", qr.getRows());
+        result.put("rows", com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
         result.put("rowCount", qr.getRows().size());
         result.put("costMs", System.currentTimeMillis() - start);
         if(caps.has("bi:resource:admin")) {result.put("executedSql",sql);result.put("params",params);}

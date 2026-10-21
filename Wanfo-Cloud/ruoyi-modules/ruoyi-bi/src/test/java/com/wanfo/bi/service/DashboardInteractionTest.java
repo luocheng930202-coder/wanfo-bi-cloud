@@ -10,6 +10,11 @@ import static org.mockito.Mockito.*;
 import static com.wanfo.bi.service.DashboardInteraction.*;
 
 class DashboardInteractionTest {
+    @Test void bucketStartCannotBeUsedAsRawEqualityLink() {
+        var source=f.chart();source.query().getDimensions().get(0).setTimeGrain("month");
+        var panels=List.of(new DashboardService.PublishedPanel(f.panel("a",0,0),source),new DashboardService.PublishedPanel(f.panel("b",6,0),f.chart()));
+        assertThrows(IllegalArgumentException.class,()->validate(new Settings(null,List.of(new Link("time","a","city",List.of(new Target("b","city"))))),panels,Map.of("a",Map.of("city","DATE"),"b",Map.of("city","DATE"))));
+    }
     DashboardTest f=new DashboardTest();
     Target target(String panel,String field,String type){return new Target(panel,field,type);}
     Settings settings(){return new Settings(List.of(new Control("city","城市","enum","上海",List.of(target("a","city","text"),target("b","city","text"))),new Control("amount","数量","number",null,List.of(target("b","id","number")))),List.of(new Link("click","a","city",List.of(target("b","city","text")))));}

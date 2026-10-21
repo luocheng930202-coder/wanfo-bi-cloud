@@ -105,7 +105,11 @@ public class CalciteQueryEngine
             pools.put(ds.getSchemaName(), pool);
         }
 
-        JdbcSchema schema = JdbcSchema.create(root, ds.getSchemaName(), pool, null, null);
+        JdbcSchema schema = JdbcSchema.create(root, ds.getSchemaName(), pool, metadata -> {
+            var dialect=org.apache.calcite.sql.SqlDialectFactoryImpl.INSTANCE.create(metadata);
+            return dialect instanceof org.apache.calcite.sql.dialect.MysqlSqlDialect
+                    ? new CalendarMysqlDialect(org.apache.calcite.sql.SqlDialects.createContext(metadata)) : dialect;
+        }, null, null);
         // 关键：1.42 的 create() 不会自动挂载，必须显式 add
         root.add(ds.getSchemaName(), schema);
 

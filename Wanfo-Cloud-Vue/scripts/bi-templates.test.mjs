@@ -6,6 +6,15 @@ const source=await fs.readFile(new URL('../src/utils/biTemplates.ts',import.meta
 const {screenTemplates,dashboardTemplates,getScreenTemplate,getDashboardTemplate,instantiateScreenTemplate,instantiateDashboardTemplate}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText).toString('base64'))
 const config={type:'table',dimensions:[],metrics:[{field:'amount',agg:'SUM',alias:'sales'}],orderBys:[],limit:100}
 function bindings(id){return Object.fromEntries(getScreenTemplate(id).slots.map(slot=>[slot.key,{source:'chart',chartId:42,config:structuredClone(slot.kind==='kpi'?config:{...config,type:slot.type,dimensions:[{field:'city',alias:'city'}]})}]))}
+
+test('template instantiation preserves calendar grouping without sharing source state',()=>{
+  const id=screenTemplates[0].id,b=bindings(id),slot=getScreenTemplate(id).slots.find(s=>s.kind==='chart')
+  b[slot.key].config.dimensions=[{field:'event_date',alias:'period',timeGrain:'month'}]
+  let key=0;const result=instantiateScreenTemplate(id,'时间模板',b,()=>`t${++key}`)
+  const panel=result.panels.find(p=>p.chartConfig?.dimensions[0]?.field==='event_date')
+  assert.equal(panel.chartConfig.dimensions[0].timeGrain,'month')
+  panel.chartConfig.dimensions[0].timeGrain='year';assert.equal(b[slot.key].config.dimensions[0].timeGrain,'month')
+})
 test('curated templates contain layout slots and no business IDs or data',()=>{
   assert.equal(screenTemplates.length,2)
   for(const template of screenTemplates){assert.equal(template.schemaVersion,1);assert.equal(new Set(template.slots.map(s=>s.key)).size,4);assert.ok(!/chartId|datasetId|password|payload|rows|grant|assetId/.test(JSON.stringify(template)));for(const s of template.slots){assert.ok(s.x>=0 && s.y>=0 && s.x+s.w<=1920 && s.y+s.h<=1080)}}

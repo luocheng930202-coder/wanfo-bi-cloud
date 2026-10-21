@@ -29,7 +29,7 @@ public class ChartQueryCompiler {
         boolean aggregate=model.getMetrics().stream().anyMatch(m->!agg(m).equals("NONE"));
         for(var d:model.getDimensions()) {
             String name=alias(d.getAlias(),d.getField());addAlias(name,aliases);
-            String col=FilterTreeCompiler.quote(d.getField());
+            String col=TimeGrain.expression(d,types.get(d.getField()));
             select.add(col+" AS "+FilterTreeCompiler.quote(name));group.add(col);
             output.put(name,name);origins.putIfAbsent(d.getField(),name);
         }
@@ -54,7 +54,14 @@ public class ChartQueryCompiler {
             if(name==null) throw invalid("排序字段须为明确的当前查询输出");
             String direction=o.getOrder()==null?"ASC":o.getOrder().toUpperCase(Locale.ROOT);
             if(!Set.of("ASC","DESC").contains(direction)) throw invalid("排序方向仅支持 ASC/DESC");
-            order.add(FilterTreeCompiler.quote(name)+" "+direction);
+            boolean calendar=model.getDimensions().stream().anyMatch(d->d.getTimeGrain()!=null && alias(d.getAlias(),d.getField()).equals(name));
+            order.add(FilterTreeCompiler.quote(name)+" "+direction+(calendar?(direction.equals("ASC")?" NULLS FIRST":" NULLS LAST"):""));
+        }
+        if(order.isEmpty()) {
+            for(var d:model.getDimensions()) if(d.getTimeGrain()!=null) {
+                order.add(FilterTreeCompiler.quote(alias(d.getAlias(),d.getField()))+" ASC NULLS FIRST");
+                break;
+            }
         }
         if(order.isEmpty() && !model.getMetrics().isEmpty()) {
             var m=model.getMetrics().get(0);order.add(FilterTreeCompiler.quote(alias(m.getAlias(),defaultAlias(m)))+" DESC");
@@ -69,7 +76,7 @@ public class ChartQueryCompiler {
         if(m.getDimensions()==null || m.getMetrics()==null || m.getFilters()==null || m.getOrderBys()==null) throw invalid("查询列表不能为 null");
         if(m.getDimensions().size()+m.getMetrics().size()<1 || m.getDimensions().size()+m.getMetrics().size()>200 || m.getOrderBys().size()>200) throw invalid("查询须包含 1～200 个输出字段，排序不超过 200 项");
         if(m.getLimit()!=null && (m.getLimit()<1 || m.getLimit()>MAX_LIMIT)) throw invalid("查询行数须在 1～10000 之间");
-        for(var d:m.getDimensions()) {if(d==null)throw invalid("维度不能为空");field(d.getField(),types);}
+        for(var d:m.getDimensions()) {if(d==null)throw invalid("维度不能为空");field(d.getField(),types);TimeGrain.expression(d,types.get(d.getField()));}
         for(var metric:m.getMetrics()) {
             if(metric==null)throw invalid("度量不能为空");field(metric.getField(),types);
             String a=agg(metric);if(!QueryModel.AGG_WHITELIST.contains(a)) throw invalid("不支持的聚合函数");

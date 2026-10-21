@@ -11,8 +11,10 @@ export interface ChartReferenceLine { key:string; kind:'fixed'|'average'|'min'|'
 export interface Field { name: string; showName?: string; type: string; dimFlag?: string }
 export interface Condition { field: string; op: string; value?: string | number | boolean | (string | number)[] }
 export type FilterNode = Condition | { logic: 'AND' | 'OR'; children: FilterNode[] }
+export type TimeGrain = 'day'|'week'|'month'|'quarter'|'year'
+export interface QueryDimension { field:string; alias?:string; timeGrain?:TimeGrain|null }
 export interface QueryModel {
-  datasetId: number; dimensions: { field: string; alias?: string }[]
+  datasetId: number; dimensions: QueryDimension[]
   metrics: { field: string; agg: string; alias?: string }[]
   filters?: Condition[]; filterTree?: FilterNode; orderBys?: {field: string; order: string}[]; limit?: number
 }

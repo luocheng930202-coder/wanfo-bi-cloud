@@ -94,6 +94,12 @@ public class ChartDefinitionService {
             throw new IllegalArgumentException("请选择图表类型并填写有效名称，定义版本须为 1");
         com.wanfo.bi.domain.chart.ChartStyleValidator.validate(d.style(),d.type());
         var q=d.query();
+        if(q.getDimensions()!=null && q.getDimensions().stream().anyMatch(dim->dim!=null && dim.getTimeGrain()!=null)) {
+            if(!Set.of("bar","hbar","line","area","stack","percent","combo").contains(d.type()))
+                throw new IllegalArgumentException("当前图表类型不支持时间粒度，请恢复原始时间后切换类型");
+            if(d.advanced()!=null && d.advanced().getDrillFields()!=null && !d.advanced().getDrillFields().isEmpty())
+                throw new IllegalArgumentException("时间粒度暂不支持维度下钻，请清除下钻字段或恢复原始时间");
+        }
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
         var dataset=datasets.selectById(q.getDatasetId());
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");

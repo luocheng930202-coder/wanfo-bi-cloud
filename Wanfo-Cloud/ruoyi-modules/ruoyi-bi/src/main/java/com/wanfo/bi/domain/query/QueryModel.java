@@ -107,6 +107,9 @@ public class QueryModel implements Serializable
         /** 输出别名，不填则用字段名 */
         private String alias;
 
+        /** Optional calendar bucket; null keeps the original value. */
+        private String timeGrain;
+
         public Dimension() {}
 
         public Dimension(String field, String alias)
@@ -120,6 +123,9 @@ public class QueryModel implements Serializable
 
         public String getAlias() { return alias; }
         public void setAlias(String alias) { this.alias = alias; }
+
+        public String getTimeGrain() { return timeGrain; }
+        public void setTimeGrain(String timeGrain) { this.timeGrain = timeGrain; }
     }
 
     /** 度量：聚合表达式 */

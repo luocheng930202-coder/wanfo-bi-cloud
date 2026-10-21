@@ -53,6 +53,27 @@ class ChartDefinitionTest {
         assertEquals(8,adjusted.style().getBarRadius());assertTrue(adjusted.style().getShowLabels());
         assertNotSame(q,adjusted.query());
     }
+    @Test void calendarGrainRoundTripsAndDashboardOverrideIsIndependent() {
+        var d=definition();d.query().getDimensions().get(0).setField("event_time");
+        d.query().getDimensions().get(0).setTimeGrain("month");
+        doAnswer(c->{((BiChartDO)c.getArgument(0)).setId(7L);return 1;}).when(mapper).insert(any());
+        service.create(new ChartDefinitionService.SaveRequest(null,d,null));
+        var capture=org.mockito.ArgumentCaptor.forClass(BiChartDO.class);verify(mapper).insert(capture.capture());
+        var row=capture.getValue();row.setId(7L);row.setVersion(0);when(mapper.get(7L)).thenReturn(row);
+        var restored=(ChartDefinitionService.Definition)service.detail(7L).get("definition");
+        assertEquals("month",restored.query().getDimensions().get(0).getTimeGrain());
+        var config=new ChartDefinitionService.PanelConfig("line",restored.query().getDimensions(),restored.query().getMetrics(),List.of(),100,null);
+        var adjusted=service.configureForDashboard(restored,config);
+        assertEquals("month",adjusted.query().getDimensions().get(0).getTimeGrain());
+        adjusted.query().getDimensions().get(0).setTimeGrain("year");assertEquals("month",restored.query().getDimensions().get(0).getTimeGrain());
+    }
+    @Test void calendarBucketsCannotSilentlyBecomeRegionOrEqualityDrillKeys() {
+        var d=definition();d.query().getDimensions().get(0).setTimeGrain("month");
+        assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,new ChartDefinitionService.Definition(1,d.name(),"map",d.query()),null)));
+        var advanced=new com.wanfo.bi.domain.chart.ChartAdvancedOptions();advanced.setDrillFields(List.of("city","district"));
+        assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,new ChartDefinitionService.Definition(1,d.name(),"line",d.query(),null,advanced),null)));
+        verify(mapper,never()).insert(any());
+    }
     @Test void savedMapQueriesReaggregateAtChildFieldThroughTheSameViewerQueryService() throws Exception {
         var q=new QueryModel();q.setDatasetId(9L);q.addDimension("province","province");q.addMetric("id","COUNT","n");
         var a=new com.wanfo.bi.domain.chart.ChartAdvancedOptions();a.setMapFields(new com.wanfo.bi.domain.chart.ChartAdvancedOptions.MapFields("province","city",null));

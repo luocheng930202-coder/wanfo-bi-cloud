@@ -39,6 +39,7 @@ public final class DashboardInteraction {
             var source=panels.stream().filter(p->p.layout().key().equals(l.sourcePanel())).findFirst().orElseThrow(()->new IllegalArgumentException("联动来源组件不存在"));
             if(source.chart()==null || (source.layout().componentType()!=null && !source.layout().componentType().equals("chart")) || source.chart().query().getDimensions().isEmpty() || !Objects.equals(source.chart().query().getDimensions().get(0).getField(),l.sourceField()))throw new IllegalArgumentException("联动来源须为图表第一维度");
             if(ChartDrill.enabled(source.chart()))throw new IllegalArgumentException("已启用下钻的图表不能作为联动来源");
+            if(source.chart().query().getDimensions().get(0).getTimeGrain()!=null)throw new IllegalArgumentException("时间汇总图暂不能作为联动来源，请恢复原始时间或解除联动");
             String f=field(fields,new Target(l.sourcePanel(),l.sourceField()));
             if(!f.equals(targets(l.targets(),fields)) || l.targets().stream().anyMatch(t->t.panel().equals(l.sourcePanel())))throw new IllegalArgumentException("联动目标类型不匹配或指向自身");
         }

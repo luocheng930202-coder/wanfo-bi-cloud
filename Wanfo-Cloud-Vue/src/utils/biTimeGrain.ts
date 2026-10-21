@@ -5,6 +5,11 @@ export function temporalField(type:string) { return /^(DATE|DATETIME|TIMESTAMP)(
 export function supportsTimeGrain(type:string) { return ['bar','hbar','line','area','stack','percent','combo'].includes(type) }
 export function validateTimeGrain(definition:ChartDefinition,fields:Field[]):string|null {
   for(const dimension of definition.query.dimensions) {
+    if(dimension.timeFill!=null && !['none','null','zero'].includes(dimension.timeFill))return '请选择有效的缺失周期处理方式'
+    if(dimension.timeFill && dimension.timeFill!=='none') {
+      if(!dimension.timeGrain || definition.query.dimensions.length!==1 || !definition.query.metrics.length || definition.query.metrics.some(m=>m.agg==='NONE'))return '时间补齐需要一个已设置粒度的时间维度及聚合指标'
+      if((definition.query.orderBys?.length||0)>1 || definition.query.orderBys?.some(o=>![dimension.field,dimension.alias||dimension.field].includes(o.field)))return '时间补齐仅支持按时间排序，请清除指标排名或其他排序'
+    }
     if(dimension.timeGrain==null)continue
     if(!supportsTimeGrain(definition.type))return '当前图表类型不支持时间粒度，请恢复原始时间后切换类型'
     if(!TIME_GRAINS.some(g=>g.value===dimension.timeGrain))return '请选择有效的时间粒度'

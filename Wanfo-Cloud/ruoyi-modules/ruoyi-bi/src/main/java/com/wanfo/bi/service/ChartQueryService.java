@@ -137,8 +137,10 @@ public class ChartQueryService
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("columns", qr.getColumns());
-        result.put("rows", com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
-        result.put("rowCount", qr.getRows().size());
+        var filled=com.wanfo.bi.query.TimeGapFill.apply(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
+        result.put("rows", filled.rows());
+        result.put("rowCount", filled.rows().size());
+        if(filled.metadata()!=null)result.put("timeFill",filled.metadata());
         result.put("costMs", System.currentTimeMillis() - start);
         if(caps.has("bi:resource:admin")) {result.put("executedSql",sql);result.put("params",params);}
         result.put("datasetName", ds.getName());

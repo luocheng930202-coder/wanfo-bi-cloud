@@ -237,7 +237,10 @@ public class DashboardService {
         Map<String,Object> presentation=new LinkedHashMap<>();
         presentation.put("style",view.style());presentation.put("advanced",view.advanced());
         presentation.put("type",view.type());presentation.put("dimensions",dimensions);presentation.put("metrics",metrics);
-        var queryDims=view.query().getDimensions().stream().map(f->Map.of("field",f.getField(),"alias",f.getAlias()==null || f.getAlias().isBlank()?f.getField():f.getAlias())).toList();
+        var queryDims=view.query().getDimensions().stream().map(f->{
+            Map<String,Object> dimension=new LinkedHashMap<>();dimension.put("field",f.getField());dimension.put("alias",f.getAlias()==null || f.getAlias().isBlank()?f.getField():f.getAlias());
+            if(f.getTimeGrain()!=null)dimension.put("timeGrain",f.getTimeGrain());if(f.getTimeFill()!=null)dimension.put("timeFill",f.getTimeFill());return dimension;
+        }).toList();
         presentation.put("queryDimensions",queryDims);
         presentation.put("queryMetrics",view.query().getMetrics());
         if(view.advanced()!=null && view.advanced().getPivotRowFields()!=null) {

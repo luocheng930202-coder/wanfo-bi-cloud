@@ -9,10 +9,10 @@ function bindings(id){return Object.fromEntries(getScreenTemplate(id).slots.map(
 
 test('template instantiation preserves calendar grouping without sharing source state',()=>{
   const id=screenTemplates[0].id,b=bindings(id),slot=getScreenTemplate(id).slots.find(s=>s.kind==='chart')
-  b[slot.key].config.dimensions=[{field:'event_date',alias:'period',timeGrain:'month'}]
+  b[slot.key].config.dimensions=[{field:'event_date',alias:'period',timeGrain:'month',timeFill:'zero'}]
   let key=0;const result=instantiateScreenTemplate(id,'时间模板',b,()=>`t${++key}`)
   const panel=result.panels.find(p=>p.chartConfig?.dimensions[0]?.field==='event_date')
-  assert.equal(panel.chartConfig.dimensions[0].timeGrain,'month')
+  assert.equal(panel.chartConfig.dimensions[0].timeGrain,'month');assert.equal(panel.chartConfig.dimensions[0].timeFill,'zero')
   panel.chartConfig.dimensions[0].timeGrain='year';assert.equal(b[slot.key].config.dimensions[0].timeGrain,'month')
 })
 test('curated templates contain layout slots and no business IDs or data',()=>{

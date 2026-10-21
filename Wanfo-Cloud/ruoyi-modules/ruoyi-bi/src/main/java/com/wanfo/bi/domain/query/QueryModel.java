@@ -109,6 +109,7 @@ public class QueryModel implements Serializable
 
         /** Optional calendar bucket; null keeps the original value. */
         private String timeGrain;
+        private String timeFill;
 
         public Dimension() {}
 
@@ -126,6 +127,8 @@ public class QueryModel implements Serializable
 
         public String getTimeGrain() { return timeGrain; }
         public void setTimeGrain(String timeGrain) { this.timeGrain = timeGrain; }
+        public String getTimeFill() { return timeFill; }
+        public void setTimeFill(String timeFill) { this.timeFill = timeFill; }
     }
 
     /** 度量：聚合表达式 */

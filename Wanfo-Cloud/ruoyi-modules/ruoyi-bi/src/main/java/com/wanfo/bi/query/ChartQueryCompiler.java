@@ -21,6 +21,7 @@ public class ChartQueryCompiler {
     }
     public Compiled compile(QueryModel model,String base,Map<String,String> types) {
         validate(model,types);
+        TimeGapFill.validate(model);
         if(base==null || base.isBlank()) throw invalid("数据集查询定义为空");
         var predicate=FilterTreeCompiler.compile(model.getFilters(),model.getFilterTree(),types);
         List<String> select=new ArrayList<>(),group=new ArrayList<>();

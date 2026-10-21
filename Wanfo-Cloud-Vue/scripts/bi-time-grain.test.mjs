@@ -19,3 +19,13 @@ test('invalid combinations give a correction instead of losing a stored bucket',
   c.type='line';c.advanced={drillFields:['date','text']};assert.match(validateTimeGrain(c,fields),/下钻/)
   delete c.query.dimensions[0].timeGrain;assert.equal(validateTimeGrain(c,fields),null)
 })
+
+test('gap filling requires a calendar aggregate and chronological sorting',()=>{
+  const c=chart();c.query.metrics=[{field:'value',agg:'SUM'}];c.query.dimensions[0].timeFill='zero'
+  assert.equal(validateTimeGrain(c,fields),null)
+  c.query.orderBys=[{field:'value',order:'desc'}];assert.match(validateTimeGrain(c,fields),/时间排序/)
+  c.query.orderBys=[{field:'date',order:'desc'}];assert.equal(validateTimeGrain(c,fields),null)
+  c.query.metrics[0].agg='NONE';assert.match(validateTimeGrain(c,fields),/聚合/)
+  c.query.metrics[0].agg='SUM';delete c.query.dimensions[0].timeGrain;assert.match(validateTimeGrain(c,fields),/粒度/)
+  c.query.dimensions[0].timeFill='unexpected';assert.match(validateTimeGrain(c,fields),/缺失周期/)
+})

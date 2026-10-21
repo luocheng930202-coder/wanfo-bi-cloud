@@ -34,6 +34,25 @@ class ChartDefinitionTest {
         verify(resources).register("chart",7L);verify(queries).compileOnly(any());
         var capture=org.mockito.ArgumentCaptor.forClass(BiChartDO.class);verify(mapper).insert(capture.capture());assertEquals("alice",capture.getValue().getCreateBy());assertFalse(capture.getValue().getDefinitionJson().contains("rows"));
     }
+    @Test void savedDetailRoundTripsChartSpecificStyle() {
+        var d=definition();var style=new com.wanfo.bi.domain.chart.ChartVisualStyle();style.setBarMaxWidth(28);style.setBarRadius(6);style.setShowLabels(true);
+        var styled=new ChartDefinitionService.Definition(1,d.name(),d.type(),d.query(),style,null);
+        doAnswer(c->{((BiChartDO)c.getArgument(0)).setId(7L);return 1;}).when(mapper).insert(any());
+        service.create(new ChartDefinitionService.SaveRequest(null,styled,null));
+        var capture=org.mockito.ArgumentCaptor.forClass(BiChartDO.class);verify(mapper).insert(capture.capture());
+        var row=capture.getValue();row.setId(7L);row.setVersion(0);when(mapper.get(7L)).thenReturn(row);
+        var restored=(ChartDefinitionService.Definition)service.detail(7L).get("definition");
+        assertEquals(28,restored.style().getBarMaxWidth());assertEquals(6,restored.style().getBarRadius());assertTrue(restored.style().getShowLabels());
+    }
+    @Test void dashboardOverridesPreserveSavedVisualStyle() {
+        var d=definition();var style=new com.wanfo.bi.domain.chart.ChartVisualStyle();style.setBarRadius(8);style.setShowLabels(true);
+        var source=new ChartDefinitionService.Definition(1,d.name(),d.type(),d.query(),style,null);
+        var q=d.query();
+        var config=new ChartDefinitionService.PanelConfig("bar",q.getDimensions(),q.getMetrics(),List.of(),100,null);
+        var adjusted=service.configureForDashboard(source,config);
+        assertEquals(8,adjusted.style().getBarRadius());assertTrue(adjusted.style().getShowLabels());
+        assertNotSame(q,adjusted.query());
+    }
     @Test void invalidSchemaCannotPersist(){
         var d=definition();assertThrows(IllegalArgumentException.class,()->service.create(new ChartDefinitionService.SaveRequest(null,new ChartDefinitionService.Definition(2,d.name(),d.type(),d.query()),null)));verify(mapper,never()).insert(any());
     }

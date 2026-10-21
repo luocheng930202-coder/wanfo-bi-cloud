@@ -79,12 +79,13 @@ public class ChartDefinitionService {
             if(q.getFilterTree()==null)q.setFilterTree(c.filterTree());
             else {var group=new QueryModel.FilterNode();group.setLogic("AND");group.setChildren(List.of(q.getFilterTree(),c.filterTree()));q.setFilterTree(group);}
         }
-        var result=new Definition(1,source.name(),c.type(),q);validate(result);return result;
+        var result=new Definition(1,source.name(),c.type(),q,source.style(),source.advanced());validate(result);return result;
     }
     private void validate(Definition d) {
         if(d==null || !Objects.equals(d.schemaVersion(),1) || d.name()==null || d.name().isBlank() || d.name().trim().length()>200
                 || d.type()==null || !ChartTypes.allowed(d.type()) || d.query()==null)
             throw new IllegalArgumentException("请选择图表类型并填写有效名称，定义版本须为 1");
+        com.wanfo.bi.domain.chart.ChartStyleValidator.validate(d.style(),d.type());
         var q=d.query();
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
         var dataset=datasets.selectById(q.getDatasetId());

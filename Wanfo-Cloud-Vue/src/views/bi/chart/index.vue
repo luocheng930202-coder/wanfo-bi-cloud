@@ -35,7 +35,15 @@
     <el-alert v-if="standalone && !editorVisible && error" :title="error" type="error" :closable="false" show-icon><template #default><el-button @click="initialize">重新加载</el-button><el-button @click="closeEditor">返回图表管理</el-button></template></el-alert>
     <el-skeleton v-else-if="standalone && !editorVisible" :rows="10" animated/>
     <el-card v-if="editorVisible" class="editor-card">
-      <template #header><div class="toolbar"><span>{{ currentId ? '图表 · '+definition.name : '新建图表' }} <el-tag v-if="dirty" size="small" type="warning">未保存</el-tag><el-tag v-if="!editable" size="small" type="info">只读</el-tag></span><div class="toolbar"><el-button :icon="Close" :disabled="busy" @click="closeEditor">返回图表管理</el-button><el-button v-if="readOnly && canEditResource" :disabled="busy" @click="openWindow(currentId!, 'edit')">编辑图表</el-button><el-button :loading="previewing" :disabled="busy || !canPreview" @click="preview">更新数据</el-button><el-button v-if="currentId && !dirty" v-hasPermi="['bi:export:add']" :disabled="busy || !canPreview" @click="exportSaved('csv')">导出 CSV</el-button><el-button v-if="currentId && !dirty" v-hasPermi="['bi:export:add']" :disabled="busy || !canPreview" @click="exportSaved('xlsx')">导出 Excel</el-button><el-button v-if="currentId && !dirty" v-hasPermi="['bi:export:add']" :disabled="busy || !canPreview" @click="exportSaved('pdf')">导出 PDF</el-button><el-button v-if="editable" type="primary" :loading="saving" :disabled="busy || !dirty" @click="save">保存图表</el-button></div></div></template>
+      <template #header><div class="toolbar"><span>{{ currentId ? '图表 · '+definition.name : '新建图表' }} <el-tag v-if="dirty" size="small" type="warning">未保存</el-tag><el-tag v-if="!editable" size="small" type="info">只读</el-tag></span><div class="toolbar"><el-button :icon="Close" :disabled="busy" @click="closeEditor">返回图表管理</el-button><el-button v-if="readOnly && canEditResource" :disabled="busy" @click="openWindow(currentId!, 'edit')">编辑图表</el-button><el-button :loading="previewing" :disabled="busy || !canPreview" @click="preview">更新数据</el-button><el-dropdown v-if="canGrantResource || canExportResource" trigger="click" :disabled="busy" @command="handleWorkspaceAction">
+          <el-button :disabled="busy" :icon="MoreFilled" aria-label="更多图表操作">更多操作<el-icon class="el-icon--right"><ArrowDown/></el-icon></el-button>
+          <template #dropdown><el-dropdown-menu>
+            <el-dropdown-item v-if="canGrantResource" command="grant" :icon="Lock">图表授权</el-dropdown-item>
+            <el-dropdown-item v-if="canExportResource" command="csv" :divided="canGrantResource" :disabled="dirty || !canPreview">导出 CSV</el-dropdown-item>
+            <el-dropdown-item v-if="canExportResource" command="xlsx" :disabled="dirty || !canPreview">导出 Excel</el-dropdown-item>
+            <el-dropdown-item v-if="canExportResource" command="pdf" :disabled="dirty || !canPreview">导出 PDF</el-dropdown-item>
+          </el-dropdown-menu></template>
+        </el-dropdown><el-button v-if="editable" type="primary" :loading="saving" :disabled="busy || !dirty" @click="save">保存图表</el-button></div></div></template>
       <div class="query-status" role="status"><span>{{ lastQueryAt ? '数据更新于 '+lastQueryAt : '尚未查询' }}</span><span v-if="result">{{ result.rowCount }} 行 · {{ result.costMs }} ms</span><el-switch v-if="editable" v-model="autoQuery" active-text="自动查询"/></div>
       <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else :definition="definition" :result="result" :labels="labels"/></section>
       <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview"/>
@@ -64,7 +72,7 @@ import { BI_SAVED_EVENT } from '@/utils/biThumbnail'
 import { chartWorkspacePath,readLibraryPosition,saveLibraryPosition } from '@/utils/biWorkspaceNavigation'
 import useUserStore from '@/store/modules/user'
 import BiResourceThumbnail from '../components/BiResourceThumbnail.vue'
-import { Search, Refresh, Grid, List, Plus, Histogram, View, Close } from '@element-plus/icons-vue'
+import { Search, Refresh, Grid, List, Plus, Histogram, View, Close, MoreFilled, ArrowDown, Lock } from '@element-plus/icons-vue'
 import { CHART_TYPE_LABELS, applyTypeDefaults, isChartType, metricAddDisabled, validateChartQueryShape } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation } from '@/utils/biChartPresentation'
 import { syncPivotQueryDimensions, validatePivotConfig } from '@/utils/biPivotPreview'
@@ -107,6 +115,14 @@ const fingerprint=()=>JSON.stringify(definition)
 const dirty=computed(()=>editorVisible.value && fingerprint()!==baseline.value)
 const busy=computed(()=>loading.value || saving.value || previewing.value)
 const selected=computed(()=>charts.value.find(c=>c.id===currentId.value))
+const canGrantResource=computed(()=>!!selected.value?.resourceActions.includes('grant') && checkPermi(['bi:chart:grant']))
+const canExportResource=computed(()=>!!currentId.value && checkPermi(['bi:export:add']))
+function handleWorkspaceAction(command:string){
+  if(busy.value)return
+  if(command==='grant'){
+    if(canGrantResource.value && selected.value)void openGrants({...selected.value,name:definition.name})
+  }else if(canExportResource.value && !dirty.value && canPreview.value && (command==='csv' || command==='xlsx' || command==='pdf'))void exportSaved(command)
+}
 const canEditResource=computed(()=>!!selected.value?.resourceActions.includes('edit') && checkPermi(['bi:chart:edit']))
 const editable=computed(()=>!readOnly.value && (currentId.value?!!selected.value?.resourceActions.includes('edit') && checkPermi(['bi:chart:edit']):checkPermi(['bi:chart:add'])))
 const canPreview=computed(()=>currentId.value && queryFingerprint()===baselineQuery.value ? !!selected.value?.resourceActions.includes('query') && checkPermi(['bi:chart:query']):editable.value && checkPermi(['bi:dataset:query']))

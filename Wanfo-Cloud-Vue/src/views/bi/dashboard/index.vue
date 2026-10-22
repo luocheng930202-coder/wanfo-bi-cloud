@@ -81,6 +81,7 @@
       <el-table :data="grants" border><el-table-column prop="displayName" label="对象"/><el-table-column label="权限"><template #default="{row}">{{ grantActions[row.action] }}</template></el-table-column><el-table-column label="操作" width="90"><template #default="{row}"><el-button link type="danger" :disabled="grantSaving" @click="removeGrant(row)">撤销</el-button></template></el-table-column></el-table>
     </el-dialog>
     <el-dialog v-model="exportDialog.visible" title="导出看板数据" width="420px">
+      <el-alert title="Excel 保留透视表层级与已配置的小计、总计；CSV / PDF 导出分组明细。" type="info" :closable="false" class="mb8"/>
       <el-form label-position="top">
         <el-form-item label="范围"><el-select v-model="exportDialog.panelKey" clearable placeholder="全部数据组件（Excel）" style="width:100%"><el-option v-for="p in queryPanels" :key="p.key" :value="p.key" :label="p.title"/></el-select></el-form-item>
         <el-form-item label="格式"><el-radio-group v-model="exportDialog.format"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv" :disabled="!exportDialog.panelKey && queryPanels.length>1">CSV</el-radio><el-radio value="pdf" :disabled="!exportDialog.panelKey && queryPanels.length>1">PDF</el-radio></el-radio-group></el-form-item>

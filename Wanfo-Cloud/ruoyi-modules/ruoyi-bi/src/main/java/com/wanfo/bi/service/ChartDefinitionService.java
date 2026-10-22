@@ -185,6 +185,17 @@ public class ChartDefinitionService {
     public Map<String,Object> data(Long id) throws Exception {return data(id,null);}
     public Map<String,Object> data(Long id,Map<String,Object> input) throws Exception {
         caps.require("bi:chart:query");var row=require(id,"query");var d=decode(row);
+        return queryDefinitionData(d,input);
+    }
+    Map<String,Object> exportData(Long id) throws Exception {
+        caps.require("bi:chart:query");var d=decode(require(id,"query"));
+        var data=queryDefinitionData(d,null);
+        if(!"pivot".equals(d.type()))return Map.of("data",data,"definition",d);
+        @SuppressWarnings("unchecked") var columns=(List<String>)data.get("columns");
+        var labels=FieldDisplayLabels.forChartResult(d,queries.datasetFieldEntities(d.query().getDatasetId()),columns);
+        return Map.of("data",data,"definition",d,"fieldLabels",labels);
+    }
+    private Map<String,Object> queryDefinitionData(Definition d,Map<String,Object> input) throws Exception {
         if(!GeoMapQuery.isMap(d))return queries.query(d.query());
         return mapData(d,input);
     }

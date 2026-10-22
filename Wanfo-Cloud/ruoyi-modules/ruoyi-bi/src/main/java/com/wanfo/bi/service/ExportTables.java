@@ -20,7 +20,12 @@ import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 
 /** CSV (UTF-8 BOM), streaming-friendly Excel, and table PDF. Formula-looking values are prefixed with a quote. */
 public final class ExportTables {
-    public record Sheet(String name, List<String> columns, List<Map<String,Object>> rows) { }
+    public record Merge(int firstRow,int lastRow,int firstCol,int lastCol) { }
+    public record Grid(List<List<Object>> cells,List<Merge> merges,int headerRows,int frozenColumns,List<Integer> summaryRows,List<Integer> summaryColumns) { }
+    public record Sheet(String name, List<String> columns, List<Map<String,Object>> rows,Grid grid) {
+        public Sheet(String name,List<String> columns,List<Map<String,Object>> rows){this(name,columns,rows,null);}
+        public int rowCount(){return grid==null?rows==null?0:rows.size():grid.cells().size()-grid.headerRows();}
+    }
     public static final int MAX_ROWS_CSV = 100_000;
     public static final int MAX_ROWS_XLSX = 10_000;
     public static final int MAX_ROWS_PDF = 5_000;
@@ -57,6 +62,7 @@ public final class ExportTables {
             for (int i = 0; i < sheets.size(); i++) {
                 var sheet = sheets.get(i);
                 var tab = workbook.createSheet(sheetName(sheet.name(), i));
+                if(sheet.grid()!=null){writeGrid(workbook,tab,sheet.grid());continue;}
                 List<String> columns = columns(sheet, MAX_ROWS_XLSX);
                 Row header = tab.createRow(0);
                 for (int c = 0; c < columns.size(); c++) header.createCell(c).setCellValue(columns.get(c));
@@ -79,6 +85,31 @@ public final class ExportTables {
         } catch (IOException e) {
             throw new IllegalStateException("无法生成 Excel 文件");
         }
+    }
+    private static void writeGrid(SXSSFWorkbook workbook,org.apache.poi.ss.usermodel.Sheet tab,Grid grid) {
+        if(grid.cells().size()>MAX_ROWS_XLSX || grid.cells().stream().anyMatch(row->row.size()>256))throw new IllegalArgumentException("透视导出超过 10000 行或 256 列，请缩小范围");
+        var bold=workbook.createFont();bold.setBold(true);
+        var header=workbook.createCellStyle();header.setFont(bold);header.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.PALE_BLUE.getIndex());header.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);header.setWrapText(true);
+        var summary=workbook.createCellStyle();summary.setFont(bold);summary.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex());summary.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+        var summaries=new java.util.HashSet<>(grid.summaryRows());var summaryColumns=new java.util.HashSet<>(grid.summaryColumns());
+        for(int r=0;r<grid.cells().size();r++){
+            var row=tab.createRow(r);row.setHeightInPoints(r==0?44:r<grid.headerRows()?30:22);var values=grid.cells().get(r);
+            for(int c=0;c<values.size();c++){
+                var cell=row.createCell(c);Object value=values.get(c);
+                if(value instanceof java.math.BigDecimal number && excelNumber(number))cell.setCellValue(number.doubleValue());
+                else cell.setCellValue(text(value));
+                if(r<grid.headerRows())cell.setCellStyle(header);else if(summaries.contains(r) || summaryColumns.contains(c))cell.setCellStyle(summary);
+            }
+        }
+        for(var merge:grid.merges())tab.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(merge.firstRow(),merge.lastRow(),merge.firstCol(),merge.lastCol()));
+        int width=grid.cells().stream().mapToInt(List::size).max().orElse(0);
+        for(int c=0;c<width;c++)tab.setColumnWidth(c,(c<grid.frozenColumns()?20:18)*256);
+        tab.createFreezePane(grid.frozenColumns(),grid.headerRows());
+    }
+    private static boolean excelNumber(java.math.BigDecimal number){
+        double value=number.doubleValue();
+        return number.precision()<=15 && Double.isFinite(value) && (number.signum()==0 || Math.abs(value)>=Double.MIN_NORMAL)
+                && java.math.BigDecimal.valueOf(value).compareTo(number)==0;
     }
     public static byte[] pdf(Sheet sheet) {
         if (sheet == null) throw new IllegalArgumentException("导出内容无效");

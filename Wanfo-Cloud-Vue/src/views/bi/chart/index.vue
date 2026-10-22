@@ -40,7 +40,7 @@
           <template #dropdown><el-dropdown-menu>
             <el-dropdown-item v-if="canGrantResource" command="grant" :icon="Lock">图表授权</el-dropdown-item>
             <el-dropdown-item v-if="canExportResource" command="csv" :divided="canGrantResource" :disabled="dirty || !canPreview">导出 CSV</el-dropdown-item>
-            <el-dropdown-item v-if="canExportResource" command="xlsx" :disabled="dirty || !canPreview">导出 Excel</el-dropdown-item>
+            <el-dropdown-item v-if="canExportResource" command="xlsx" :disabled="dirty || !canPreview">{{ definition.type==='pivot'?'导出 Excel（透视布局）':'导出 Excel' }}</el-dropdown-item>
             <el-dropdown-item v-if="canExportResource" command="pdf" :disabled="dirty || !canPreview">导出 PDF</el-dropdown-item>
           </el-dropdown-menu></template>
         </el-dropdown><el-button v-if="editable" type="primary" :loading="saving" :disabled="busy || !dirty" @click="save">保存图表</el-button></div></div></template>

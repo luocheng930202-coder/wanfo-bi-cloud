@@ -131,7 +131,7 @@ public class ExportJobService {
             String format = String.valueOf(request.get("format"));
             byte[] bytes = encode(sheets, format);
             if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("导出文件超过 8MB，请缩小查询范围");
-            int rows = sheets.stream().mapToInt(s -> s.rows() == null ? 0 : s.rows().size()).sum();
+            int rows = sheets.stream().mapToInt(ExportTables.Sheet::rowCount).sum();
             String fileName = ExportTables.fileName(String.valueOf(row.get("name")), format);
             Map<String,Object> done = new LinkedHashMap<>();
             done.put("id", id); done.put("status", "succeeded"); done.put("message", "");
@@ -155,7 +155,7 @@ public class ExportJobService {
     }
     private String fingerprint(List<ExportTables.Sheet> sheets){
         var actor=actors.currentActor();var identity=new LinkedHashMap<String,Object>();identity.put("user",actor.userId());identity.put("organization",actor.organizationId());identity.put("roles",new TreeSet<>(actor.roleIds()));
-        return SecurityDigest.hash(json.writeValueAsString(canonical(Map.of("identity",identity,"tables",sheets.stream().map(sheet->Map.of("name",sheet.name(),"columns",sheet.columns(),"rows",sheet.rows())).toList()))));
+        return SecurityDigest.hash(json.writeValueAsString(canonical(Map.of("identity",identity,"tables",sheets.stream().map(sheet->{Map<String,Object> table=new LinkedHashMap<>();table.put("name",sheet.name());table.put("columns",sheet.columns());table.put("rows",sheet.rows());if(sheet.grid()!=null)table.put("grid",Map.of("cells",sheet.grid().cells(),"merges",sheet.grid().merges(),"headerRows",sheet.grid().headerRows(),"frozenColumns",sheet.grid().frozenColumns(),"summaryRows",sheet.grid().summaryRows(),"summaryColumns",sheet.grid().summaryColumns()));return table;}).toList()))));
     }
     private Object canonical(Object value){if(value instanceof Map<?,?> map){Map<String,Object> sorted=new TreeMap<>();map.forEach((k,v)->sorted.put(String.valueOf(k),canonical(v)));return sorted;}if(value instanceof Collection<?> list)return list.stream().map(this::canonical).toList();return value;}
     private void fail(Long id, String message) {
@@ -175,7 +175,10 @@ public class ExportJobService {
         List<ExportTables.Sheet> sheets = new ArrayList<>();
         if ("chart".equals(type)) {
             caps.require("bi:chart:query");
-            sheets.add(sheet(jobName, charts.data(sourceId), format));
+            if("xlsx".equals(format)){
+                var payload=charts.exportData(sourceId);var d=(ChartDefinitionService.Definition)payload.get("definition");
+                sheets.add("pivot".equals(d.type())?PivotExport.sheet(jobName,d,unwrap(payload),payload.get("fieldLabels") instanceof Map<?,?> labels?(Map<String,String>)labels:Map.of()):sheet(jobName,payload,format));
+            }else sheets.add(sheet(jobName, charts.data(sourceId), format));
             return sheets;
         }
         caps.require("bi:dashboard:consume");
@@ -189,7 +192,14 @@ public class ExportJobService {
             String key = String.valueOf(panel.get("key"));
             if (!panelKey.isEmpty() && !panelKey.equals(key)) continue;
             Map<String,Object> payload = dashboards.panelData(sourceId, key, revision, input.isEmpty() ? null : input);
-            sheets.add(sheet(ExportTables.sheetName(String.valueOf(panel.getOrDefault("title", key)), index++), unwrap(payload), format));
+            String name=ExportTables.sheetName(String.valueOf(panel.getOrDefault("title", key)), index++);
+            var presentation=payload.get("presentation") instanceof Map<?,?> p?(Map<String,Object>)p:Map.<String,Object>of();
+            if("xlsx".equals(format) && "pivot".equals(presentation.get("type"))){
+                Map<String,Object> definition=new LinkedHashMap<>();definition.put("schemaVersion",1);definition.put("name",name);definition.put("type","pivot");definition.put("style",presentation.get("style"));definition.put("advanced",presentation.get("advanced"));
+                definition.put("query",Map.of("dimensions",presentation.get("queryDimensions"),"metrics",presentation.get("queryMetrics")));
+                var d=json.readValue(json.writeValueAsString(definition),ChartDefinitionService.Definition.class);
+                sheets.add(PivotExport.sheet(name,d,unwrap(payload),presentation.get("fieldLabels") instanceof Map<?,?> labels?(Map<String,String>)labels:Map.of()));
+            }else sheets.add(sheet(name, unwrap(payload), format));
         }
         if (Set.of("csv","pdf").contains(format) && sheets.size() > 1) throw new IllegalArgumentException("多个数据组件请使用 Excel");
         return sheets;

@@ -46,7 +46,8 @@
         </el-dropdown><el-button v-if="editable" type="primary" :loading="saving" :disabled="busy || !dirty" @click="save">保存图表</el-button></div></div></template>
       <nav v-if="definition.type==='map' && (chartMapPath.length || result?.mapContext)" aria-label="地图下钻路径" class="query-status"><el-button link :disabled="busy || !chartMapPath.length" @click="mapBack(0)">{{ result?.mapContext?.rootName || mapRootName || '初始地图' }}</el-button><template v-for="(segment,i) in chartMapPath" :key="i"><span>›</span><el-button link :disabled="busy" @click="mapBack(i+1)">{{ result?.mapContext?.breadcrumbs[i]?.name || mapPathNames[i] || segment.value }}</el-button></template></nav>
       <div class="query-status" role="status"><span>{{ lastQueryAt ? '数据更新于 '+lastQueryAt : '尚未查询' }}</span><span v-if="result">{{ result.rowCount }} 行 · {{ result.costMs }} ms</span><el-switch v-if="editable" v-model="autoQuery" active-text="自动查询"/></div>
-      <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else :loading="previewing || loading" :definition="definition" :result="result" :labels="labels" :drillable="definition.type==='map'" :can-drill-down="result?.mapContext?.canDrillDown" @drill="mapDrill"/></section>
+      <div v-if="previewing || queryStopped" class="query-status" aria-live="polite"><span role="status">{{ previewing ? queryWaitMessage(queryElapsed) : '已停止等待，可点击更新数据重新查询。' }}</span><el-button v-if="previewing" size="small" @click="stopQuery">停止等待</el-button><span v-if="previewing" class="query-wait-hint">停止等待不会保证终止服务端查询。</span></div>
+      <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else-if="!queryStopped" :loading="previewing || loading" :definition="definition" :result="result" :labels="labels" :drillable="definition.type==='map'" :can-drill-down="result?.mapContext?.canDrillDown" @drill="mapDrill"/></section>
       <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" :map-drillable="definition.type==='map'" :map-can-drill-down="result?.mapContext?.canDrillDown" @map-drill="mapDrill" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview"/>
     </el-card>
     <el-dialog v-model="grantDialog.visible" :title="'图表授权 · '+grantDialog.name" width="min(700px, calc(100vw - 24px))">
@@ -57,7 +58,7 @@
   </div>
 </template>
 <script setup lang="ts" name="BiChart">
-import { ref, reactive, computed, watch, onMounted, onActivated, nextTick, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
@@ -81,12 +82,16 @@ import { CHART_TYPE_LABELS, applyTypeDefaults, isChartType, metricAddDisabled, v
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,validateChartMetricPresentation,nextChartMetricAlias } from '@/utils/biChartPresentation'
 import { syncPivotQueryDimensions, validatePivotConfig } from '@/utils/biPivotPreview'
 import { validateMapConfig } from '@/utils/biMapPreview'
+import {createQueryRun,queryWaitMessage} from '@/utils/biQueryRun'
 import {validateTimeGrain} from '@/utils/biTimeGrain'
 const route=useRoute(), router=useRouter()
 const standalone=computed(()=>route.meta.chartWorkspace===true)
 const readOnly=computed(()=>standalone.value && route.params.mode==='view')
 const autoQuery=ref(false),lastQueryAt=ref('')
 let queryController:AbortController|undefined,autoQueryTimer:ReturnType<typeof setTimeout>|undefined
+const queryRun=createQueryRun(),queryElapsed=ref(0),queryStopped=ref(false)
+let queryClock:ReturnType<typeof setInterval>|undefined
+function stopQuery(){queryRun.cancel();queryController?.abort();clearInterval(queryClock);clearTimeout(autoQueryTimer);previewing.value=false;queryStopped.value=true}
 const baselineQuery=ref('')
 let loadedType:ChartDefinition['type']='bar'
 const chartMapPath=ref<DrillPathSegment[]>([]),mapRootName=ref(''),mapPathNames=ref<string[]>([])
@@ -137,15 +142,16 @@ const canPreview=computed(()=>currentId.value && queryFingerprint()===baselineQu
 const fieldLabel=(name:string)=>{const f=fields.value.find(f=>f.name===name);const show=f?.showName?.trim();return show||name}
 const labels=computed(()=>{const names:Record<string,string>={};for(const d of definition.query.dimensions)names[d.alias||d.field]=fieldLabel(d.field);for(const m of definition.query.metrics)names[metricResultKey(m)]=`${fieldLabel(m.field)} · ${aggregations[m.agg]}`;return names})
 watch(queryFingerprint,()=>{
-  chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];revision++;queryController?.abort();previewing.value=false;result.value=null;error.value='';lastQueryAt.value=''
+  chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];revision++;queryRun.cancel();queryController?.abort();clearInterval(queryClock);queryStopped.value=false;previewing.value=false;result.value=null;error.value='';lastQueryAt.value=''
   clearTimeout(autoQueryTimer)
   if(autoQuery.value && editorVisible.value && !loading.value)autoQueryTimer=setTimeout(()=>{if(canPreview.value)void preview()},500)
 })
 watch(autoQuery,enabled=>{clearTimeout(autoQueryTimer);if(enabled && canPreview.value && !result.value)void preview()})
+onDeactivated(()=>{clearTimeout(autoQueryTimer);if(previewing.value)stopQuery()})
 function beforeUnload(event:BeforeUnloadEvent){if(dirty.value){event.preventDefault();event.returnValue=''}}
 function onSaved(event:Event){if(!standalone.value && (event as CustomEvent).detail?.kind==='chart')void refresh()}
 function onStorage(event:StorageEvent){if(!standalone.value && event.key==='bi:saved-resource')void refresh()}
-onBeforeUnmount(()=>{++loadVersion;++revision;queryController?.abort();clearTimeout(autoQueryTimer);window.removeEventListener('beforeunload',beforeUnload);window.removeEventListener(BI_SAVED_EVENT,onSaved);window.removeEventListener('storage',onStorage)})
+onBeforeUnmount(()=>{clearInterval(queryClock);++loadVersion;++revision;queryRun.cancel();queryController?.abort();clearTimeout(autoQueryTimer);window.removeEventListener('beforeunload',beforeUnload);window.removeEventListener(BI_SAVED_EVENT,onSaved);window.removeEventListener('storage',onStorage)})
 async function discard(){if(!dirty.value)return true;try{await ElMessageBox.confirm('当前图表有未保存的配置，是否放弃？','未保存的修改',{type:'warning'});return true}catch{return false}}
 onBeforeRouteLeave(async()=>{if(!standalone.value)saveLibraryPosition('chart',libraryActor,{search:search.value,filter:typeFilter.value,display:displayMode.value,page:page.value,scroll:window.scrollY});return await discard()})
 async function refresh(){listLoading.value=true;listError.value='';try{charts.value=(await listCharts()).data||[];thumbnailRefresh.value++}catch{listError.value='图表列表加载失败，请重试'}finally{listLoading.value=false}}
@@ -168,7 +174,7 @@ async function datasetChanged(id:number){
 }
 async function openChart(row:ChartSummary){
   if(!standalone.value){openWindow(row.id);return}
-  const v=++loadVersion;++revision;queryController?.abort();loading.value=true;chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];result.value=null;error.value='';editorVisible.value=false
+  const v=++loadVersion;++revision;queryRun.cancel();queryController?.abort();clearInterval(queryClock);previewing.value=false;queryStopped.value=false;loading.value=true;chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];result.value=null;error.value='';editorVisible.value=false
   try {
     const r=await getChart(row.id);if(v!==loadVersion)return
     Object.assign(definition,r.data.definition);loadedType=definition.type;ensureChartPresentation(definition);if(definition.type==='pivot')syncPivotQueryDimensions(definition)
@@ -229,10 +235,12 @@ async function preview(){
   const shape=validateChartQueryShape(definition.type,definition.query.dimensions,definition.query.metrics) || validatePivotConfig(definition) || validateMapConfig(definition) || validateTimeGrain(definition,fields.value)
   if(shape){ElMessage.warning(shape);return}
   if(!canPreview.value)return
-  queryController?.abort();const controller=new AbortController();queryController=controller
+  if(loading.value || saving.value)return
+  const controller=queryRun.begin();if(!controller)return;clearTimeout(autoQueryTimer);queryController=controller
+  clearInterval(queryClock);queryElapsed.value=0;queryStopped.value=false;const started=Date.now();queryClock=setInterval(()=>{queryElapsed.value=Date.now()-started},1000)
   const snapshot=queryFingerprint(),r=revision;previewing.value=true;result.value=null;error.value=''
-  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal,definition.type==='map'?{drills:{chart:chartMapPath.value}}:undefined):definition.type==='map'?await previewMapChart(JSON.parse(fingerprint()),{drills:{chart:chartMapPath.value}},controller.signal):await previewChart(JSON.parse(snapshot),controller.signal);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value);if(latest.data.version!==version.value)throw new Error('version-changed')}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;if(response.data.mapContext){mapRootName.value=response.data.mapContext.rootName;mapPathNames.value=response.data.mapContext.breadcrumbs.map(v=>v.name)}lastQueryAt.value=new Date().toLocaleTimeString()}}
-  catch{if(!controller.signal.aborted && r===revision)error.value='查询失败，请检查字段、筛选条件及数据权限，或点击更新数据重试'}finally{if(queryController===controller)previewing.value=false}
+  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal,definition.type==='map'?{drills:{chart:chartMapPath.value}}:undefined):definition.type==='map'?await previewMapChart(JSON.parse(fingerprint()),{drills:{chart:chartMapPath.value}},controller.signal):await previewChart(JSON.parse(snapshot),controller.signal);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value,controller.signal);if(latest.data.version!==version.value)throw new Error('version-changed')}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;if(response.data.mapContext){mapRootName.value=response.data.mapContext.rootName;mapPathNames.value=response.data.mapContext.breadcrumbs.map(v=>v.name)}lastQueryAt.value=new Date().toLocaleTimeString()}}
+  catch{if(!controller.signal.aborted && r===revision)error.value='查询失败，请检查字段、筛选条件及数据权限，或点击更新数据重试'}finally{if(queryRun.finish(controller)){clearInterval(queryClock);previewing.value=false}}
 }
 async function exportSaved(format:ExportFormat){
   if(!currentId.value || dirty.value){ElMessage.warning('请先保存图表再导出');return}

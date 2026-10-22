@@ -9,6 +9,9 @@ export function drillPathFromPayload(payload?: PanelResult): DrillPathSegment[] 
 export function canDrillDown(payload?: PanelResult): boolean {
   return payload?.presentation?.canDrillDown === true
 }
+export function resolveDrillPath(explicit:DrillPathSegment[]|undefined,payload?:PanelResult):DrillPathSegment[]{
+  return explicit===undefined?drillPathFromPayload(payload):explicit.map(s=>({...s}))
+}
 
 export function appendDrillSegment(path: DrillPathSegment[], field: string, value: string | number | null): DrillPathSegment[] {
   return [...path, { field, value }]

@@ -44,6 +44,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class CalciteQueryEngine
 {
+    private com.wanfo.bi.config.BiProperties properties=new com.wanfo.bi.config.BiProperties();
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureQueryLimits(com.wanfo.bi.config.BiProperties properties){this.properties=properties;}
     private static final Logger log = LoggerFactory.getLogger(CalciteQueryEngine.class);
 
     /**
@@ -105,7 +108,7 @@ public class CalciteQueryEngine
             pools.put(ds.getSchemaName(), pool);
         }
 
-        JdbcSchema schema = JdbcSchema.create(root, ds.getSchemaName(), pool, metadata -> {
+        JdbcSchema schema = JdbcSchema.create(root, ds.getSchemaName(), GovernedJdbc.wrap(pool,QueryGovernor.current()), metadata -> {
             var dialect=org.apache.calcite.sql.SqlDialectFactoryImpl.INSTANCE.create(metadata);
             return dialect instanceof org.apache.calcite.sql.dialect.MysqlSqlDialect
                     ? new CalendarMysqlDialect(org.apache.calcite.sql.SqlDialects.createContext(metadata)) : dialect;
@@ -125,6 +128,8 @@ public class CalciteQueryEngine
         pool.setPassword(ds.getPassword());
         pool.setInitialSize(1);
         pool.setMaxTotal(8);
+        pool.setMaxWaitMillis(10_000);
+        pool.setDefaultQueryTimeout(properties.getQueryTimeoutSeconds());
         pool.setMinIdle(1);
         // 连接保活，避免长时间空闲被源库断开
         pool.setTimeBetweenEvictionRunsMillis(60_000);
@@ -148,9 +153,11 @@ public class CalciteQueryEngine
         result.setExecutedSql(sql);
 
         long start = System.currentTimeMillis();
-        try (Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery(sql))
+        try (Statement st = conn.createStatement())
         {
+            st.setQueryTimeout(properties.getQueryTimeoutSeconds());
+            if(QueryGovernor.current()!=null)QueryGovernor.current().watch(st);
+            try(ResultSet rs=st.executeQuery(sql)){
             ResultSetMetaData rsmd = rs.getMetaData();
             int colCount = rsmd.getColumnCount();
 
@@ -162,8 +169,9 @@ public class CalciteQueryEngine
             result.setColumns(columns);
 
             List<Map<String, Object>> rows = new ArrayList<>();
-            while (rs.next() && rows.size() < maxRows)
+            while (rows.size() < maxRows && rs.next())
             {
+                if(QueryGovernor.current()!=null)QueryGovernor.current().check();
                 Map<String, Object> row = new LinkedHashMap<>();
                 for (int i = 1; i <= colCount; i++)
                 {
@@ -172,6 +180,7 @@ public class CalciteQueryEngine
                 rows.add(row);
             }
             result.setRows(rows);
+            }
         }
         result.setCostMs(System.currentTimeMillis() - start);
         return result;
@@ -197,6 +206,8 @@ public class CalciteQueryEngine
         long start = System.currentTimeMillis();
         try (java.sql.PreparedStatement ps = conn.prepareStatement(sql))
         {
+            ps.setQueryTimeout(properties.getQueryTimeoutSeconds());
+            if(QueryGovernor.current()!=null)QueryGovernor.current().watch(ps);
             if (params != null)
             {
                 for (int i = 0; i < params.size(); i++)
@@ -217,8 +228,9 @@ public class CalciteQueryEngine
                 result.setColumns(columns);
 
                 List<Map<String, Object>> rows = new ArrayList<>();
-                while (rs.next() && rows.size() < maxRows)
+                while (rows.size() < maxRows && rs.next())
                 {
+                    if(QueryGovernor.current()!=null)QueryGovernor.current().check();
                     Map<String, Object> row = new LinkedHashMap<>();
                     for (int i = 1; i <= colCount; i++)
                     {

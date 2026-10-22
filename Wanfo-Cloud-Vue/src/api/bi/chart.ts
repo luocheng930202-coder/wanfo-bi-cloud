@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import {queryCancellationHeaders} from '@/utils/biQueryCancellation'
 import { notifyBiSaved } from '@/utils/biThumbnail'
 import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
@@ -119,7 +120,7 @@ export interface ChartSummary { id: number; name: string; type: ChartDefinition[
 export interface MapContext {fieldLabel?:string;scope:string;rootScope:string;rootName:string;field:string;canDrillDown:boolean;drillableRegions:string[];breadcrumbs:{name:string;code:string}[]}
 export interface PivotTotals {status:'complete'|'unavailable';scope:'filtered';rowFields:string[];colFields:string[];metricKeys:string[];detailTruncated:boolean;reason?:string;cells:{rowDepth:number;colDepth:number;dimensions:Record<string,unknown>;values:Record<string,unknown>}[]}
 export interface ComparisonField {key:string;baseline:string;difference:string;rate:string}
-export interface ChartResult { timeComparison?:{mode:'previous'|'year';label:string;grain:TimeGrain;status:'complete'|'skipped';fields:ComparisonField[];note?:string;reason?:string;missingValues?:number;zeroBases?:number};columnLabels?:Record<string,string>;pivotTotals?:PivotTotals; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; costMs: number;mapContext?:MapContext; timeFill?:{mode:'null'|'zero';status:'complete'|'skipped';sourceRows:number;addedRows:number;periods:string[];reason?:string} }
+export interface ChartResult { queryDiagnostics?:{requestId:string;slow:boolean;durationMs:number}; timeComparison?:{mode:'previous'|'year';label:string;grain:TimeGrain;status:'complete'|'skipped';fields:ComparisonField[];note?:string;reason?:string;missingValues?:number;zeroBases?:number};columnLabels?:Record<string,string>;pivotTotals?:PivotTotals; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; costMs: number;mapContext?:MapContext; timeFill?:{mode:'null'|'zero';status:'complete'|'skipped';sourceRows:number;addedRows:number;periods:string[];reason?:string} }
 export const chartFields = (id: number): Promise<AjaxResult<Field[]>> => request({url:`/bi/chart/dataset/${id}/fields`})
 export const listCharts = (): Promise<AjaxResult<ChartSummary[]>> => request({url:'/bi/chart/saved'})
 export const getChart = (id: number, signal?:AbortSignal): Promise<AjaxResult<{id:number;version:number;definition:ChartDefinition}>> => request({url:`/bi/chart/saved/${id}`,signal})
@@ -127,9 +128,9 @@ export const saveChart = (definition: ChartDefinition, id?: number, version?: nu
 export const commitTemplateChartLeases = (chartIds: number[]): Promise<AjaxResult<{committed:number}>> => request({url:'/bi/chart/template-lease/commit',method:'post',data:{chartIds}})
 export const releaseTemplateChartLeases = (chartIds: number[]): Promise<AjaxResult<{released:number}>> => request({url:'/bi/chart/template-lease/release',method:'post',data:{chartIds}})
 export const deleteChart = (id: number): Promise<AjaxResult> => request({url:`/bi/chart/saved/${id}`,method:'delete'})
-export const previewChart = (query: QueryModel, signal?: AbortSignal): Promise<AjaxResult<ChartResult>> => request({url:'/bi/chart/data',method:'post',data:query,timeout:60000,signal})
-export const savedChartData = (id: number, signal?: AbortSignal,input?:unknown): Promise<AjaxResult<ChartResult>> => request({url:`/bi/chart/saved/${id}/data`,method:'post',data:input,timeout:60000,signal})
-export const previewMapChart=(definition:ChartDefinition,input:unknown,signal?:AbortSignal):Promise<AjaxResult<ChartResult>>=>request({url:'/bi/chart/map-preview',method:'post',data:{definition,input},timeout:60000,signal})
+export const previewChart = (query: QueryModel, signal?: AbortSignal): Promise<AjaxResult<ChartResult>> => request({url:'/bi/chart/data',method:'post',data:query,timeout:60000,signal,headers:queryCancellationHeaders(signal)})
+export const savedChartData = (id: number, signal?: AbortSignal,input?:unknown): Promise<AjaxResult<ChartResult>> => request({url:`/bi/chart/saved/${id}/data`,method:'post',data:input,timeout:60000,signal,headers:queryCancellationHeaders(signal)})
+export const previewMapChart=(definition:ChartDefinition,input:unknown,signal?:AbortSignal):Promise<AjaxResult<ChartResult>>=>request({url:'/bi/chart/map-preview',method:'post',data:{definition,input},timeout:60000,signal,headers:queryCancellationHeaders(signal)})
 export const searchChartPrincipals = (query=''): Promise<AjaxResult<GrantPrincipal[]>> => request({url:'/bi/chart/principals',params:{query}})
 export const listChartGrants = (id: number): Promise<AjaxResult<ResourceGrant[]>> => request({url:`/bi/chart/saved/${id}/grants`})
 export const grantChart = (id: number, principalId: number, action: string): Promise<AjaxResult> => request({url:`/bi/chart/saved/${id}/grants`,method:'post',data:{principalId,action}})

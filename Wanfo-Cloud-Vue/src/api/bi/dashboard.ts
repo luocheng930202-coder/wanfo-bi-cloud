@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import {queryCancellationHeaders} from '@/utils/biQueryCancellation'
 import { notifyBiSaved } from '@/utils/biThumbnail'
 import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
@@ -36,7 +37,7 @@ export const publishDashboard=(id:number,version:number):Promise<AjaxResult<{ver
 export const unpublishDashboard=(id:number,version:number):Promise<AjaxResult<{version:number}>>=>request({url:`/bi/dashboard/${id}/unpublish`,method:'post',data:{version}})
 export const deleteDashboard=(id:number):Promise<AjaxResult>=>request({url:`/bi/dashboard/${id}`,method:'delete'})
 export const getDashboardView=(id:number):Promise<AjaxResult<DashboardView>>=>request({url:`/bi/dashboard/${id}/view`})
-export const dashboardPanelData=(id:number,key:string,revision:number,input?:DashboardInput,signal?:AbortSignal):Promise<AjaxResult<PanelResult>>=>request({url:`/bi/dashboard/${id}/panels/${encodeURIComponent(key)}/data`,method:'post',params:{revision},data:input,timeout:60000,signal})
+export const dashboardPanelData=(id:number,key:string,revision:number,input?:DashboardInput,signal?:AbortSignal):Promise<AjaxResult<PanelResult>>=>request({url:`/bi/dashboard/${id}/panels/${encodeURIComponent(key)}/data`,method:'post',params:{revision},data:input,timeout:60000,signal,headers:queryCancellationHeaders(signal)})
 export const searchDashboardPrincipals=(query=''):Promise<AjaxResult<GrantPrincipal[]>>=>request({url:'/bi/dashboard/principals',params:{query}})
 export const listDashboardGrants=(id:number):Promise<AjaxResult<ResourceGrant[]>>=>request({url:`/bi/dashboard/${id}/grants`})
 export const grantDashboard=(id:number,principalId:number,action:string):Promise<AjaxResult>=>request({url:`/bi/dashboard/${id}/grants`,method:'post',data:{principalId,action}})

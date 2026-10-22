@@ -16,7 +16,9 @@ public class QueryGovernor {
  public QueryGovernor(BiProperties properties,CurrentActorProvider actors){this.properties=properties;this.actors=actors;}
  public Run enter(Collection<Long> ids) throws QueryGovernanceException {
   if(CURRENT.get()!=null)throw new IllegalStateException("Nested query scope");
-  var actor=actors.currentActor();var run=admit(actor.source()+":"+actor.userId(),ids);CURRENT.set(run);return run;
+  var actor=actors.currentActor();var run=admit(actor.source()+":"+actor.userId(),ids);CURRENT.set(run);
+  var context=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();if(context instanceof org.springframework.web.context.request.ServletRequestAttributes servlet && servlet.getResponse()!=null)servlet.getResponse().setHeader("X-BI-Query-Id",run.id());
+  return run;
  }
  public static Run current(){return CURRENT.get();}
  Run admit(String owner,Collection<Long> ids) throws QueryGovernanceException {
@@ -32,11 +34,17 @@ public class QueryGovernor {
  private QueryGovernanceException busy(){return new QueryGovernanceException("QUERY_BUSY",UUID.randomUUID().toString(),null);}
  public final class Run implements AutoCloseable {
   private final String owner,id=UUID.randomUUID().toString();private final List<Long> keys;private final AtomicBoolean closed=new AtomicBoolean();private final long started=System.nanoTime();
+  private final String sourceKind=sourceKind();
   private Run(String owner,List<Long> keys){this.owner=owner;this.keys=keys;}
+  public long elapsedMillis(){return Math.max(0,(System.nanoTime()-started)/1_000_000);}
+  public java.util.Map<String,Object> diagnostics(){return java.util.Map.of("requestId",id,"slow",elapsedMillis()>=properties.getQueryLimits().getSlowMillis(),"durationMs",elapsedMillis());}
   public String id(){return id;}
   public QueryGovernanceException failure(Exception cause){return new QueryGovernanceException(null,id,cause);}
-  @Override public void close(){if(!closed.compareAndSet(false,true))return;if(CURRENT.get()==this)CURRENT.remove();synchronized(lock){active--;decrement(users,owner);for(var key:keys)decrement(sources,key);lock.notifyAll();}}
+  @Override public void close(){if(!closed.compareAndSet(false,true))return;if(CURRENT.get()==this)CURRENT.remove();
+   if(elapsedMillis()>=properties.getQueryLimits().getSlowMillis())org.slf4j.LoggerFactory.getLogger(QueryGovernor.class).warn("BI slow query requestId={} source={} elapsedMs={} datasourceCount={}",id,sourceKind,elapsedMillis(),keys.size());
+   synchronized(lock){active--;decrement(users,owner);for(var key:keys)decrement(sources,key);lock.notifyAll();}}
  }
+ private static String sourceKind(){var context=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();if(context instanceof org.springframework.web.context.request.ServletRequestAttributes servlet){String path=servlet.getRequest().getRequestURI();if(path.startsWith("/bi/dashboard/"))return "dashboard";if(path.startsWith("/bi/chart/"))return "chart";}return "background";}
  private static <T> void decrement(Map<T,Integer> counts,T key){counts.computeIfPresent(key,(k,n)->n<=1?null:n-1);}
  int activeCount(){synchronized(lock){return active;}}
  int waitingCount(){synchronized(lock){return waiting;}}

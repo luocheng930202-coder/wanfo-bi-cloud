@@ -161,6 +161,7 @@ public class ChartQueryService
         if(filled.metadata()!=null)result.put("timeFill",filled.metadata());
         result.put("costMs", System.currentTimeMillis() - start);
         if(caps.has("bi:resource:admin")) {result.put("executedSql",sql);result.put("params",params);}
+        if(run!=null)result.put("queryDiagnostics",run.diagnostics());
         result.put("datasetName", ds.getName());
         return result;
     }

@@ -1,5 +1,7 @@
 export function isBiQueryUrl(url:unknown):boolean{return typeof url==='string' && (/^\/bi\/chart\/(data|map-preview|saved\/[^/]+\/data)$/.test(url) || /^\/bi\/dashboard\/[^/]+\/(panels\/[^/]+\/data|controls\/[^/]+\/options)$/.test(url))}
 const messages={
+ QUERY_BUSY:'查询繁忙，请稍后重试，避免连续刷新。',
+ QUERY_CANCELLED:'查询已取消，可重新查询。',
  SESSION_EXPIRED:'登录已过期，请重新登录后查询。',
  ACCESS_DENIED:'没有此数据的查询权限，请联系管理员核对资源及行列权限。',
  RESOURCE_UNAVAILABLE:'查询资源不存在或已不可用，请返回列表检查。',
@@ -25,6 +27,8 @@ export function biQueryError(value:unknown):BiQueryError {
  else if(status===404)kind='RESOURCE_UNAVAILABLE'
  else if(status===409)kind='VERSION_CHANGED'
  else if(status===400)kind='QUERY_INVALID'
+ else if(status===429)kind='QUERY_BUSY'
+ else if(status===499)kind='QUERY_CANCELLED'
  else if(typeof data.errorType==='string' && Object.prototype.hasOwnProperty.call(messages,data.errorType))kind=data.errorType as keyof typeof messages
  else if(error.code==='ERR_NETWORK')kind='NETWORK_UNAVAILABLE'
  // Accept only server-generated UUIDs; never render untrusted messages or request headers.

@@ -45,6 +45,9 @@ public class ChartQueryService
     private final DatasetDataPolicy policies;
     private final BiResourceAuthorizer resources;
     private final CapabilityProvider caps;
+    private com.wanfo.bi.query.QueryGovernor governor;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureGovernor(com.wanfo.bi.query.QueryGovernor governor){this.governor=governor;}
 
     public ChartQueryService(BiDatasetTableMapper datasetMapper,
                              BiDatasetFieldMapper fieldMapper,
@@ -82,6 +85,7 @@ public class ChartQueryService
             return result;
         } catch(BiAccessException ex) {throw ex;}
         catch(IllegalArgumentException ex) {throw new BiAccessException(403,"看板字段或数据规则已改变，请联系管理员");}
+        catch(com.wanfo.bi.query.QueryGovernanceException ex){throw ex;}
         catch(Exception ex) {
             org.slf4j.LoggerFactory.getLogger(ChartQueryService.class).warn("Dashboard dataset {} query failed",model.getDatasetId(),ex);
             throw new BiAccessException(500,"看板取数失败，请检查数据源或联系管理员");
@@ -131,9 +135,9 @@ public class ChartQueryService
         List<Map<String,Object>> prior=List.of();
         // A table dataset depends only on its bound source; unrelated offline sources
         // must not prevent its query. Administrator SQL datasets may span sources.
-        try (Connection conn = engine.open("table".equals(ds.getType())
-                ? List.of(datasourceProvider.getById(ds.getDatasourceId()))
-                : datasourceProvider.listEnabled()))
+        var selectedSources="table".equals(ds.getType())?List.of(datasourceProvider.getById(ds.getDatasourceId())):datasourceProvider.listEnabled();
+        var run=governor==null?null:governor.enter(selectedSources.stream().map(com.wanfo.bi.datasource.BiDatasource::getId).toList());
+        try (run; Connection conn = engine.open(selectedSources))
         {
             qr = engine.queryWithParams(conn, sql, params, pivot!=null?pivot.maxRows():model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
             if(model.getTimeComparison()!=null && qr.getRows().size()<(model.getLimit()==null?ChartQueryCompiler.DEFAULT_LIMIT:model.getLimit())){
@@ -141,7 +145,7 @@ public class ChartQueryService
                 if(baseline!=null){var reference=compiler.compile(baseline,restricted.sql(),valid);var referenceParams=new ArrayList<>(restricted.params());referenceParams.addAll(reference.params);prior=com.wanfo.bi.query.TimeGrain.calendarRows(baseline,engine.queryWithParams(conn,reference.sql,referenceParams,1001).getRows());}
             }
         }
-
+        catch(Exception failure){if(run!=null)throw run.failure(failure);throw failure;}
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("columns", pivot==null?qr.getColumns():qr.getColumns().stream().filter(column->!column.equals(pivot.rowDepthKey()) && !column.equals(pivot.colDepthKey())).toList());

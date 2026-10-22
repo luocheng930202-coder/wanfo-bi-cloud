@@ -31,6 +31,19 @@ public class BiProperties
     /** 查询超时（秒） */
     private int queryTimeoutSeconds = 30;
 
+    private QueryLimits queryLimits=new QueryLimits();
+    public QueryLimits getQueryLimits(){return queryLimits;}
+    public void setQueryLimits(QueryLimits limits){if(limits!=null)queryLimits=limits;}
+    public static class QueryLimits {
+        private int maxActive=16,perUser=2,perSource=4,maxWaiting=16,waitMillis=1500,slowMillis=3000;
+        public int getMaxActive(){return maxActive;} public void setMaxActive(int n){maxActive=Math.min(64,Math.max(1,n));}
+        public int getPerUser(){return perUser;} public void setPerUser(int n){perUser=Math.min(16,Math.max(1,n));}
+        public int getPerSource(){return perSource;} public void setPerSource(int n){perSource=Math.min(8,Math.max(1,n));}
+        public int getMaxWaiting(){return maxWaiting;} public void setMaxWaiting(int n){maxWaiting=Math.min(64,Math.max(0,n));}
+        public int getWaitMillis(){return waitMillis;} public void setWaitMillis(int n){waitMillis=Math.min(5000,Math.max(0,n));}
+        public int getSlowMillis(){return slowMillis;} public void setSlowMillis(int n){slowMillis=Math.min(60000,Math.max(1,n));}
+    }
+
     /** 过渡期数据源列表 */
     private List<Ds> datasources = new ArrayList<>();
 

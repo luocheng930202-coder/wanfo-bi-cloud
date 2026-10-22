@@ -9,7 +9,7 @@ test('query errors preserve safe type and server correlation while stripping raw
  const id='fb69d056-a0a0-40ea-840b-b9c562047fa5';const e=biQueryError({code:503,errorType:'DATASOURCE_UNAVAILABLE',requestId:id,msg:'jdbc:secret password=secret'});assert.equal(e.kind,'DATASOURCE_UNAVAILABLE');assert.match(queryErrorText(e),new RegExp(id));assert.doesNotMatch(queryErrorText(e),/jdbc|secret/)
 })
 test('transport timeouts, network, permissions, stale version and invalid config differ',()=>{
- for(const [input,kind] of [[{code:'ECONNABORTED'},'QUERY_TIMEOUT'],[{code:'ETIMEDOUT'},'QUERY_TIMEOUT'],[{code:'ERR_NETWORK'},'NETWORK_UNAVAILABLE'],[{response:{status:403}},'ACCESS_DENIED'],[{code:409},'VERSION_CHANGED'],[{code:400},'QUERY_INVALID'],[{code:401},'SESSION_EXPIRED']])assert.equal(biQueryError(input).kind,kind)
+ for(const [input,kind] of [[{code:'ECONNABORTED'},'QUERY_TIMEOUT'],[{code:'ETIMEDOUT'},'QUERY_TIMEOUT'],[{code:'ERR_NETWORK'},'NETWORK_UNAVAILABLE'],[{response:{status:403}},'ACCESS_DENIED'],[{code:409},'VERSION_CHANGED'],[{code:400},'QUERY_INVALID'],[{code:401},'SESSION_EXPIRED'],[{code:429},'QUERY_BUSY'],[{code:499},'QUERY_CANCELLED']])assert.equal(biQueryError(input).kind,kind)
 })
 test('unknown payload and malicious identifiers never become user-facing text',()=>{
  for(const value of [null,'SQL secret',{errorType:'toString',msg:'SQL secret',requestId:'<img onerror=secret>'},{response:{data:{errorType:'UNKNOWN',requestId:'password=secret'}}}]){assert.equal(biQueryError(value).kind,'QUERY_FAILED');assert.doesNotMatch(queryErrorText(value),/secret|<img|SQL/)}

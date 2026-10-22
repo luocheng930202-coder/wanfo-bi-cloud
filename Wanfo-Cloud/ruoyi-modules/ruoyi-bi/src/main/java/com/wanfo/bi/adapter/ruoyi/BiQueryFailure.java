@@ -14,6 +14,7 @@ final class BiQueryFailure {
         else {
             Set<Throwable> seen=Collections.newSetFromMap(new IdentityHashMap<>());
             for(Throwable cause=exception;cause!=null && seen.add(cause);cause=cause.getCause()){
+                if(cause instanceof com.wanfo.bi.query.QueryGovernanceException control && control.category()!=null){type=control.category();code=type.equals("QUERY_BUSY")?429:type.equals("QUERY_CANCELLED")?499:504;break;}
                 if(cause instanceof SQLTimeoutException || cause instanceof java.util.concurrent.TimeoutException){type="QUERY_TIMEOUT";code=504;break;}
                 if(cause instanceof SQLTransientConnectionException || cause instanceof SQLNonTransientConnectionException || cause instanceof SQLException sql && sql.getSQLState()!=null && sql.getSQLState().startsWith("08")){type="DATASOURCE_UNAVAILABLE";code=503;break;}
                 if(cause instanceof SQLSyntaxErrorException){type="QUERY_INVALID";code=400;break;}
@@ -21,6 +22,7 @@ final class BiQueryFailure {
             if(type.equals("QUERY_FAILED") && (exception instanceof IllegalArgumentException || exception instanceof org.springframework.http.converter.HttpMessageNotReadableException || exception instanceof org.springframework.web.method.annotation.MethodArgumentTypeMismatchException || exception instanceof org.springframework.web.bind.MissingServletRequestParameterException)){type="QUERY_INVALID";code=400;}
         }
         String id=UUID.randomUUID().toString();
+        Set<Throwable> ids=Collections.newSetFromMap(new IdentityHashMap<>());for(Throwable cause=exception;cause!=null && ids.add(cause);cause=cause.getCause())if(cause instanceof com.wanfo.bi.query.QueryGovernanceException control){id=control.requestId();break;}
         LoggerFactory.getLogger(BiQueryFailure.class).warn("BI query failed requestId={} category={} exceptionType={}",id,type,exception.getClass().getName());
         AjaxResult result=AjaxResult.error(code,"查询未完成，请根据错误类型处理并提供排查编号");
         result.put("errorType",type);result.put("requestId",id);return result;

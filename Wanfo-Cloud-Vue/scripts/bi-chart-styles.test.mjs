@@ -8,7 +8,7 @@ for(const file of ['biTheme.ts','biPresentation.ts','biChartTypes.ts','biChartPr
   const source=(await fs.readFile(new URL('../src/utils/'+file,import.meta.url),'utf8')).split('\n').filter(line=>!line.startsWith('import ')).join('\n')
   bundle+=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText+'\n'
 }
-const {buildChartPreviewOption,chartStylePresets,applyChartStylePreset}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
+const {buildChartPreviewOption,chartStylePresets,applyChartStylePreset,chartAxisLabel}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
 function option(type,style={},value=20) {
   return buildChartPreviewOption({type,definition:{schemaVersion:1,name:'销售额',type,style,query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}},result:{columns:['category','value'],rows:[{category:'A',value}],rowCount:1,costMs:1},labels:{value:'销售额'},formatFor:()=>undefined})
 }
@@ -79,4 +79,40 @@ test('specialized presets reset other shapes but preserve metric formats, refere
   applyChartStylePreset(style,chartStylePresets('scatter')[1])
   assert.equal(style.funnelGap,undefined);assert.equal(style.radarShape,undefined);assert.equal(style.scatterSize,6)
   assert.equal(style.title,'保留标题');assert.equal(style.metrics[0].format.mode,'percent');assert.equal(style.referenceLines.length,1)
+})
+
+
+test('readable date and unicode axis labels never change raw categories or full tooltips',()=>{
+  assert.equal(chartAxisLabel('2026-01-01T00:00:00.000+08:00'),'2026-01-01')
+  assert.equal(chartAxisLabel('2026-01-01 00:00:00'),'2026-01-01')
+  assert.equal(chartAxisLabel('2026-01-01T01:02:03Z'),'2026-01-01\n01:02:03')
+  assert.equal(chartAxisLabel('😀😀😀😀😀😀',5),'😀😀😀😀…')
+  const raw='2026-01-01T00:00:00.000+08:00'
+  const definition={schemaVersion:1,name:'日期',type:'line',style:{axisLabelRotate:45},query:{datasetId:1,dimensions:[{field:'date'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}}
+  const result={columns:['date','value'],rows:[{date:raw,value:-12}],rowCount:1,costMs:1}
+  const o=buildChartPreviewOption({type:'line',definition,result,labels:{value:'金额'},formatFor:()=>undefined})
+  assert.equal(o.xAxis.axisLabel.formatter(raw),'2026-01-01');assert.equal(o.xAxis.data[0],raw);assert.equal(o.xAxis.axisLabel.rotate,45)
+  assert.deepEqual(o.series[0].data,[-12]);assert.match(o.tooltip.formatter([{seriesIndex:0,dataIndex:0,name:raw}]),/00:00:00.000\+08:00/)
+})
+
+test('title and either legend placement reserve separate plotting space',()=>{
+  const top=option('bar',{showTitle:true,showLegend:true}),bottom=option('bar',{showTitle:true,showLegend:true,legendPosition:'bottom'})
+  assert.ok(top.legend.top>top.title.top+14);assert.ok(top.grid.top>top.legend.top+20)
+  assert.ok(bottom.grid.bottom>=52);assert.equal(option('bar',{showLegend:false}).grid.top,20)
+  assert.equal(top.yAxis.splitNumber,5);assert.equal(top.yAxis.splitLine.lineStyle.type,'dashed');assert.equal(top.xAxis.axisLabel.hideOverlap,true)
+})
+
+test('dark tooltips and pie separators use the actual card surface',()=>{
+  const definition={schemaVersion:1,name:'构成',type:'pie',query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}}
+  const o=buildChartPreviewOption({type:'pie',definition,result:{columns:['category','value'],rows:[{category:'A',value:1}],rowCount:1,costMs:1},labels:{},appearance:{theme:'dark',cardBackground:'#172330',textColor:'#EEEEEE',borderColor:'#445566'},formatFor:()=>undefined})
+  assert.equal(o.tooltip.textStyle.color,'#EEEEEE');assert.equal(o.tooltip.backgroundColor,'#172330');assert.equal(o.tooltip.borderColor,'#445566');assert.equal(o.tooltip.confine,true);assert.equal(o.series[0].itemStyle.borderColor,'#172330')
+})
+
+test('comparison series share metric colors and use dashed outlines without duplicating area fills',()=>{
+  const definition={schemaVersion:1,name:'对比',type:'area',style:{lineWidth:6,areaOpacity:0.44,showPoints:false,metrics:[{key:'sales',color:'#123456'}]},query:{datasetId:1,dimensions:[{field:'period'}],metrics:[{field:'a',agg:'SUM',alias:'sales'},{field:'a',agg:'SUM',alias:'base'},{field:'b',agg:'SUM',alias:'qty'},{field:'b',agg:'SUM',alias:'qty_base'}]}}
+  const result={columns:['period','sales','base','qty','qty_base'],rows:[{period:'A',sales:10,base:8,qty:2,qty_base:null}],rowCount:1,costMs:1,timeComparison:{fields:[{key:'sales',baseline:'base'},{key:'qty',baseline:'qty_base'}]}}
+  const o=buildChartPreviewOption({type:'area',definition,result,labels:{},formatFor:()=>undefined})
+  assert.equal(o.series[0].lineStyle.color,'#123456');assert.equal(o.series[1].lineStyle.color,'#123456');assert.equal(o.series[1].lineStyle.type,'dashed')
+  assert.equal(o.series[2].lineStyle.color,o.series[3].lineStyle.color);assert.equal(o.series[0].lineStyle.width,6);assert.equal(o.series[0].areaStyle.opacity,0.44);assert.equal(o.series[1].areaStyle.opacity,0)
+  assert.equal(o.series[0].showSymbol,false);assert.deepEqual(o.series[3].data,[null])
 })

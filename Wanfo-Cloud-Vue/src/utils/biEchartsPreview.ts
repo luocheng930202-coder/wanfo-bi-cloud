@@ -23,6 +23,16 @@ function piePoint(value: number, key: string, metricStyles?: MetricStyle[]) {
   return color ? { value, itemStyle: { color } } : value
 }
 
+/** Display-only axis shortening; raw categories remain available to tooltips and interactions. */
+export function chartAxisLabel(value:unknown,maxLength=14):string {
+  const text=String(value??'空值')
+  const midnight=text.match(/^(\d{4}-\d{2}-\d{2})[T ]00:00:00(?:\.0+)?(?:Z|[+-]\d{2}:?\d{2})?$/)
+  if(midnight)return midnight[1]
+  const instant=text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|[+-]\d{2}:?\d{2})?$/)
+  if(instant)return instant[1]+'\n'+instant[2]
+  const chars=Array.from(text);return chars.length>maxLength?chars.slice(0,maxLength-1).join('')+'…':text
+}
+
 export function buildChartPreviewOption(params: {
   type: ChartType
   definition: ChartDefinition
@@ -45,6 +55,7 @@ export function buildChartPreviewOption(params: {
   const filledRow=(row:Record<string,unknown>)=>!!dimField && filledPeriods.has(String(row[dimField]))
   const categories = dimField ? result.rows.map(r => String(r[dimField] ?? '空值')) : result.rows.map((_, i) => String(i + 1))
   const visualTheme=resolveBiTheme(mergedAppearance)
+  const palette=paletteFromStyle(style,mergedAppearance)
   const textColor = visualTheme.text
   const comparisonBase=(key:string)=>!!result.timeComparison?.fields.some(f=>f.baseline===key)
   const nullMode = advanced?.nullMode || 'keep'
@@ -71,22 +82,27 @@ export function buildChartPreviewOption(params: {
       .join('\n')
   }
 
-  const legendTop = style?.legendPosition === 'bottom' ? undefined : 8
+  const legendTop = style?.legendPosition === 'bottom' ? undefined : style?.showTitle?36:8
   const legendBottom = style?.legendPosition === 'bottom' ? 8 : undefined
+  const chartTop=style?.showTitle?(style.showLegend!==false && style.legendPosition!=='bottom'?76:44):(style?.showLegend!==false && style?.legendPosition!=='bottom'?48:20)
+  const chartBottom=style?.showLegend!==false && style?.legendPosition==='bottom'?52:28
   const base: EChartsOption = {
-    color: paletteFromStyle(style, mergedAppearance),
+    color: palette,
     textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart },
-    title: style?.showTitle ? { text: style.title || definition.name, left: 'center', textStyle: { color: textColor, fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.title,fontWeight:600 } } : undefined,
+    title: style?.showTitle ? { text: style.title || definition.name, left:16,top:4, textStyle: { color: textColor, fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.title,fontWeight:600 } } : undefined,
     tooltip: {
       trigger: isPieLike(type) || type === 'gauge' || type === 'funnel' ? 'item' : 'axis',
       renderMode: 'richText',
-      textStyle:{fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart},
+      confine:true,backgroundColor:visualTheme.surface,borderColor:visualTheme.border,borderWidth:1,
+      shadowBlur:12,shadowColor:'rgba(16,24,40,0.12)',
+      axisPointer:{type:'line',lineStyle:{color:visualTheme.muted,type:'dashed'}},
+      textStyle:{color:textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart},
       padding:12,
       formatter: tooltipFormatter
     },
     legend: style?.showLegend === false
       ? { show: false }
-      : { type: 'scroll', top: legendTop, bottom: legendBottom, itemGap:16,textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart } }
+      : { type: 'scroll', top: legendTop, bottom: legendBottom, left:16,right:16,itemWidth:16,itemHeight:8,itemGap:16,textStyle: { color: visualTheme.muted,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart } }
   }
 
   function normalizeValue(raw: unknown, key: string): number | null {
@@ -208,7 +224,7 @@ export function buildChartPreviewOption(params: {
       graphic: type==='ring' && style?.ringShowTotal ? [{type:'text',left:'center',top:'middle',style:{text:`合计\n${formatValue(key,total)}`,align:'center' as const,fill:textColor,fontSize:18,lineHeight:28}}] : undefined,
       series: [{ type: 'pie' as const, radius, data, startAngle:style?.startAngle??90,
         label:{show:style?.showLabels!==false,position:style?.pieLabelPosition??'outside',formatter:style?.pieLabelPosition==='inside'?'{d}%':'{b}'},
-        labelLine:{show:style?.pieLabelPosition!=='inside'},labelLayout:{hideOverlap:true},itemStyle:{borderWidth:2,borderColor:mergedAppearance?.cardBackground??'#fff'}}] }
+        labelLine:{show:style?.pieLabelPosition!=='inside',length:12,length2:10},labelLayout:{hideOverlap:true},emphasis:{focus:'self'},itemStyle:{borderWidth:2,borderColor:visualTheme.surface}}] }
   }
 
   const keys = metrics.map(metricResultKey)
@@ -259,28 +275,33 @@ export function buildChartPreviewOption(params: {
       if(line.kind!=='fixed' && !values.length)return []
       const value=line.kind==='fixed'?line.value:line.kind==='min'?Math.min(...values):line.kind==='max'?Math.max(...values):values.reduce((a,b)=>a+b,0)/values.length
       if(value==null || !Number.isFinite(value))return []
-      return [{name:line.name || '参考线',...(type==='hbar'?{xAxis:value}:{yAxis:value}),lineStyle:{color:line.color,type:line.lineType},label:{position:lineIndex%2?'insideStartTop' as const:'insideEndBottom' as const,fontSize:11,backgroundColor:mergedAppearance?.cardBackground || '#fff',padding:3,formatter:()=>`${line.name || '参考线'}: ${formatValue(key,value)}`}}]
+      return [{name:line.name || '参考线',...(type==='hbar'?{xAxis:value}:{yAxis:value}),lineStyle:{color:line.color,type:line.lineType},label:{position:lineIndex%2?'insideStartTop' as const:'insideEndBottom' as const,fontSize:11,backgroundColor:visualTheme.surface,padding:3,formatter:()=>`${line.name || '参考线'}: ${formatValue(key,value)}`}}]
     })
-    return {...series,itemStyle:{...series.itemStyle,...(setting?.color?{color:setting.color}:{})},
-      ...('lineStyle' in series?{lineStyle:{...series.lineStyle,...(setting?.color?{color:setting.color}:{})}}:{}),
+    const original=result.timeComparison?.fields.find(f=>f.baseline===key)?.key
+    const originalKeys=keys.filter(k=>!comparisonBase(k))
+    const pairColor=result.timeComparison?style?.metrics?.find(m=>m.key===(original||key))?.color || palette[Math.max(0,originalKeys.indexOf(original||key))%palette.length]:undefined
+    return {...series,emphasis:{focus:'series' as const},labelLayout:{hideOverlap:true},itemStyle:{...series.itemStyle,...(pairColor?{color:pairColor}:{}),...(setting?.color?{color:setting.color}:{})},
+      ...('lineStyle' in series?{lineStyle:{...series.lineStyle,...(pairColor?{color:pairColor,type:original?'dashed' as const:'solid' as const}:{}),...(setting?.color?{color:setting.color}:{})}}:{}),
+      ...(original && 'areaStyle' in series?{areaStyle:{opacity:0}}:{}),
       label:{...series.label,formatter:type==='percent'?'{c}%':(input:unknown)=>{const p=input as {dataIndex?:number};return formatValue(key,result.rows[p.dataIndex??0]?.[key])}},
       markLine:markData.length?{symbol:['none','none'],silent:true,data:markData}:undefined}
   })
 
-  const valueYAxis = { type: 'value' as const, axisLabel: { color: textColor, formatter: axisFormatter }, splitLine: { lineStyle: { color: visualTheme.border } } }
-  const percentYAxis = { type: 'value' as const, max: 100, axisLabel: { color: textColor, formatter: (v: number) => `${v}%` }, splitLine: { lineStyle: { color: visualTheme.border } } }
-  const categoryYAxis = { type: 'category' as const, data: categories, axisLabel: { color: textColor, rotate: style?.axisLabelRotate ?? 0 }, axisLine: { lineStyle: { color: visualTheme.border } } }
+  const valueYAxis = { type: 'value' as const,splitNumber:5,axisLine:{show:false},axisTick:{show:false},axisLabel: { color: visualTheme.muted,margin:12, formatter: axisFormatter }, splitLine: { lineStyle: { color: visualTheme.border,type:'dashed' as const,opacity:0.65 } } }
+  const percentYAxis = { ...valueYAxis,max:100,axisLabel:{...valueYAxis.axisLabel,formatter:(v:number)=>`${v}%`} }
+  const categoryYAxis = { type: 'category' as const, data: categories, axisTick:{show:false},axisLabel: { color: visualTheme.muted,margin:12,hideOverlap:true,formatter:(value:string)=>chartAxisLabel(value,20), rotate: style?.axisLabelRotate ?? 0 }, axisLine: { lineStyle: { color: visualTheme.border } } }
   const categoryXAxis = {
     type: 'category' as const,
+    boundaryGap:!['line','area'].includes(type),
     data: categories,
-      axisLabel: { rotate: style?.axisLabelRotate ?? (categories.length > 8 ? 30 : 0), color: textColor },
+      axisTick:{show:false},axisLabel: { rotate: style?.axisLabelRotate ?? 0, color: visualTheme.muted,margin:12,hideOverlap:true,showMinLabel:true,showMaxLabel:true,alignMinLabel:'left' as const,alignMaxLabel:'right' as const,formatter:(value:string)=>chartAxisLabel(value) },
     axisLine: { lineStyle: { color: visualTheme.border } }
   }
 
   if (type === 'hbar') {
     return {
       ...base,
-      grid: { left: 30, right: 20, bottom: 40, top: 45, containLabel: true },
+      grid: { left: 30, right: 20, bottom:chartBottom, top:chartTop, containLabel: true },
       xAxis: valueYAxis,
       yAxis: categoryYAxis,
       series: cartesianSeries
@@ -296,7 +317,7 @@ export function buildChartPreviewOption(params: {
 
   return {
     ...base,
-    grid: { left: 30, right: type === 'combo' ? 48 : 20, bottom: 60, top: 45, containLabel: true },
+    grid: { left: 30, right: type === 'combo' ? 48 : 20, bottom:chartBottom+(style?.axisLabelRotate?24:0), top:chartTop, containLabel: true },
     xAxis: categoryXAxis,
     yAxis: yAxes,
     series: cartesianSeries

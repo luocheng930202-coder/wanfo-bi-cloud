@@ -5,6 +5,7 @@ import {test} from 'node:test'
 async function api(file){
   let source=await fs.readFile(new URL('../src/api/bi/'+file,import.meta.url),'utf8')
   source=source.replace("import request from '@/utils/request'",'const request=(options:any)=>globalThis.thumbnailRequest(options)')
+    .replace("import {queryCancellationHeaders} from '@/utils/biQueryCancellation'",'const queryCancellationHeaders=()=>({})')
     .replace("import { notifyBiSaved } from '@/utils/biThumbnail'",'const notifyBiSaved=(kind:string,id:number)=>globalThis.thumbnailEvents.push({kind,id})')
   return import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText).toString('base64'))
 }

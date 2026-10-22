@@ -1,4 +1,4 @@
-export function isBiQueryUrl(url:unknown):boolean{return typeof url==='string' && (/^\/bi\/chart\/(data|map-preview|saved\/[^/]+\/data)$/.test(url) || /^\/bi\/dashboard\/[^/]+\/(panels\/[^/]+\/data|controls\/[^/]+\/options)$/.test(url))}
+export function isBiQueryUrl(url:unknown):boolean{return typeof url==='string' && (url==='/bi/query/cancel' || /^\/bi\/chart\/(data|map-preview|saved\/[^/]+\/data)$/.test(url) || /^\/bi\/dashboard\/[^/]+\/(panels\/[^/]+\/data|controls\/[^/]+\/options)$/.test(url))}
 const messages={
  QUERY_BUSY:'查询繁忙，请稍后重试，避免连续刷新。',
  QUERY_CANCELLED:'查询已取消，可重新查询。',

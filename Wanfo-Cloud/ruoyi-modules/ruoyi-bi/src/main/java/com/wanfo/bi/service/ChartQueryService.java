@@ -144,6 +144,7 @@ public class ChartQueryService
                 var baseline=com.wanfo.bi.query.TimeComparison.baseline(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
                 if(baseline!=null){var reference=compiler.compile(baseline,restricted.sql(),valid);var referenceParams=new ArrayList<>(restricted.params());referenceParams.addAll(reference.params);prior=com.wanfo.bi.query.TimeGrain.calendarRows(baseline,engine.queryWithParams(conn,reference.sql,referenceParams,1001).getRows());}
             }
+            if(run!=null)run.check();
         }
         catch(Exception failure){if(run!=null)throw run.failure(failure);throw failure;}
 

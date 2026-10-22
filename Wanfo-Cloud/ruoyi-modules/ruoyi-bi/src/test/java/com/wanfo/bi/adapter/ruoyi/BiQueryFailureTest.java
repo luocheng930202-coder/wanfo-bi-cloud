@@ -27,6 +27,9 @@ class BiQueryFailureTest {
         assertEquals(200,response.getStatus());assertTrue(response.getContentAsString().contains("QUERY_INVALID"));assertFalse(response.getContentAsString().contains("secret"));
         request.setRequestURI("/bi/chart/saved");response=new org.springframework.mock.web.MockHttpServletResponse();assertNull(resolver.resolveException(request,response,null,new RuntimeException("original")));assertEquals("",response.getContentAsString());
     }
+    @Test void controlledQueriesRetainTheirCorrelationAndSafeCategory(){
+        String id=java.util.UUID.randomUUID().toString();for(String kind:java.util.List.of("QUERY_TIMEOUT","QUERY_CANCELLED","QUERY_BUSY")){var response=BiQueryFailure.response(new com.wanfo.bi.query.QueryGovernanceException(kind,id,new java.sql.SQLException("private SQL")));assertEquals(kind,response.get("errorType"));assertEquals(id,response.get("requestId"));assertFalse(response.toString().contains("private"));}
+    }
     @Test void queryPathsAreBoundedAndIdsAreUnique(){
         assertTrue(BiQueryFailure.queryPath("/bi/dashboard/1/panels/map/data"));assertTrue(BiQueryFailure.queryPath("/bi/chart/saved/1/data"));assertFalse(BiQueryFailure.queryPath("/bi/chart/saved"));assertFalse(BiQueryFailure.queryPath(null));assertNotEquals(BiQueryFailure.response(new RuntimeException()).get("requestId"),BiQueryFailure.response(new RuntimeException()).get("requestId"));
     }

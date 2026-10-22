@@ -46,6 +46,7 @@ export function buildChartPreviewOption(params: {
   const categories = dimField ? result.rows.map(r => String(r[dimField] ?? '空值')) : result.rows.map((_, i) => String(i + 1))
   const visualTheme=resolveBiTheme(mergedAppearance)
   const textColor = visualTheme.text
+  const comparisonBase=(key:string)=>!!result.timeComparison?.fields.some(f=>f.baseline===key)
   const nullMode = advanced?.nullMode || 'keep'
   const smoothDefault = advanced?.smoothLine !== false
   const formatValue=(key:string,value:unknown)=>String(formatMetric(value,appearance,formatFor(key)))
@@ -64,7 +65,7 @@ export function buildChartPreviewOption(params: {
         const key = metric ? metricResultKey(metric) : ''
         const raw = isPieLike(type) ? item.value : item.dataIndex != null ? result.rows[item.dataIndex]?.[key] : item.value
         const label = key ? labels[key] || key : ''
-        const synthetic=item.dataIndex!=null && result.rows[item.dataIndex] && filledRow(result.rows[item.dataIndex])
+        const synthetic=item.dataIndex!=null && result.rows[item.dataIndex] && filledRow(result.rows[item.dataIndex]) && !comparisonBase(key)
         return `${String(item.name ?? '')} · ${label}: ${String(formatMetric(raw, appearance, formatFor(key)))}${synthetic?'（缺失周期补'+(result.timeFill?.mode==='zero'?'零':'空值')+'，非实际记录）':''}`
       })
       .join('\n')
@@ -89,6 +90,7 @@ export function buildChartPreviewOption(params: {
   }
 
   function normalizeValue(raw: unknown, key: string): number | null {
+    if(raw==null && comparisonBase(key))return null
     if (raw == null) {
       if (nullMode === 'zero') return 0
       return null
@@ -212,7 +214,7 @@ export function buildChartPreviewOption(params: {
   const keys = metrics.map(metricResultKey)
   const valueMatrix = result.rows.map(row =>
     keys.map(key => {
-      const v = filledRow(row) && result.timeFill?.mode==='null'?null:normalizeValue(row[key], key)
+      const v = filledRow(row) && result.timeFill?.mode==='null' && !comparisonBase(key)?null:normalizeValue(row[key], key)
       if (v == null) return null
       const color = metricColor(row[key], key, metricStyles)
       return color ? { value: v, itemStyle: { color } } : v

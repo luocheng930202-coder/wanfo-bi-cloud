@@ -33,7 +33,7 @@ const emit=defineEmits<{(e:'refresh'):void;(e:'remove'):void;(e:'select',value:s
 const definition=computed<ChartDefinition>(()=>{
   const p=props.payload?.presentation
   const dims=p?.queryDimensions?.length?p.queryDimensions:(p?.dimensions||[]).map(f=>({field:f,alias:f}))
-  return {schemaVersion:1,name:props.title,type:p?.type || 'table',style:p?.style,query:{datasetId:0,dimensions:dims,metrics:p?.queryMetrics?.length?p.queryMetrics:(p?.metrics||[]).map(f=>({field:f,alias:f,agg:'NONE'}))},advanced:p?.advanced || (p?.pivotRowFields?{pivotRowFields:p.pivotRowFields,pivotColFields:p.pivotColFields||[]}:undefined)}
+  return {schemaVersion:1,name:props.title,type:p?.type || 'table',style:p?.style,query:{datasetId:0,timeComparison:props.payload?.data.timeComparison?.mode,dimensions:dims,metrics:p?.queryMetrics?.length?p.queryMetrics:(p?.metrics||[]).map(f=>({field:f,alias:f,agg:'NONE'}))},advanced:p?.advanced || (p?.pivotRowFields?{pivotRowFields:p.pivotRowFields,pivotColFields:p.pivotColFields||[]}:undefined)}
 })
 const container=computed(()=>props.componentType==='container')
 const containerStyle=computed(()=>{let c:ReturnType<typeof normalizeContainer>;try{c=normalizeContainer(props.content?.container)}catch{c=normalizeContainer()}return {inset:'0',background:c.background,border:`${c.stroke}px solid ${c.borderColor}`,borderRadius:c.radius+'px'}})

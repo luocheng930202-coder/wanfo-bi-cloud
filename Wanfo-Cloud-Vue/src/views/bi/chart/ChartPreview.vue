@@ -10,13 +10,15 @@
     <el-alert v-if="type==='pivot' && !result.pivotTotals && pivotTotalsRequested(definition)" title="小计与总计仅基于当前查询已加载的分组结果；达到行数上限时可能不完整。SUM/COUNT累加，MIN/MAX取极值。" type="info" :closable="false" class="mb8"/>
     <div v-show="type==='pivot' && !renderError" ref="pivotHost" class="pivot-canvas" role="grid" :aria-label="'透视表，共 '+result.rowCount+' 行'"/>
     <ChartDataTable v-if="type==='table'" :definition="definition" :result="result" :labels="labels" :appearance="appearance" :number-format="numberFormat" :metric-styles="metricStyles" :linkable="linkable" :drillable="drillable" :can-drill-down="canDrillDown" @select="selectRow" @drill="onChartPick"/>
-    <el-table v-if="type!=='table' && type!=='pivot' && !thumbnail" :data="result.rows" border max-height="420" size="small"><el-table-column v-if="linkable || drillable && canDrillDown" label="操作" width="88"><template #default="{row}"><el-button v-if="drillable && canDrillDown" link type="primary" :disabled="type==='map' && !mapRowDrillable(row)" @click="onChartPick(row)">下钻</el-button><el-button v-else-if="linkable" link type="primary" @click="selectRow(row)">选择</el-button></template></el-table-column><el-table-column v-if="type==='map' && definition.advanced?.mapValueMode==='code'" label="地区名称" min-width="120"><template #default="{row}">{{ mapRegionName(row) }}</template></el-table-column><el-table-column v-for="column in result.columns" :key="column" :prop="column" :label="displayLabels[column] || column" min-width="140" show-overflow-tooltip><template #default="{row}"><span :style="{color:metricKeys.has(column)?metricColor(row[column],column,effectiveMetricStyles):undefined}">{{ metricKeys.has(column) && formatFor(column)?formatMetric(row[column],appearance,formatFor(column)):displayNumber(row[column],appearance) }}</span></template></el-table-column></el-table>
+    <el-table v-if="type!=='table' && type!=='pivot' && !thumbnail" :data="result.rows" border max-height="420" size="small"><el-table-column v-if="linkable || drillable && canDrillDown" label="操作" width="88"><template #default="{row}"><el-button v-if="drillable && canDrillDown" link type="primary" :disabled="type==='map' && !mapRowDrillable(row)" @click="onChartPick(row)">下钻</el-button><el-button v-else-if="linkable" link type="primary" @click="selectRow(row)">选择</el-button></template></el-table-column><el-table-column v-if="type==='map' && definition.advanced?.mapValueMode==='code'" label="地区名称" min-width="120"><template #default="{row}">{{ mapRegionName(row) }}</template></el-table-column><el-table-column v-for="column in result.columns" :key="column" :prop="column" :label="displayLabels[column] || column" min-width="140" show-overflow-tooltip><template #default="{row}"><span :style="{color:metricKeys.has(column)?metricColor(row[column],column,effectiveMetricStyles):undefined}">{{ comparisonRate(result,column,row[column]) ?? (metricKeys.has(column) && formatFor(column)?formatMetric(row[column],appearance,formatFor(column)):displayNumber(row[column],appearance)) }}</span></template></el-table-column></el-table>
+    <p v-if="!thumbnail && result.timeComparison" class="result-note" role="status">{{ result.timeComparison.label }}：{{ result.timeComparison.status==='skipped'?result.timeComparison.reason:result.timeComparison.note }}</p>
     <p v-if="!thumbnail && result.pivotTotals" class="result-note" role="status">{{ result.pivotTotals.status==='unavailable'?result.pivotTotals.reason:'小计/总计口径：当前筛选和权限范围内的全部数据' }}<span v-if="result.pivotTotals.detailTruncated"> · 明细分组已达展示上限，汇总包含未展示数据</span></p>
     <p v-if="!thumbnail" class="result-note">{{ result.rowCount }} 行 · {{ result.costMs }} ms · 图表与明细使用当前用户的数据权限<span v-if="result.timeFill"> · {{ result.timeFill.status==='skipped'?'时间补齐已跳过：'+result.timeFill.reason:'实际 '+result.timeFill.sourceRows+' 行，补'+(result.timeFill.mode==='zero'?'零':'空值')+' '+result.timeFill.addedRows+' 个周期' }}</span></p>
   </template>
 </template>
 <script setup lang="ts">
 import ChartDataTable from './ChartDataTable.vue'
+import {comparisonDefinition,comparisonLabels,comparisonRate} from '@/utils/biTimeComparison'
 import {resolveChartMetricFormat,resolvedMetricStyles} from '@/utils/biChartPresentation'
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts/core'
@@ -35,7 +37,7 @@ import {matchGeoFeature,type GeoFeature} from '@/utils/biMapRegions'
 echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,GraphicComponent,MarkLineComponent,CanvasRenderer])
 const props=defineProps<{thumbnail?:boolean;loading?:boolean;result:ChartResult|null;definition:ChartDefinition;labels:Record<string,string>;appearance?:DashboardAppearance;numberFormat?:NumberFormat|null;metricStyles?:MetricStyle[];linkable?:boolean;drillable?:boolean;canDrillDown?:boolean}>()
 const displayDefinition=computed<ChartDefinition>(()=>{const context=props.result?.mapContext;if(props.definition.type!=='map' || !context)return props.definition;return {...props.definition,advanced:{...props.definition.advanced,mapScope:context.scope},query:{...props.definition.query,dimensions:[{field:context.field,alias:context.field}]}}})
-const displayLabels=computed(()=>{const context=props.result?.mapContext;return context?{...props.labels,[context.field]:context.fieldLabel || props.labels[context.field] || context.field}:props.labels})
+const displayLabels=computed(()=>{const labels=comparisonLabels(props.result,props.labels),context=props.result?.mapContext;return context?{...labels,[context.field]:context.fieldLabel || labels[context.field] || context.field}:labels})
 const emit=defineEmits<{(e:'select',value:string|number|null):void;(e:'drill',payload:{field:string;value:string|number|null}):void}>()
 function dimensionValue(row:Record<string,unknown>){const d=displayDefinition.value.query.dimensions[0];if(!d)return undefined;const v=row[d.alias || d.field];if(v===null)return null;if(typeof v==='string' || (typeof v==='number' && Number.isFinite(v) && Math.abs(v)<=Number.MAX_SAFE_INTEGER))return v;return undefined}
 function selectRow(row:Record<string,unknown>){const v=dimensionValue(row);if(v===undefined)return;if(props.linkable)emit('select',v)}
@@ -48,9 +50,9 @@ const mapBusy=computed(()=>!!props.loading || mapLoading.value)
 const drillNames=computed(()=>props.result?mapDrillNames(displayDefinition.value,props.result,visibleGeoFeatures.value):[])
 const mapStatus=computed(()=>mapBusy.value?(props.loading?'正在加载地图数据…':'正在加载地区边界…'):(mapNotice.value?mapNotice.value+'；':'')+(props.drillable?(props.canDrillDown && drillNames.value.length?'点击有数据的地区下钻（'+drillNames.value.length+'个可用地区）':'当前有数据地区暂无可用下级')+'；':'')+'可拖动、滚轮缩放')
 function resetMapView(){if(mapBusy.value || !instance)return;instance.dispatchAction({type:'restore'});mapNotice.value='已恢复当前层级视图'}
-const metricKeys=computed(()=>new Set(props.definition.query.metrics.map(metricResultKey)))
+const metricKeys=computed(()=>new Set([...props.definition.query.metrics.map(metricResultKey),...(props.result?.timeComparison?.fields.flatMap(f=>[f.baseline,f.difference,f.rate])||[])]))
 const effectiveMetricStyles=computed(()=>resolvedMetricStyles(props.definition.style,props.metricStyles))
-function formatFor(key:string){return resolveChartMetricFormat(props.definition.style,key,props.metricStyles,props.numberFormat)}
+function formatFor(key:string){const original=props.result?.timeComparison?.fields.find(f=>f.baseline===key || f.difference===key)?.key || key;return resolveChartMetricFormat(props.definition.style,original,props.metricStyles,props.numberFormat)}
 const type=computed(()=>props.definition.type)
 let renderVersion=0
 let instance:echarts.ECharts|undefined,pivotSheet:PivotSheet|undefined,observer:ResizeObserver|undefined
@@ -100,7 +102,7 @@ watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringi
       instance.on('mouseout',()=>instance?.getZr().setCursorStyle('move'))
       instance.setOption(option)
     }else{
-    const option=buildChartPreviewOption({type:type.value,definition:props.definition,result:props.result,labels:props.labels,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
+    const option=buildChartPreviewOption({type:type.value,definition:comparisonDefinition(props.definition,props.result),result:props.result,labels:displayLabels.value,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
     instance=echarts.init(host.value)
     instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const row=props.result?.rows[event.dataIndex];if(row)onChartPick(row)}})
     instance.setOption(option)

@@ -25,6 +25,7 @@ public class ChartQueryCompiler {
         PivotQueryPlan.validate(model);
         if(base==null || base.isBlank()) throw invalid("数据集查询定义为空");
         var predicate=FilterTreeCompiler.compile(model.getFilters(),model.getFilterTree(),types);
+        TimeComparison.validate(model);
         List<String> select=new ArrayList<>(),group=new ArrayList<>();
         Map<String,String> output=new LinkedHashMap<>(), origins=new LinkedHashMap<>();
         Set<String> aliases=new HashSet<>();

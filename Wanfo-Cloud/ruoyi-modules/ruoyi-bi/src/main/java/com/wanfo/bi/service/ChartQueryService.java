@@ -95,6 +95,7 @@ public class ChartQueryService
             throw new IllegalArgumentException("数据集不存在: " + model.getDatasetId());
         }
         if(model.getPivot()!=null && !"table".equals(ds.getType()))throw new IllegalArgumentException("完整透视汇总仅支持表数据集");
+        if(model.getTimeComparison()!=null && !"table".equals(ds.getType()))throw new IllegalArgumentException("时间比较仅支持表数据集");
         if (datasourceProvider.getById(ds.getDatasourceId()) == null)
         {
             throw new IllegalArgumentException("数据集绑定的数据源不存在或已停用");
@@ -127,6 +128,7 @@ public class ChartQueryService
 
         long start = System.currentTimeMillis();
         QueryResult qr;
+        List<Map<String,Object>> prior=List.of();
         // A table dataset depends only on its bound source; unrelated offline sources
         // must not prevent its query. Administrator SQL datasets may span sources.
         try (Connection conn = engine.open("table".equals(ds.getType())
@@ -134,6 +136,10 @@ public class ChartQueryService
                 : datasourceProvider.listEnabled()))
         {
             qr = engine.queryWithParams(conn, sql, params, pivot!=null?pivot.maxRows():model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
+            if(model.getTimeComparison()!=null && qr.getRows().size()<(model.getLimit()==null?ChartQueryCompiler.DEFAULT_LIMIT:model.getLimit())){
+                var baseline=com.wanfo.bi.query.TimeComparison.baseline(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
+                if(baseline!=null){var reference=compiler.compile(baseline,restricted.sql(),valid);var referenceParams=new ArrayList<>(restricted.params());referenceParams.addAll(reference.params);prior=com.wanfo.bi.query.TimeGrain.calendarRows(baseline,engine.queryWithParams(conn,reference.sql,referenceParams,1001).getRows());}
+            }
         }
 
 
@@ -143,6 +149,10 @@ public class ChartQueryService
         if(pivotResult!=null)result.put("pivotTotals",pivotResult.totals());
         var filled=com.wanfo.bi.query.TimeGapFill.apply(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,pivotResult==null?qr.getRows():pivotResult.rows()));
         result.put("rows", filled.rows());
+        if(model.getTimeComparison()!=null){
+            var compared=com.wanfo.bi.query.TimeComparison.apply(model,qr.getColumns(),filled.rows(),prior,filled.metadata(),qr.getRows().size()>=(model.getLimit()==null?ChartQueryCompiler.DEFAULT_LIMIT:model.getLimit()));
+            result.put("rows",compared.rows());result.put("columns",compared.columns());result.put("timeComparison",compared.metadata());result.put("columnLabels",compared.labels());
+        }
         result.put("rowCount", filled.rows().size());
         if(filled.metadata()!=null)result.put("timeFill",filled.metadata());
         result.put("costMs", System.currentTimeMillis() - start);

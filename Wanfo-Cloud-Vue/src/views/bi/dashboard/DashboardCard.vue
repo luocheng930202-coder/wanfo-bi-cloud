@@ -9,7 +9,7 @@
     <div v-else-if="decoration" class="decoration-shape" :class="componentType==='border'?'decoration-border':'decoration-line'" :style="decorationStyle" :role="componentType==='line'?'separator':'img'" :aria-label="title"/>
     <div v-else-if="componentType==='text'" class="static-text">{{ content?.text || '在右侧填写文本内容' }}</div>
     <div v-else-if="componentType==='image'" class="static-image"><img v-if="content?.image" :src="content.image" :alt="title || '看板图片'"/><el-empty v-else description="在右侧选择图片" :image-size="56"/></div>
-    <div v-else-if="componentType==='kpi'" class="kpi-content"><span class="kpi-label">{{ kpiMetricLabel }}</span><strong :style="{color:kpiColor}">{{ kpiValue }}</strong><span class="kpi-caption">{{ payload?'当前筛选与权限范围内的聚合值':'点击预览加载数据' }}</span></div>
+    <div v-else-if="componentType==='kpi'" class="kpi-content"><span class="kpi-label">{{ kpiMetricLabel }}</span><strong :style="{color:kpiColor}">{{ kpiValue }}</strong><span class="kpi-caption">{{ payload?(payload.data.rows.length?'当前筛选与权限范围内的聚合值':'查询成功，当前筛选与权限范围内没有数据；请检查筛选范围'):'点击预览加载数据' }}</span></div>
     <div v-else-if="loading && !payload" class="panel-loading" role="status" aria-live="polite">正在加载图表数据…</div>
     <ChartPreview v-else :loading="loading" :thumbnail="thumbnail" :result="payload?.data || null" :definition="definition" :labels="labels" :appearance="appearance" :number-format="panelStyle?.numberFormat" :metric-styles="panelStyle?.metrics" :linkable="linkable" :drillable="!!drillFields?.length" :can-drill-down="payload?.presentation?.canDrillDown" @select="v=>emit('select',v)" @drill="p=>emit('drill',p)"/>
   </div>

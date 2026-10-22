@@ -4,7 +4,7 @@
     <main class="chart-editor__center">
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb8"/>
       <el-alert v-if="fields.length===0 && !loading" title="没有可用字段，请检查数据集和列权限" type="warning" :closable="false" class="mb8"/>
-      <ChartPreview :loading="previewing || loading" :result="result" :definition="definition" :labels="labels" :drillable="mapDrillable" :can-drill-down="mapCanDrillDown" @drill="p=>emit('map-drill',p)"/>
+      <ChartPreview v-if="!error" :loading="previewing || loading" :result="result" :definition="definition" :labels="labels" :drillable="mapDrillable" :can-drill-down="mapCanDrillDown" @drill="p=>emit('map-drill',p)"/>
     </main>
     <aside class="chart-editor__right">
       <ChartPropertyPanel :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :disabled="disabled || busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" @type-changed="emit('type-changed')" @dataset-changed="id => emit('dataset-changed', id)" @set-dimension="f => emit('set-dimension', f)" @add-metric="emit('add-metric')" @remove-metric="i => emit('remove-metric', i)" @set-sort="f => emit('set-sort', f)" @raw-table="emit('raw-table')" @ensure-scatter="emit('ensure-scatter')" @pivot-fields="emit('pivot-fields')" @preview="emit('preview')"/>

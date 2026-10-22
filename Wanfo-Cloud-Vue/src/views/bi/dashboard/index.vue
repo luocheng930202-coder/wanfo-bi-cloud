@@ -63,7 +63,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb8"/>
     <el-card v-if="mode==='view' && view" ref="viewCard" class="board-view">
       <template #header><div class="toolbar"><span>{{ view.name }} <el-tag size="small">发布版本 {{ view.revision }}</el-tag> <small v-if="view.scene" role="status">{{ refreshStatus }}</small></span><div class="toolbar"><el-button :icon="Close" @click="closeView">返回看板管理</el-button><el-button v-hasPermi="['bi:export:add']" :disabled="busy || !queryPanels.length" @click="openExport">导出数据</el-button><el-button :loading="loading" @click="openView(view.id,true)">刷新看板</el-button></div></div></template>
-      <div v-if="queryPanels.length" class="toolbar mb8" role="status" aria-live="polite"><span>数据组件 {{ queryPanels.length }} · 已加载 {{ loadedCount }} · 加载中 {{ loadingCount }} · 失败 {{ failedKeys.length }}</span><el-button v-if="failedKeys.length" type="warning" :disabled="loading || loadingCount>0" @click="retryFailed">重试失败组件</el-button></div>
+      <div v-if="queryPanels.length" class="toolbar mb8" role="status" aria-live="polite"><span>数据组件 {{ queryPanels.length }} · 已加载 {{ loadedCount }} · 加载中 {{ loadingCount }} · 失败 {{ failedKeys.length }} · 已停止 {{ Object.values(panelStopped).filter(Boolean).length }}</span><el-button v-if="retryKeys.length" type="warning" :disabled="loading || loadingCount>0" @click="retryFailed">重试失败或停止组件</el-button></div>
       <div v-if="view.controls?.length" class="filter-bar">
         <div v-for="c in view.controls" :key="c.key" class="filter-item"><label>{{ c.label }}</label><DashboardFilterInput v-model="filterInputs[c.key]" :type="c.type" :label="c.label" :options="filterOptions[c.key] || []" :loading="optionLoading[c.key]" @options="loadOptions(c.key)"/><span v-if="optionErrors[c.key]" class="filter-error">{{ optionErrors[c.key] }}</span></div>
         <div class="toolbar"><el-button type="primary" :disabled="loading" @click="applyFilters">应用筛选</el-button><el-button :disabled="loading" @click="clearFilters">清空输入</el-button><el-button :disabled="loading" @click="resetFilters">恢复默认输入</el-button><span>{{ pendingFilters?'输入已修改，点击应用后生效':'当前显示已应用条件' }}</span></div>
@@ -75,7 +75,7 @@
         <p v-if="pendingFilters" class="interaction-state-hint" role="status">筛选输入尚未应用，图表和导出仍使用上方已应用条件。</p>
       </section>
       <p v-if="view.links?.length" class="interaction-hint">点击柱形、折线点、扇区或明细可下钻或联动（下钻图不可作联动来源）。</p>
-      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
+      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" query-feedback :query-elapsed="panelRuns.elapsed(panel.key,queryNow)" :query-stopped="panelStopped[panel.key]" :refresh-disabled="loading" @stop="stopPanel(panel.key)" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
     </el-card>
     <DashboardTemplatePicker v-if="templateOpen" v-model="templateOpen" :kind="templateKind" :initial-select-id="templatePickId" @created="onTemplateCreated"/>
     <DashboardShareDialog v-model:visible="shareDialog.visible" :dashboard-id="shareDialog.id" :name="shareDialog.name" />
@@ -96,7 +96,7 @@
   </div>
 </template>
 <script setup lang="ts" name="BiDashboardAdmin">
-import { ref, reactive, computed, onMounted, onActivated, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount, watch, nextTick } from 'vue'
 import {runPanelQueue} from '@/utils/biPanelQueue'
 import {useBiRefresh} from '@/composables/useBiRefresh'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
@@ -115,6 +115,7 @@ const shareDialog = reactive({ visible: false, id: 0, name: '' })
 function openShare(row: DashboardSummary) { Object.assign(shareDialog, { visible: true, id: row.id, name: row.name }) }
 import DashboardCanvas from './DashboardCanvas.vue'
 import DashboardCard from './DashboardCard.vue'
+import {createPanelQueryRuns} from '@/utils/biPanelQueryRuns'
 import {dashboardDefaults,dashboardTransition,dashboardConditionChips,sameFilterState} from '@/utils/biDashboardInteraction'
 import DashboardFilterInput from './DashboardFilterInput.vue'
 import {dashboardControlOptions,type FilterValue,type DashboardInput,type DrillPathSegment} from '@/api/bi/dashboard'
@@ -202,11 +203,12 @@ async function loadOptions(key:string){const current=view.value;if(!current)retu
 async function refreshAppliedPanels(){if(mode.value!=='view' || !view.value)return;clearOptionCache();invalidate();const e=epoch;loading.value=true;const keys=view.value.panels.map(p=>p.key);try{await runPanelQueue(keys,key=>refreshViewPanel(key,true),()=>e===epoch && (!refreshSeconds.value || available.value))}finally{if(e===epoch)loading.value=false}}
 const queryPanels=computed(()=>view.value?.panels.filter(p=>!p.componentType || ['chart','kpi'].includes(p.componentType)) || [])
 const failedKeys=computed(()=>queryPanels.value.filter(p=>!!panelErrors[p.key]).map(p=>p.key))
+const retryKeys=computed(()=>queryPanels.value.filter(p=>!!panelErrors[p.key] || panelStopped[p.key]).map(p=>p.key))
 const loadedCount=computed(()=>queryPanels.value.filter(p=>!!payloads[p.key]).length)
 const loadingCount=computed(()=>queryPanels.value.filter(p=>panelLoading[p.key]).length)
 async function retryFailed(){
   if(loading.value || loadingCount.value || !view.value)return
-  const e=epoch,keys=[...failedKeys.value];loading.value=true
+  const e=epoch,keys=[...retryKeys.value];loading.value=true
   try{await runPanelQueue(keys,key=>refreshViewPanel(key,true),()=>e===epoch)}finally{if(e===epoch)loading.value=false}
 }
 const inFlight=ref(0)
@@ -214,9 +216,15 @@ const refreshSeconds=computed(()=>currentId.value===view.value?.id?(view.value?.
 const {available,refreshStatus}=useBiRefresh(refreshSeconds,async()=>{if(currentId.value)await openView(currentId.value,true)},()=>loading.value || saving.value || inFlight.value>0)
 let epoch=0
 const panelRequests:Record<string,number>=Object.create(null)
-function clearPanels(){for(const map of [payloads,panelErrors,panelLoading])for(const key of Object.keys(map))delete map[key]}
-function invalidate(preserve=false){++epoch;if(!preserve)clearPanels();for(const key of Object.keys(optionLoading))optionLoading[key]=false;error.value=''}
-onBeforeUnmount(()=>{++epoch})
+const panelRuns=createPanelQueryRuns(),queryNow=ref(Date.now()),panelStopped=reactive<Record<string,boolean>>(Object.create(null))
+let queryClock:ReturnType<typeof setInterval>|undefined
+function syncQueryClock(){if(panelRuns.size && !queryClock){queryNow.value=Date.now();queryClock=setInterval(()=>{queryNow.value=Date.now()},1000)}else if(!panelRuns.size){clearInterval(queryClock);queryClock=undefined}}
+function stopPanel(key:string){if(!panelRuns.cancel(key))return;panelRequests[key]=(panelRequests[key]||0)+1;panelLoading[key]=false;panelStopped[key]=true;delete payloads[key];delete panelErrors[key];syncQueryClock()}
+function stopAllPanels(){for(const key of Object.keys(panelLoading))if(panelLoading[key])stopPanel(key);panelRuns.cancelAll();syncQueryClock()}
+function clearPanels(){for(const map of [payloads,panelErrors,panelLoading,panelStopped])for(const key of Object.keys(map))delete map[key]}
+function invalidate(preserve=false){panelRuns.cancelAll();syncQueryClock();++epoch;if(!preserve)clearPanels();for(const key of Object.keys(optionLoading))optionLoading[key]=false;error.value=''}
+onBeforeUnmount(()=>{panelRuns.cancelAll();syncQueryClock();++epoch})
+onDeactivated(()=>{++epoch;loading.value=false;stopAllPanels()})
 async function refreshList(){
   thumbnailRefresh.value++;if(listLoading.value)return;listLoading.value=true;listError.value='';try{boards.value=(await listDashboards()).data||[]}catch{listError.value='看板列表加载失败，请稍后重试'}finally{listLoading.value=false}}
 function panelTitle(key:string){return view.value?.panels.find(p=>p.key===key)?.title || '图表'}
@@ -251,10 +259,11 @@ async function refreshViewPanel(key:string,internal=false,preserve=false){
   if(!internal && (loading.value || panelLoading[key]))return
   const type=view.value?.panels.find(p=>p.key===key)?.componentType;if(type && !['chart','kpi'].includes(type))return
   const current=view.value;if(mode.value!=='view' || !current)return
+  const controller=panelRuns.begin(key);if(!controller)return;syncQueryClock();panelStopped[key]=false
   const e=epoch,v=(panelRequests[key]||0)+1;panelRequests[key]=v;panelLoading[key]=true;if(!preserve)delete payloads[key];delete panelErrors[key]
   inFlight.value++
-  try{const r=await dashboardPanelData(current.id,key,current.revision,runtimeInput());if(e===epoch && panelRequests[key]===v)payloads[key]=r.data}
-  catch{if(e===epoch && panelRequests[key]===v){delete payloads[key];panelErrors[key]='当前组件不可用，请检查数据集消费权限、行列规则或刷新发布版本'}}finally{inFlight.value--;if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
+  try{const r=await dashboardPanelData(current.id,key,current.revision,runtimeInput(),controller.signal);if(panelRuns.current(key,controller) && e===epoch && panelRequests[key]===v)payloads[key]=r.data}
+  catch{if(!controller.signal.aborted && e===epoch && panelRequests[key]===v){delete payloads[key];panelErrors[key]='当前组件不可用，请检查数据集消费权限、行列规则或刷新发布版本'}}finally{inFlight.value--;panelRuns.finish(key,controller);syncQueryClock();if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
 }
 const grantActions:Record<string,string>={view:'查看列表',consume:'查看已发布数据',edit:'编辑草稿',publish:'发布/下线',remove:'删除',grant:'授权管理'}
 const grantDialog=reactive({visible:false,id:0,name:'',principalId:undefined as number|undefined,action:'view'})

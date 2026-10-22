@@ -29,7 +29,7 @@ public class BiProperties
     private int defaultMaxRows = 5000;
 
     /** 查询超时（秒） */
-    private int queryTimeoutSeconds = 60;
+    private int queryTimeoutSeconds = 30;
 
     /** 过渡期数据源列表 */
     private List<Ds> datasources = new ArrayList<>();
@@ -47,7 +47,7 @@ public class BiProperties
     public void setDefaultMaxRows(int defaultMaxRows) { this.defaultMaxRows = defaultMaxRows; }
 
     public int getQueryTimeoutSeconds() { return queryTimeoutSeconds; }
-    public void setQueryTimeoutSeconds(int s) { this.queryTimeoutSeconds = s; }
+    public void setQueryTimeoutSeconds(int s) { this.queryTimeoutSeconds = Math.min(120,Math.max(1,s)); }
 
     public List<Ds> getDatasources() { return datasources; }
     public void setDatasources(List<Ds> datasources) { this.datasources = datasources; }

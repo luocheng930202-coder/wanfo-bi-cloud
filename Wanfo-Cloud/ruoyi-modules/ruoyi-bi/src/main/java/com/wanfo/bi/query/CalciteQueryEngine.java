@@ -44,6 +44,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class CalciteQueryEngine
 {
+    private com.wanfo.bi.config.BiProperties properties=new com.wanfo.bi.config.BiProperties();
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureQueryLimits(com.wanfo.bi.config.BiProperties properties){this.properties=properties;}
     private static final Logger log = LoggerFactory.getLogger(CalciteQueryEngine.class);
 
     /**
@@ -125,6 +128,8 @@ public class CalciteQueryEngine
         pool.setPassword(ds.getPassword());
         pool.setInitialSize(1);
         pool.setMaxTotal(8);
+        pool.setMaxWaitMillis(10_000);
+        pool.setDefaultQueryTimeout(properties.getQueryTimeoutSeconds());
         pool.setMinIdle(1);
         // 连接保活，避免长时间空闲被源库断开
         pool.setTimeBetweenEvictionRunsMillis(60_000);
@@ -148,9 +153,10 @@ public class CalciteQueryEngine
         result.setExecutedSql(sql);
 
         long start = System.currentTimeMillis();
-        try (Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery(sql))
+        try (Statement st = conn.createStatement())
         {
+            st.setQueryTimeout(properties.getQueryTimeoutSeconds());
+            try(ResultSet rs=st.executeQuery(sql)){
             ResultSetMetaData rsmd = rs.getMetaData();
             int colCount = rsmd.getColumnCount();
 
@@ -172,6 +178,7 @@ public class CalciteQueryEngine
                 rows.add(row);
             }
             result.setRows(rows);
+            }
         }
         result.setCostMs(System.currentTimeMillis() - start);
         return result;
@@ -197,6 +204,7 @@ public class CalciteQueryEngine
         long start = System.currentTimeMillis();
         try (java.sql.PreparedStatement ps = conn.prepareStatement(sql))
         {
+            ps.setQueryTimeout(properties.getQueryTimeoutSeconds());
             if (params != null)
             {
                 for (int i = 0; i < params.size(); i++)

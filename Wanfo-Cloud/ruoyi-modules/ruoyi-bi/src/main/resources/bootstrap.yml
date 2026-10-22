@@ -26,7 +26,7 @@ bi:
   engine: calcite
   engine-version: 1.42.0
   default-max-rows: 5000
-  query-timeout-seconds: 60
+  query-timeout-seconds: 30
   # 数据源由管理页面配置；部署凭据通过外部配置注入。
   datasources: []
 

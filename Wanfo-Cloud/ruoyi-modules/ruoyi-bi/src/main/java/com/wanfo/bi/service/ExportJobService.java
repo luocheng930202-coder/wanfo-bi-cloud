@@ -238,6 +238,10 @@ public class ExportJobService {
         int maxRows = "pdf".equals(format) ? ExportTables.MAX_ROWS_PDF
                 : "csv".equals(format) ? ExportTables.MAX_ROWS_CSV : ExportTables.MAX_ROWS_XLSX;
         if (rows.size() > maxRows) throw new IllegalArgumentException("导出行数超过限制");
+        if(data.get("columnLabels") instanceof Map<?,?> labels && !labels.isEmpty()){
+            var headers=new ArrayList<String>();var seen=new HashSet<String>();for(String column:columns){String header=String.valueOf(labels.containsKey(column)?labels.get(column):column);while(!seen.add(header))header+="_";headers.add(header);}
+            var renamed=new ArrayList<Map<String,Object>>();for(var row:rows){var copy=new LinkedHashMap<String,Object>();for(int i=0;i<columns.size();i++)copy.put(headers.get(i),row.get(columns.get(i)));renamed.add(copy);}return new ExportTables.Sheet(name,headers,renamed);
+        }
         return new ExportTables.Sheet(name, columns, rows);
     }
     @SuppressWarnings("unchecked")

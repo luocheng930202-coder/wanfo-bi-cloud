@@ -15,6 +15,14 @@
     </el-select>
     <small class="time-hint">只补齐当前查询结果起止周期之间的缺口，已有零值和空值不变；空结果不生成记录。仅支持按时间排序。若结果可能截断或补齐后超出行数上限，将保留原结果并提示。</small>
   </el-form-item>
+  <el-form-item v-if="dimension?.timeGrain || definition.query.timeComparison" label="时间比较">
+    <el-select :model-value="definition.query.timeComparison||''" style="width:100%" @update:model-value="setComparison">
+      <el-option value="" label="不比较"/>
+      <el-option value="previous" label="环比（前一个周期）" :disabled="!comparisonAvailable"/>
+      <el-option value="year" label="同比（去年同期；周为前52周）" :disabled="!comparisonAvailable"/>
+    </el-select>
+    <small class="time-hint">展示基期、增长额和增长率；时间筛选同步平移，其他筛选与权限不变。缺失或补齐周期不计算增长，零基期增长率为空；负基期按绝对值作分母。仅支持一个时间维度和按时间排序，最多 1000 周期。</small>
+  </el-form-item>
 </template>
 <script setup lang="ts">
 import {computed} from 'vue'
@@ -23,7 +31,9 @@ import {TIME_GRAINS,temporalField,supportsTimeGrain} from '@/utils/biTimeGrain'
 const props=defineProps<{definition:ChartDefinition;fields:Field[]}>()
 const dimension=computed(()=>props.definition.query.dimensions[0])
 const available=computed(()=>supportsTimeGrain(props.definition.type) && temporalField(props.fields.find(f=>f.name===dimension.value?.field)?.type||''))
-function setGrain(value:string) {if(!dimension.value)return;if(value)dimension.value.timeGrain=value as TimeGrain;else {delete dimension.value.timeGrain;delete dimension.value.timeFill}}
+const comparisonAvailable=computed(()=>available.value && ['bar','hbar','line','area'].includes(props.definition.type) && props.definition.query.dimensions.length===1 && props.definition.query.metrics.length>0 && props.definition.query.metrics.length<=3 && props.definition.query.metrics.every(m=>m.agg!=='NONE'))
+function setComparison(value:string){if(value==='previous' || value==='year')props.definition.query.timeComparison=value;else delete props.definition.query.timeComparison}
+function setGrain(value:string) {if(!dimension.value)return;if(value)dimension.value.timeGrain=value as TimeGrain;else {delete dimension.value.timeGrain;delete dimension.value.timeFill;delete props.definition.query.timeComparison}}
 </script>
 <style scoped>
 .time-hint{display:block;margin-top:6px;color:var(--bi-muted,#667085);font-size:12px;line-height:1.5}

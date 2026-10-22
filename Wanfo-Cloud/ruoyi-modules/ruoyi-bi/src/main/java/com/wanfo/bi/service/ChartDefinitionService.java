@@ -101,6 +101,7 @@ public class ChartDefinitionService {
                 throw new IllegalArgumentException("时间粒度暂不支持维度下钻，请清除下钻字段或恢复原始时间");
         }
         preparePivotQuery(d);
+        if(q.getTimeComparison()!=null && !Set.of("bar","hbar","line","area").contains(d.type()))throw new IllegalArgumentException("时间比较仅支持柱状图、条形图、折线图和面积图，请先关闭比较再切换类型");
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
         var dataset=datasets.selectById(q.getDatasetId());
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");

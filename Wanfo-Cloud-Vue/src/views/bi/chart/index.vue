@@ -162,7 +162,7 @@ async function newChart(source?:number){
 }
 async function datasetChanged(id:number){
   const v=++loadVersion;++revision;result.value=null;error.value='';fields.value=[]
-  Object.assign(definition.query,{datasetId:id,pivot:undefined,dimensions:[],metrics:[],filters:[],filterTree:undefined,orderBys:[]});loading.value=true
+  Object.assign(definition.query,{datasetId:id,timeComparison:undefined,pivot:undefined,dimensions:[],metrics:[],filters:[],filterTree:undefined,orderBys:[]});loading.value=true
   try {const r=await chartFields(id);if(v!==loadVersion)return;fields.value=r.data||[];const dim=fields.value.find(f=>!numeric(f))||fields.value[0],metric=fields.value.find(numeric)||fields.value[0];if(dim)definition.query.dimensions=[{field:dim.name,alias:'dimension'}];if(metric)definition.query.metrics=[{field:metric.name,agg:'COUNT',alias:'value_1'}]}
   catch{if(v===loadVersion)error.value='字段加载失败，请检查数据集和列权限'}finally{if(v===loadVersion)loading.value=false}
 }
@@ -186,7 +186,7 @@ function addMetric(){if(fields.value[0])definition.query.metrics.push({field:fie
 function addMetricField(name:string){if(!name || metricAddDisabled(definition.type, definition.query.metrics.length))return;definition.query.metrics.push({field:name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})}
 function removeMetric(index:number){definition.query.metrics.splice(index,1);definition.query.orderBys=[]}
 function setSort(field:string){definition.query.orderBys=field?[{field,order:'asc'}]:[]}
-function rawTable(){delete definition.query.pivot;definition.query.dimensions=[];definition.query.metrics=fields.value.slice(0,5).map((f,i)=>({field:f.name,agg:'NONE',alias:'value_'+(i+1)}));definition.query.orderBys=[]}
+function rawTable(){delete definition.query.timeComparison;delete definition.query.pivot;definition.query.dimensions=[];definition.query.metrics=fields.value.slice(0,5).map((f,i)=>({field:f.name,agg:'NONE',alias:'value_'+(i+1)}));definition.query.orderBys=[]}
 function ensurePivotDefaults(){
   ensureChartPresentation(definition)
   const dims=fields.value.filter(f=>!numeric(f) || f.dimFlag==='1')

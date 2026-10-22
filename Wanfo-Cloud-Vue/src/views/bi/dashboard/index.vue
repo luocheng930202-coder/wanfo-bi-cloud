@@ -115,6 +115,7 @@ const shareDialog = reactive({ visible: false, id: 0, name: '' })
 function openShare(row: DashboardSummary) { Object.assign(shareDialog, { visible: true, id: row.id, name: row.name }) }
 import DashboardCanvas from './DashboardCanvas.vue'
 import DashboardCard from './DashboardCard.vue'
+import {queryErrorText} from '@/utils/biQueryError'
 import {createPanelQueryRuns} from '@/utils/biPanelQueryRuns'
 import {dashboardDefaults,dashboardTransition,dashboardConditionChips,sameFilterState} from '@/utils/biDashboardInteraction'
 import DashboardFilterInput from './DashboardFilterInput.vue'
@@ -263,7 +264,7 @@ async function refreshViewPanel(key:string,internal=false,preserve=false){
   const e=epoch,v=(panelRequests[key]||0)+1;panelRequests[key]=v;panelLoading[key]=true;if(!preserve)delete payloads[key];delete panelErrors[key]
   inFlight.value++
   try{const r=await dashboardPanelData(current.id,key,current.revision,runtimeInput(),controller.signal);if(panelRuns.current(key,controller) && e===epoch && panelRequests[key]===v)payloads[key]=r.data}
-  catch{if(!controller.signal.aborted && e===epoch && panelRequests[key]===v){delete payloads[key];panelErrors[key]='当前组件不可用，请检查数据集消费权限、行列规则或刷新发布版本'}}finally{inFlight.value--;panelRuns.finish(key,controller);syncQueryClock();if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
+  catch(failure){if(!controller.signal.aborted && e===epoch && panelRequests[key]===v){delete payloads[key];panelErrors[key]=queryErrorText(failure)}}finally{inFlight.value--;panelRuns.finish(key,controller);syncQueryClock();if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
 }
 const grantActions:Record<string,string>={view:'查看列表',consume:'查看已发布数据',edit:'编辑草稿',publish:'发布/下线',remove:'删除',grant:'授权管理'}
 const grantDialog=reactive({visible:false,id:0,name:'',principalId:undefined as number|undefined,action:'view'})

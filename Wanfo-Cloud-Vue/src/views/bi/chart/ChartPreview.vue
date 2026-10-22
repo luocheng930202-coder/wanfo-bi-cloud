@@ -1,8 +1,9 @@
 <template>
   <div v-if="type==='map' && loading && !result && !thumbnail" class="map-loading" role="status" aria-live="polite" aria-busy="true">正在加载地图数据…</div>
   <el-empty v-else-if="!result" :description="thumbnail ? '暂无可预览数据' : '配置字段和筛选条件后，点击预览'"/>
-  <el-empty v-else-if="!result.rows.length && type!=='map'" description="当前筛选与权限范围内没有数据"/>
+  <el-empty v-else-if="!result.rows.length && type!=='map'" description="查询成功，当前筛选与权限范围内没有数据；请检查筛选范围"/>
   <template v-else>
+    <el-alert v-if="!result.rows.length && !thumbnail" title="查询成功，当前筛选与权限范围内没有数据；请检查筛选范围" type="info" :closable="false"/>
     <div v-if="type==='map' && !thumbnail" class="map-toolbar" :aria-busy="mapBusy"><span role="status" aria-live="polite">{{ mapStatus }}</span><el-button size="small" :disabled="mapBusy || !!renderError" title="恢复当前层级初始视图，不改变下钻路径和查询条件" @click="resetMapView">恢复视图</el-button></div>
     <el-alert v-if="type==='map' && mapWarning" :title="mapWarning" type="info" :closable="false" class="mb8"/>
     <el-alert v-if="renderError" :title="renderError" type="warning" :closable="false" class="mb8"/>

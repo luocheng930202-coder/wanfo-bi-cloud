@@ -17,7 +17,7 @@ import type { PanelResult, PanelStyle, DashboardAppearance, ComponentType, Panel
 import type { ChartDefinition } from '@/api/bi/chart'
 import ChartPreview from '../chart/ChartPreview.vue'
 import {formatMetric,metricFormat,metricColor,normalizeDecoration,normalizeContainer} from '@/utils/biPresentation'
-import { drillPathFromPayload } from '@/utils/biDrill'
+import { resolveDrillPath } from '@/utils/biDrill'
 import { computed,ref,watch } from 'vue'
 import {registeredGeoFeatures} from '@/utils/biMapGeo'
 import { resolveChartMetricFormat } from '@/utils/biChartPresentation'
@@ -27,7 +27,7 @@ function rememberMapNames(payload:PanelResult|undefined){const context=payload?.
 watch(()=>props.payload,(now,previous)=>{rememberMapNames(previous);if(now && !now.data.mapContext)mapCrumbNames.value=Object.create(null);rememberMapNames(now)},{immediate:true})
 watch(()=>props.title,()=>{mapCrumbNames.value=Object.create(null)})
 const drillFields=computed(()=>props.drillFields?.length?props.drillFields:props.payload?.presentation?.drillFields)
-const drillPath=computed(()=>props.drillPath?.length?props.drillPath:drillPathFromPayload(props.payload))
+const drillPath=computed(()=>resolveDrillPath(props.drillPath,props.payload))
 const emit=defineEmits<{(e:'refresh'):void;(e:'remove'):void;(e:'select',value:string|number|null):void;(e:'drill',payload:{field:string;value:string|number|null}):void;(e:'drill-up',level:number):void}>()
 // Presentation aliases are display-only. This generated model is never submitted for querying.
 const definition=computed<ChartDefinition>(()=>{

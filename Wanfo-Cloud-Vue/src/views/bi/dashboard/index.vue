@@ -66,9 +66,14 @@
       <div v-if="queryPanels.length" class="toolbar mb8" role="status" aria-live="polite"><span>数据组件 {{ queryPanels.length }} · 已加载 {{ loadedCount }} · 加载中 {{ loadingCount }} · 失败 {{ failedKeys.length }}</span><el-button v-if="failedKeys.length" type="warning" :disabled="loading || loadingCount>0" @click="retryFailed">重试失败组件</el-button></div>
       <div v-if="view.controls?.length" class="filter-bar">
         <div v-for="c in view.controls" :key="c.key" class="filter-item"><label>{{ c.label }}</label><DashboardFilterInput v-model="filterInputs[c.key]" :type="c.type" :label="c.label" :options="filterOptions[c.key] || []" :loading="optionLoading[c.key]" @options="loadOptions(c.key)"/><span v-if="optionErrors[c.key]" class="filter-error">{{ optionErrors[c.key] }}</span></div>
-        <div class="toolbar"><el-button type="primary" @click="applyFilters">应用筛选</el-button><el-button @click="clearFilters">清空输入</el-button><el-button @click="resetFilters">恢复默认输入</el-button><span>{{ pendingFilters?'输入已修改，点击应用后生效':'当前显示已应用条件' }}</span></div>
+        <div class="toolbar"><el-button type="primary" :disabled="loading" @click="applyFilters">应用筛选</el-button><el-button :disabled="loading" @click="clearFilters">清空输入</el-button><el-button :disabled="loading" @click="resetFilters">恢复默认输入</el-button><span>{{ pendingFilters?'输入已修改，点击应用后生效':'当前显示已应用条件' }}</span></div>
       </div>
-      <div v-if="Object.keys(activeLinks).length" class="toolbar mb8"><el-tag v-for="(value,key) in activeLinks" :key="key" closable @close="removeActiveLink(String(key))">联动：{{ value ?? '空值' }}</el-tag><el-button link type="primary" @click="clearLinks">清除全部联动</el-button></div>
+      <section v-if="queryPanels.length" class="interaction-state" aria-label="当前看板条件">
+        <div class="interaction-state-heading"><strong>当前条件</strong><span role="status" aria-live="polite">{{ conditionChips.length }} 项已应用</span><el-button size="small" :disabled="loading || !canResetInteractions" title="恢复发布默认筛选，并清除联动、下钻和未应用输入" @click="resetInteractions">重置全部</el-button></div>
+        <div v-if="conditionChips.length" class="condition-chips"><span v-for="chip in conditionChips" :key="chip.id" class="condition-chip" :title="chip.label"><span>{{ chip.label }}</span><button type="button" :disabled="loading || (chip.kind==='drill' && panelLoading[chip.key])" :aria-label="'清除'+chip.label" @click="removeCondition(chip)"><el-icon><Close/></el-icon></button></span></div>
+        <span v-else class="interaction-state-hint">未附加筛选、联动或下钻条件</span>
+        <p v-if="pendingFilters" class="interaction-state-hint" role="status">筛选输入尚未应用，图表和导出仍使用上方已应用条件。</p>
+      </section>
       <p v-if="view.links?.length" class="interaction-hint">点击柱形、折线点、扇区或明细可下钻或联动（下钻图不可作联动来源）。</p>
       <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
     </el-card>
@@ -110,6 +115,7 @@ const shareDialog = reactive({ visible: false, id: 0, name: '' })
 function openShare(row: DashboardSummary) { Object.assign(shareDialog, { visible: true, id: row.id, name: row.name }) }
 import DashboardCanvas from './DashboardCanvas.vue'
 import DashboardCard from './DashboardCard.vue'
+import {dashboardDefaults,dashboardTransition,dashboardConditionChips,sameFilterState} from '@/utils/biDashboardInteraction'
 import DashboardFilterInput from './DashboardFilterInput.vue'
 import {dashboardControlOptions,type FilterValue,type DashboardInput,type DrillPathSegment} from '@/api/bi/dashboard'
 import {appendDrillSegment,mergeDashboardInput,truncateDrillPath} from '@/utils/biDrill'
@@ -175,21 +181,25 @@ const busy=computed(()=>loading.value || saving.value)
 const visiblePanels=computed(()=>view.value?.kind==='screen'?[...view.value.panels]:[...(view.value?.panels||[])].sort((a,b)=>a.y-b.y || a.x-b.x))
 const filterInputs=reactive<Record<string,FilterValue>>(Object.create(null)),appliedFilters=reactive<Record<string,FilterValue>>(Object.create(null)),activeLinks=reactive<Record<string,string|number|null>>(Object.create(null)),activeDrills=reactive<Record<string,DrillPathSegment[]>>(Object.create(null))
 const filterOptions=reactive<Record<string,(string|number)[]>>(Object.create(null)),optionLoading=reactive<Record<string,boolean>>(Object.create(null)),optionErrors=reactive<Record<string,string>>(Object.create(null))
-const pendingFilters=computed(()=>JSON.stringify(filterInputs)!==JSON.stringify(appliedFilters))
+const pendingFilters=computed(()=>!sameFilterState(filterInputs,appliedFilters))
+const conditionChips=computed(()=>dashboardConditionChips(view.value,{filters:appliedFilters,links:activeLinks,drills:activeDrills},payloads))
+const canResetInteractions=computed(()=>{const defaults=dashboardDefaults(view.value?.controls);return !sameFilterState(filterInputs,defaults) || !sameFilterState(appliedFilters,defaults) || Object.keys(activeLinks).length>0 || Object.values(activeDrills).some(p=>p.length>0)})
+function transition(action:Parameters<typeof dashboardTransition>[1]){const next=dashboardTransition({draft:filterInputs,filters:appliedFilters,links:activeLinks,drills:activeDrills},action,view.value?.controls);replaceMap(filterInputs,next.draft);replaceMap(appliedFilters,next.filters);replaceMap(activeLinks,next.links);replaceMap(activeDrills,next.drills)}
+function resetInteractions(){if(loading.value)return;transition({type:'reset'});refreshAppliedPanels()}
+function removeCondition(chip:{kind:'filter'|'link'|'drill';key:string}){if(loading.value)return;if(chip.kind==='drill'){drillUp(chip.key,0);return}transition({type:chip.kind==='filter'?'filter-clear':'link-clear',key:chip.key});refreshAppliedPanels()}
 function replaceMap<T>(target:Record<string,T>,next:Record<string,T>){for(const k of Object.keys(target))delete target[k];Object.assign(target,JSON.parse(JSON.stringify(next)))}
-function resetFilters(){replaceMap(filterInputs,Object.fromEntries((view.value?.controls || []).map(c=>[c.key,c.defaultValue??null])))}
+function resetFilters(){replaceMap(filterInputs,dashboardDefaults(view.value?.controls))}
 function clearFilters(){replaceMap(filterInputs,Object.fromEntries((view.value?.controls || []).map(c=>[c.key,null])))}
 function runtimeInput():DashboardInput{return mergeDashboardInput(JSON.parse(JSON.stringify(appliedFilters)),JSON.parse(JSON.stringify(activeLinks)),JSON.parse(JSON.stringify(activeDrills)))}
 function drillPath(key:string){return activeDrills[key] || []}
-function drillDown(panel:string,field:string,value:string|number|null){if(loading.value)return;activeDrills[panel]=appendDrillSegment(drillPath(panel),field,value);refreshViewPanel(panel)}
-function drillUp(panel:string,level:number){if(loading.value)return;activeDrills[panel]=truncateDrillPath(drillPath(panel),level);refreshViewPanel(panel)}
-function applyFilters(){if(loading.value)return;replaceMap(appliedFilters,JSON.parse(JSON.stringify(filterInputs)));replaceMap(activeLinks,{});replaceMap(activeDrills,{});refreshAppliedPanels()}
-function selectLink(panel:string,value:string|number|null){if(loading.value)return;for(const l of view.value?.links || [])if(l.sourcePanel===panel)activeLinks[l.key]=value;refreshAppliedPanels()}
-function removeActiveLink(key:string){if(loading.value)return;delete activeLinks[key];refreshAppliedPanels()}
-function clearLinks(){if(loading.value)return;replaceMap(activeLinks,{});refreshAppliedPanels()}
+function drillDown(panel:string,field:string,value:string|number|null){if(loading.value || panelLoading[panel])return;clearOptionCache();activeDrills[panel]=appendDrillSegment(drillPath(panel),field,value);refreshViewPanel(panel)}
+function drillUp(panel:string,level:number){if(loading.value || panelLoading[panel])return;clearOptionCache();activeDrills[panel]=truncateDrillPath(drillPath(panel),level);refreshViewPanel(panel)}
+function applyFilters(){if(loading.value)return;transition({type:'apply'});refreshAppliedPanels()}
+function selectLink(panel:string,value:string|number|null){if(loading.value)return;transition({type:'link-set',values:Object.fromEntries((view.value?.links||[]).filter(l=>l.sourcePanel===panel).map(l=>[l.key,value]))});refreshAppliedPanels()}
 const optionSequences:Record<string,number>=Object.create(null)
+function clearOptionCache(){for(const key of Object.keys(optionSequences))optionSequences[key]++;replaceMap(filterOptions,{});replaceMap(optionErrors,{});replaceMap(optionLoading,{})}
 async function loadOptions(key:string){const current=view.value;if(!current)return;const e=epoch,v=(optionSequences[key]||0)+1;optionSequences[key]=v;optionLoading[key]=true;optionErrors[key]='';inFlight.value++;try{const r=await dashboardControlOptions(current.id,key,current.revision,runtimeInput());if(e!==epoch || v!==optionSequences[key])return;filterOptions[key]=r.data.values;optionErrors[key]=r.data.truncated?'候选值超过100项，仅显示前100项':''}catch{if(e===epoch && v===optionSequences[key]){filterOptions[key]=[];optionErrors[key]='候选值加载失败，请检查权限或刷新发布版本'}}finally{inFlight.value--;if(e===epoch && v===optionSequences[key])optionLoading[key]=false}}
-async function refreshAppliedPanels(){if(mode.value!=='view' || !view.value)return;invalidate();const e=epoch;loading.value=true;const keys=view.value.panels.map(p=>p.key);try{await runPanelQueue(keys,key=>refreshViewPanel(key,true),()=>e===epoch && (!refreshSeconds.value || available.value))}finally{if(e===epoch)loading.value=false}}
+async function refreshAppliedPanels(){if(mode.value!=='view' || !view.value)return;clearOptionCache();invalidate();const e=epoch;loading.value=true;const keys=view.value.panels.map(p=>p.key);try{await runPanelQueue(keys,key=>refreshViewPanel(key,true),()=>e===epoch && (!refreshSeconds.value || available.value))}finally{if(e===epoch)loading.value=false}}
 const queryPanels=computed(()=>view.value?.panels.filter(p=>!p.componentType || ['chart','kpi'].includes(p.componentType)) || [])
 const failedKeys=computed(()=>queryPanels.value.filter(p=>!!panelErrors[p.key]).map(p=>p.key))
 const loadedCount=computed(()=>queryPanels.value.filter(p=>!!payloads[p.key]).length)
@@ -276,4 +286,4 @@ onActivated(()=>{if(!activatedOnce){activatedOnce=true;return}if(workspaceView.v
 <style scoped lang="scss" src="../components/BiLibrary.scss"></style>
 
 
-<style scoped>.workspace-view-page .board-view{margin-top:0}.view-loading-state{padding:12px 0;display:grid;gap:16px}</style>
+<style scoped>.interaction-state{margin:0 0 16px;padding:12px;border:1px solid var(--el-border-color-light);border-radius:8px;background:var(--el-fill-color-light)}.interaction-state-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}.interaction-state-heading>span,.interaction-state-hint{font-size:12px;color:var(--el-text-color-secondary)}.interaction-state-heading .el-button{margin-left:auto}.condition-chips{display:flex;gap:8px;flex-wrap:wrap}.condition-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 6px 4px 10px;border:1px solid var(--el-color-primary-light-7);border-radius:6px;background:var(--el-color-primary-light-9);color:var(--el-color-primary);font-size:12px}.condition-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.condition-chip button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}.condition-chip button:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:1px}.condition-chip button:disabled{opacity:.5;cursor:not-allowed}.condition-chip button:hover{background:var(--el-color-primary-light-7)}.workspace-view-page .board-view{margin-top:0}.view-loading-state{padding:12px 0;display:grid;gap:16px}</style>

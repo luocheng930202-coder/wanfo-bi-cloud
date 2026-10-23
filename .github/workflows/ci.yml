@@ -26,6 +26,16 @@ jobs:
           "$RUNNER_TEMP/gitleaks" git . --log-opts=--all --redact=100 --no-banner
   backend:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      WANFO_TEST_REDIS_HOST: 127.0.0.1
+      WANFO_TEST_REDIS_PORT: 6379
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

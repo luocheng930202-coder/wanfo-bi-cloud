@@ -100,9 +100,11 @@ public class ChartDefinitionService {
             if(d.advanced()!=null && d.advanced().getDrillFields()!=null && !d.advanced().getDrillFields().isEmpty())
                 throw new IllegalArgumentException("时间粒度暂不支持维度下钻，请清除下钻字段或恢复原始时间");
         }
+        if(q.getTopN()!=null && !Set.of("bar","hbar","line","area","stack","percent","combo","pie","ring").contains(d.type()))throw new IllegalArgumentException("当前图表类型不支持 Top N");
         preparePivotQuery(d);
         if(q.getTimeComparison()!=null && !Set.of("bar","hbar","line","area").contains(d.type()))throw new IllegalArgumentException("时间比较仅支持柱状图、条形图、折线图和面积图，请先关闭比较再切换类型");
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
+        com.wanfo.bi.domain.chart.ChartAnalysisValidator.validate(d.advanced(),q,d.type());
         var dataset=datasets.selectById(q.getDatasetId());
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");
         if(q.getLimit()!=null && q.getLimit()>1000) throw new IllegalArgumentException("基础图表最多查询 1000 行");

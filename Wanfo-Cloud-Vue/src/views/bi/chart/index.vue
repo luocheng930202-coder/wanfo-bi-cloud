@@ -169,7 +169,7 @@ async function newChart(source?:number){
 }
 async function datasetChanged(id:number){
   const v=++loadVersion;++revision;result.value=null;error.value='';fields.value=[]
-  Object.assign(definition.query,{datasetId:id,timeComparison:undefined,pivot:undefined,dimensions:[],metrics:[],filters:[],filterTree:undefined,orderBys:[]});loading.value=true
+  Object.assign(definition.query,{datasetId:id,topN:undefined,timeComparison:undefined,pivot:undefined,dimensions:[],metrics:[],filters:[],filterTree:undefined,orderBys:[]});loading.value=true
   try {const r=await chartFields(id);if(v!==loadVersion)return;fields.value=r.data||[];const dim=fields.value.find(f=>!numeric(f))||fields.value[0],metric=fields.value.find(numeric)||fields.value[0];if(dim)definition.query.dimensions=[{field:dim.name,alias:'dimension'}];if(metric)definition.query.metrics=[{field:metric.name,agg:'COUNT',alias:'value_1'}]}
   catch{if(v===loadVersion)error.value='字段加载失败，请检查数据集和列权限'}finally{if(v===loadVersion)loading.value=false}
 }
@@ -188,7 +188,7 @@ async function openChart(row:ChartSummary){
   if(v===loadVersion && editorVisible.value && canPreview.value)await preview()
 }
 
-function setDimension(field:string){if(definition.type==='map' && definition.advanced?.mapFields){const old=definition.query.dimensions[0]?.field;for(const level of ['province','city','county'] as const)if(definition.advanced.mapFields[level]===old)definition.advanced.mapFields[level]=field || undefined}definition.query.dimensions=field?[{field,alias:'dimension'}]:[];definition.query.orderBys=[]}
+function setDimension(field:string){if(definition.type==='map' && definition.advanced?.mapFields){const old=definition.query.dimensions[0]?.field;for(const level of ['province','city','county'] as const)if(definition.advanced.mapFields[level]===old)definition.advanced.mapFields[level]=field || undefined}definition.query.dimensions=field?[{field,alias:'dimension'},...definition.query.dimensions.slice(1,2).filter(d=>d.field!==field)]:[];definition.query.orderBys=[]}
 function addMetric(){if(fields.value[0])definition.query.metrics.push({field:fields.value[0].name,agg:'COUNT',alias:nextChartMetricAlias(definition.query.metrics)})}
 function addMetricField(name:string){if(!name || metricAddDisabled(definition.type, definition.query.metrics.length))return;definition.query.metrics.push({field:name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})}
 function removeMetric(index:number){definition.query.metrics.splice(index,1);definition.query.orderBys=[]}

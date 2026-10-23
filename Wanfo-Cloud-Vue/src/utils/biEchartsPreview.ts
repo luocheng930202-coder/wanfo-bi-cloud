@@ -33,6 +33,39 @@ export function chartAxisLabel(value:unknown,maxLength=14):string {
   const chars=Array.from(text);return chars.length>maxLength?chars.slice(0,maxLength-1).join('')+'…':text
 }
 
+export function analysisRows(definition:ChartDefinition,result:ChartResult):ChartResult {
+  const a=definition.advanced?.analysis,dim=definition.query.dimensions[0]
+  if(definition.type!=='funnel' || !a?.funnelStages?.length || !dim)return result
+  const field=dim.alias||dim.field,key=metricResultKey(definition.query.metrics[0]),rows:Record<string,unknown>[]=[],used=new Set<Record<string,unknown>>()
+  for(const stage of a.funnelStages){const matches=result.rows.filter(r=>String(r[field])===stage);if(matches.length>1)throw new Error('漏斗阶段重复，请使用聚合指标');if(!matches.length){if(!a.funnelFillZero)throw new Error(`阶段“${stage}”缺失，请确认阶段名称或明确开启补零`);rows.push({[field]:stage,[key]:0})}else{rows.push(matches[0]);used.add(matches[0])}}
+  rows.push(...result.rows.filter(r=>!used.has(r)))
+  return {...result,rows,rowCount:rows.length}
+}
+export function funnelAnalysis(rows:Record<string,unknown>[],key:string,mode:'adjacent'|'first',index:number){
+  const value=readNumber(rows[index]?.[key]),base=readNumber(rows[mode==='first'?0:Math.max(0,index-1)]?.[key])
+  const rate=value==null || base==null || base===0?null:value/base
+  const previous=readNumber(rows[Math.max(0,index-1)]?.[key])
+  return {rate,loss:rate==null?null:1-rate,increase:index>0 && value!=null && previous!=null && value>previous}
+}
+
+/** Pivot only for drawing. Query/export rows retain the two original dimensions. */
+export function seriesDrawing(definition:ChartDefinition,result:ChartResult,labels:Record<string,string>={}) {
+  const q=definition.query
+  if(q.dimensions.length!==2 || !['bar','hbar','line','area','stack','percent','combo'].includes(definition.type))return null
+  const [category,series]=q.dimensions.map(d=>d.alias||d.field)
+  const identity=(v:unknown)=>JSON.stringify([v??null])
+  const categories=[...new Map(result.rows.map(r=>[identity(r[category]),r[category]])).values()]
+  const groups=[...new Map(result.rows.map(r=>[identity(r[series]),r[series]])).values()]
+  if(groups.length*q.metrics.length>100)throw new Error('系列超过 100 个，请增加筛选或减少指标')
+  const seen=new Set<string>(),indices=new Map<string,number>()
+  result.rows.forEach((r,i)=>{const k=JSON.stringify([r[category]??null,r[series]??null]);if(seen.has(k))throw new Error('分类与系列组合重复，请为指标选择聚合方式');seen.add(k);indices.set(k,i)})
+  const mapped=groups.flatMap((group,gi)=>q.metrics.map((metric,mi)=>({group,metric,source:metricResultKey(metric),key:`__series_${gi}_${mi}`})))
+  const rows=categories.map(value=>{const row:Record<string,unknown>={[category]:value};for(const m of mapped){const i=indices.get(JSON.stringify([value??null,m.group??null]));row[m.key]=i==null?null:result.rows[i][m.source]}return row})
+  const drawingLabels={...labels};for(const m of mapped)drawingLabels[m.key]=String(m.group??'空值')+(q.metrics.length>1?' · '+(labels[m.source]||m.source):'')
+  return {definition:{...definition,query:{...q,dimensions:q.dimensions.slice(0,1),metrics:mapped.map(m=>({...m.metric,alias:m.key}))},style:{...definition.style,metrics:mapped.flatMap(m=>{const setting=definition.style?.metrics?.find(x=>x.key===m.source);return setting?[{...setting,key:m.key}]:[]}),referenceLines:mapped.flatMap(m=>(definition.style?.referenceLines||[]).filter(r=>r.key===m.source).map(r=>({...r,key:m.key})))}},result:{...result,rows,rowCount:rows.length,columns:[category,...mapped.map(m=>m.key)]},labels:drawingLabels,
+    rowIndex:(seriesIndex:number,dataIndex:number)=>{const m=mapped[seriesIndex];return m?indices.get(JSON.stringify([categories[dataIndex]??null,m.group??null])):undefined}}
+}
+
 export function buildChartPreviewOption(params: {
   type: ChartType
   definition: ChartDefinition
@@ -43,7 +76,11 @@ export function buildChartPreviewOption(params: {
   metricStyles?: MetricStyle[]
   formatFor: (key: string) => NumberFormat | null | undefined
 }): EChartsOption {
-  const { type, definition, result, labels, appearance, numberFormat } = params
+  const drawing=seriesDrawing(params.definition,params.result,params.labels)
+  if(drawing)return buildChartPreviewOption({...params,...drawing})
+  const { type, definition, labels, appearance, numberFormat } = params
+  const result=analysisRows(definition,params.result)
+  const analysis=definition.advanced?.analysis
   const style = definition.style
   const metricStyles=resolvedMetricStyles(style,params.metricStyles)
   const formatFor=(key:string)=>params.formatFor(key) || style?.metrics?.find(m=>m.key===key)?.format
@@ -150,16 +187,24 @@ export function buildChartPreviewOption(params: {
       const x = readNumber(row[xKey])
       const y = readNumber(row[yKey])
       if (x == null || y == null) throw new Error('散点图度量须为有效数值')
-      return [x, y, categories[i]]
+      if(analysis?.scatterLogX && x<=0 || analysis?.scatterLogY && y<=0)throw new Error('对数轴仅支持正数，请筛选非正数或关闭对数轴')
+      const size=metrics[2]?readNumber(row[metricResultKey(metrics[2])]):undefined
+      if(metrics[2] && (size==null || size<0))throw new Error('气泡大小指标必须为有效的非负数')
+      return metrics[2]?[x, y, categories[i],size]:[x, y, categories[i]]
     })
+    const sizes=points.map(p=>Number(p[3]??0)),maxSize=Math.max(0,...sizes)
+    const xSplit=analysis?.scatterXSplit??points.reduce((sum,p)=>sum+Number(p[0]),0)/Math.max(1,points.length),ySplit=analysis?.scatterYSplit??points.reduce((sum,p)=>sum+Number(p[1]),0)/Math.max(1,points.length)
+    if(analysis?.scatterQuadrants && (analysis.scatterLogX && xSplit<=0 || analysis.scatterLogY && ySplit<=0))throw new Error('对数轴象限分界须为正数')
     return {
       ...base,
-      tooltip:{trigger:'item',renderMode:'richText',formatter:(input:unknown)=>{const item=input as {dataIndex?:number};const row=result.rows[item.dataIndex??0];return `${categories[item.dataIndex??0]}\n${labels[xKey] || xKey}: ${formatValue(xKey,row?.[xKey])}\n${labels[yKey] || yKey}: ${formatValue(yKey,row?.[yKey])}`}},
+      dataZoom:analysis?.scatterZoom?[{type:'inside',xAxisIndex:0,filterMode:'none'},{type:'inside',yAxisIndex:0,filterMode:'none'},{type:'slider',xAxisIndex:0,bottom:4,filterMode:'none'}]:undefined,
+      tooltip:{trigger:'item',renderMode:'richText',formatter:(input:unknown)=>{const item=input as {dataIndex?:number};const row=result.rows[item.dataIndex??0];return `${categories[item.dataIndex??0]}\n${labels[xKey] || xKey}: ${formatValue(xKey,row?.[xKey])}\n${labels[yKey] || yKey}: ${formatValue(yKey,row?.[yKey])}`+(metrics[2]?`\n气泡 ${labels[metricResultKey(metrics[2])]||metrics[2].field}: ${formatValue(metricResultKey(metrics[2]),row?.[metricResultKey(metrics[2])])}`:'')}},
       grid: { left: 45, right: 28, bottom: 65, top: 55, containLabel: true },
-      xAxis: { type: 'value', name: labels[xKey] || xKey,nameLocation:'middle',nameGap:32,nameTruncate:{maxWidth:160,ellipsis:'…'},nameTextStyle:{color:textColor,fontSize:11}, axisLabel: { color: textColor, formatter:axisFor([xKey]) } },
-      yAxis: { type: 'value', name: labels[yKey] || yKey,nameLocation:'middle',nameGap:50,nameTruncate:{maxWidth:150,ellipsis:'…'},nameTextStyle:{color:textColor,fontSize:11}, axisLabel: { color: textColor, formatter:axisFor([yKey]) }, splitLine: { lineStyle: { color: visualTheme.border } } },
+      xAxis: { type: analysis?.scatterLogX?'log':'value', name: labels[xKey] || xKey,nameLocation:'middle',nameGap:32,nameTruncate:{maxWidth:160,ellipsis:'…'},nameTextStyle:{color:textColor,fontSize:11}, axisLabel: { color: textColor, formatter:axisFor([xKey]) } },
+      yAxis: { type: analysis?.scatterLogY?'log':'value', name: labels[yKey] || yKey,nameLocation:'middle',nameGap:50,nameTruncate:{maxWidth:150,ellipsis:'…'},nameTextStyle:{color:textColor,fontSize:11}, axisLabel: { color: textColor, formatter:axisFor([yKey]) }, splitLine: { lineStyle: { color: visualTheme.border } } },
       series: [{ type: 'scatter', name: `${labels[xKey] || xKey} × ${labels[yKey] || yKey}`, data: points,
-        symbol:style?.scatterSymbol || 'circle',symbolSize:style?.scatterSize ?? 10,
+        symbol:style?.scatterSymbol || 'circle',symbolSize:metrics[2]?(value:unknown)=>{const size=Number((value as unknown[])[3]??0);return maxSize===0?6:6+Math.sqrt(size/maxSize)*34}:style?.scatterSize ?? 10,
+        markLine:analysis?.scatterQuadrants?{symbol:['none','none'],silent:true,data:[{xAxis:xSplit,name:'X 分界',label:{formatter:'X 分界'}},{yAxis:ySplit,name:'Y 分界',label:{formatter:'Y 分界'}}]}:undefined,
         itemStyle:{opacity:style?.scatterOpacity ?? 0.8,borderWidth:style?.scatterBorderWidth ?? 0,borderColor:style?.scatterBorderColor || '#FFFFFF'},
         label:{show:style?.showLabels ?? false,position:'top',color:textColor,formatter:(input:unknown)=>{const p=input as {dataIndex?:number};const i=p.dataIndex??0;return style?.scatterLabelContent==='coordinates'?`${formatValue(xKey,result.rows[i]?.[xKey])}, ${formatValue(yKey,result.rows[i]?.[yKey])}`:categories[i]}},
         labelLayout:{hideOverlap:true}}]
@@ -169,6 +214,7 @@ export function buildChartPreviewOption(params: {
   if (type === 'radar') {
     const keys = metrics.map(metricResultKey)
     const indicators = keys.map(key => {
+      if(analysis?.radarNormalize)return {name:labels[key]||key,min:0,max:100}
       let max = 0,min=0
       for (const row of result.rows) {
         const v = readNumber(row[key]) ?? 0
@@ -179,11 +225,12 @@ export function buildChartPreviewOption(params: {
     })
     const seriesData = result.rows.map((row, i) => ({
       name: categories[i],
-      value: keys.map(key => readNumber(row[key]) ?? 0)
+      value: keys.map(key => {const raw=readNumber(row[key]);if(!analysis?.radarNormalize)return raw??0;const axis=analysis.radarAxes?.find(a=>a.key===key);if(!axis || !Number.isFinite(axis.min) || !Number.isFinite(axis.max) || axis.max<=axis.min)throw new Error('请为雷达指标配置有效的标准化范围');if(raw==null || raw<axis.min || raw>axis.max)throw new Error('雷达指标缺失或超出标准化范围，请调整配置');return (raw-axis.min)/(axis.max-axis.min)*100})
     }))
+    if(analysis?.radarNormalize && keys.every(key=>analysis.radarAxes?.find(a=>a.key===key)?.target!=null))seriesData.push({name:'目标',value:keys.map(key=>{const a=analysis.radarAxes!.find(a=>a.key===key)!;return (a.target!-a.min)/(a.max-a.min)*100})})
     return {
       ...base,
-      tooltip:{trigger:'item',renderMode:'richText',formatter:(input:unknown)=>{const item=input as {dataIndex?:number};const row=result.rows[item.dataIndex??0];return keys.map(key=>`${labels[key] || key}: ${formatValue(key,row?.[key])}`).join('\n')}},
+      tooltip:{trigger:'item',renderMode:'richText',formatter:(input:unknown)=>{const item=input as {dataIndex?:number};if(item.dataIndex===result.rows.length)return '目标轮廓（标准化得分）';const row=result.rows[item.dataIndex??0];return keys.map(key=>`${labels[key] || key}: ${formatValue(key,row?.[key])}`).join('\n')}},
       radar: { indicator: indicators,shape:style?.radarShape || 'polygon',splitNumber:style?.radarSplitNumber ?? 5,radius:'60%',center:['50%','56%'],axisNameGap:8,
         axisName:{show:style?.radarShowAxisName!==false,color:textColor,fontSize:11,width:90,overflow:'truncate'},splitArea:{show:style?.radarShowSplitArea ?? true},
         splitLine:{lineStyle:{color:visualTheme.border}} },
@@ -213,10 +260,11 @@ export function buildChartPreviewOption(params: {
       const minSize=style?.funnelMinSize ?? 0,maxSize=style?.funnelMaxSize ?? 100
       if(minSize>=maxSize)throw new Error('漏斗最小宽度必须小于最大宽度')
       const position=style?.funnelLabelPosition || 'right'
-      return { ...base, series: [{ type: 'funnel' as const, data, sort: 'none' as const,
+      const rateText=(index:number)=>{if(!analysis?.funnelRate)return '';const stats=funnelAnalysis(result.rows,key,analysis.funnelRate,index);return `\n转化率 ${stats.rate==null?'—':(stats.rate*100).toFixed(1)+'%'} · 流失率 ${stats.loss==null?'—':(stats.loss*100).toFixed(1)+'%'}${stats.increase?' · 阶段异常增长':''}`}
+      return { ...base,tooltip:{...base.tooltip as object,formatter:(input:unknown)=>{const item=input as {name?:string;value?:unknown;dataIndex?:number};return `${item.name||''}: ${formatValue(key,item.value)}${rateText(item.dataIndex??0)}`}}, series: [{ type: 'funnel' as const, data, sort: 'none' as const,
         left:position==='left'?'28%':'10%',right:position==='right'?'28%':'10%',top:50,bottom:35,
         funnelAlign:style?.funnelAlign || 'center',gap:style?.funnelGap ?? 0,minSize:`${minSize}%`,maxSize:`${maxSize}%`,
-        label:{show:style?.showLabels!==false,position,color:position==='inside'?undefined:textColor,width:110,overflow:'truncate',formatter:(input:unknown)=>{const p=input as {name?:string;value?:unknown};const value=formatValue(key,p.value);return style?.funnelLabelContent==='value'?value:style?.funnelLabelContent==='nameValue'?`${p.name || ''}\n${value}`:p.name || ''}},
+        label:{show:style?.showLabels!==false,position,color:position==='inside'?undefined:textColor,width:110,overflow:'truncate',formatter:(input:unknown)=>{const p=input as {name?:string;value?:unknown;dataIndex?:number};const value=formatValue(key,p.value)+rateText(p.dataIndex??0);return analysis?.funnelRate?`${p.name||''}\n${value}`:style?.funnelLabelContent==='value'?value:style?.funnelLabelContent==='nameValue'?`${p.name || ''}\n${value}`:p.name || ''}},
         labelLine:{show:position!=='inside'},labelLayout:{hideOverlap:true},itemStyle:{borderWidth:1,borderColor:mergedAppearance?.cardBackground || '#fff'} }] }
     }
     const total=data.reduce((sum,p)=>sum+p.value,0)
@@ -258,6 +306,7 @@ export function buildChartPreviewOption(params: {
       seriesData = result.rows.map((row, rowIdx) => {
         if(filledRow(row) && result.timeFill?.mode==='null')return null
         const values = keys.map((_, k) => readNumber(result.rows[rowIdx][keys[k]]) ?? 0)
+        if(values.some(v=>v<0))throw new Error('百分比堆叠仅支持非负指标')
         const sum = values.reduce((a, b) => a + b, 0) || 1
         const v = values[mi] / sum * 100
         return Math.round(v * 100) / 100

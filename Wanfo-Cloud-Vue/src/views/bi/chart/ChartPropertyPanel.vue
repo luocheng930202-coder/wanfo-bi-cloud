@@ -17,10 +17,14 @@
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
+          <el-form-item v-if="supportsSeriesDimension(definition.type)" label="系列维度（可选）">
+            <el-select :model-value="definition.query.dimensions[1]?.field" clearable filterable @change="setSeries"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" :disabled="f.name===definition.query.dimensions[0]?.field"/></el-select>
+            <small class="hint">例如按月份展示销售额，再按渠道拆分系列。缺失组合保持为空；时间补齐、同比环比请先移除系列维度。</small>
+          </el-form-item>
           <ChartTimeGrainEditor :definition="definition" :fields="fields"/>
           <div class="section-head"><span>{{ capabilities.metric }}</span><el-button v-if="definition.type==='table'" link @click="emit('raw-table')">原始字段</el-button><el-button v-if="definition.type==='scatter' && definition.query.metrics.length<2" link @click="emit('ensure-scatter')">补齐散点轴</el-button><el-button link :disabled="metricAddDisabled(definition.type, definition.query.metrics.length)" @click="emit('add-metric')">添加</el-button></div>
           <div v-for="(metric,index) in definition.query.metrics" :key="index" class="metric-row">
-            <span v-if="definition.type==='scatter'" class="metric-axis">{{ index===0 ? 'X 轴' : 'Y 轴' }}</span><el-select v-model="metric.field" filterable @change="normalizeAggregation(index)"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
+            <span v-if="definition.type==='scatter'" class="metric-axis">{{ index===0 ? 'X 轴' : index===1?'Y 轴':'气泡大小' }}</span><el-select v-model="metric.field" filterable @change="normalizeAggregation(index)"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <el-select v-model="metric.agg"><el-option v-for="key in metricAggregations(index)" :key="key" :value="key" :label="aggregations[key]"/></el-select>
             <el-button link type="danger" @click="emit('remove-metric', index)">移除</el-button>
           </div>
@@ -79,7 +83,17 @@
       </el-tab-pane>
       <el-tab-pane label="高级" name="advanced">
         <el-form label-position="top" :disabled="disabled">
+          <ChartAnalysisEditor :definition="definition" :labels="labels"/>
           <ChartReferenceLineEditor v-if="['bar','hbar','line','area','stack','combo'].includes(definition.type)" :definition="definition" :labels="labels"/>
+          <template v-if="['bar','hbar','line','area','stack','percent','combo','pie','ring'].includes(definition.type)">
+            <el-form-item label="Top N 分类"><el-switch :model-value="!!definition.query.topN" @update:model-value="v=>definition.query.topN=v?{count:10,metric:metricResultKey(definition.query.metrics[0]),includeOther:true}:undefined" :disabled="!definition.query.metrics.length"/></el-form-item>
+            <template v-if="definition.query.topN">
+              <el-form-item label="保留分类数"><el-input-number v-model="definition.query.topN.count" :min="1" :max="100" :precision="0"/></el-form-item>
+              <el-form-item label="排名指标"><el-select v-model="definition.query.topN.metric"><el-option v-for="m in definition.query.metrics" :key="metricResultKey(m)" :value="metricResultKey(m)" :label="labels[metricResultKey(m)]||m.field"/></el-select></el-form-item>
+              <el-form-item label="合并剩余分类为其他"><el-switch v-model="definition.query.topN.includeOther"/></el-form-item>
+              <small class="hint">先应用权限和筛选，再按指标降序排名；其他项从原始记录重新聚合。关闭其他项时，占比分母仅包含保留分类。不能与时间粒度、同比环比或维度下钻同时使用。</small>
+            </template>
+          </template>
           <el-form-item label="空值处理"><el-select v-model="advancedModel.nullMode" style="width:100%"><el-option value="keep" label="保持为空"/><el-option value="zero" label="置为 0"/><el-option value="hide" label="隐藏类目（饼图等）"/></el-select></el-form-item>
           <el-form-item v-if="capabilities.smooth" label="折线平滑"><el-switch v-model="advancedModel.smoothLine"/></el-form-item>
           <template v-if="definition.type==='map'">
@@ -106,16 +120,18 @@ import FilterTreeEditor from './FilterTreeEditor.vue'
 import ChartTypePicker from './ChartTypePicker.vue'
 import ChartMetricStyleEditor from './ChartMetricStyleEditor.vue'
 import ChartReferenceLineEditor from './ChartReferenceLineEditor.vue'
+import ChartAnalysisEditor from './ChartAnalysisEditor.vue'
 import ChartPivotStyleEditor from './ChartPivotStyleEditor.vue'
 import ChartTableStyleEditor from './ChartTableStyleEditor.vue'
 import ChartSpecializedStyleEditor from './ChartSpecializedStyleEditor.vue'
 import ChartMapSettings from './ChartMapSettings.vue'
 import ChartTimeGrainEditor from './ChartTimeGrainEditor.vue'
 import {metricResultKey} from '@/utils/biEchartsPreview'
-import { allowsClearDimension, metricAddDisabled, supportsDrill } from '@/utils/biChartTypes'
+import { allowsClearDimension, metricAddDisabled, supportsDrill, supportsSeriesDimension } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,retainChartMetricBindings } from '@/utils/biChartPresentation'
 const props = defineProps<{ definition: ChartDefinition; fields: Field[]; datasets: DatasetSummary[]; labels: Record<string,string>; disabled?: boolean; previewing?: boolean; canPreview?: boolean; fieldLabel: (n: string) => string }>()
 const emit = defineEmits<{ (e:'type-changed'):void; (e:'dataset-changed', id:number):void; (e:'set-dimension', field:string):void; (e:'add-metric'):void; (e:'remove-metric', index:number):void; (e:'set-sort', field:string):void; (e:'raw-table'):void; (e:'ensure-scatter'):void; (e:'pivot-fields'):void; (e:'preview'):void }>()
+function setSeries(field:string){const q=props.definition.query;if(!q.dimensions[0])return;q.dimensions=q.dimensions.slice(0,1);if(field && field!==q.dimensions[0].field)q.dimensions.push({field,alias:'series'});q.orderBys=[]}
 const tab = ref('data')
 watch(()=>props.definition.query.metrics.map(m=>({...m})),(current,previous)=>retainChartMetricBindings(props.definition.style,current,previous))
 const barType=computed(()=>BAR_TYPES.includes(props.definition.type))
@@ -165,3 +181,4 @@ watch(() => props.definition.query.dimensions[0]?.field, (dim) => {
 .metric-row{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
 .hint{display:block;margin-top:6px;color:var(--bi-muted,#667085);font-size:12px;line-height:1.4}
 </style>
+

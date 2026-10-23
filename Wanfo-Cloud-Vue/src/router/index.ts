@@ -26,6 +26,7 @@ import Layout from '@/layout/index.vue'
 
 // 公共路由
 export const constantRoutes = [
+  {path:'/bi-admin/query-monitor',component:Layout,hidden:true,children:[{path:'',name:'BiQueryMonitor',component:()=>import('@/views/bi/query-monitor/index.vue'),meta:{title:'查询监控',noCache:true,activeMenu:'/bi-admin/query-monitor'}}]},
   {
     path:'/bi-admin/chart-workspace',component:Layout,hidden:true,
     children:[

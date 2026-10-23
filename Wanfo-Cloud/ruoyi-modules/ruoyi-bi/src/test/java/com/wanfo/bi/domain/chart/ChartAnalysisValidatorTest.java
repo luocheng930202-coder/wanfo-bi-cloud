@@ -1,0 +1,12 @@
+package com.wanfo.bi.domain.chart;
+import com.wanfo.bi.domain.query.QueryModel;
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+class ChartAnalysisValidatorTest {
+ private ChartAdvancedOptions advanced(Double min,Double max,Double target){var a=new ChartAdvancedOptions();a.setAnalysis(new ChartAdvancedOptions.Analysis(null,null,null,true,List.of(new ChartAdvancedOptions.RadarAxis("v",min,max,target)),true,null,null,true,false,false));return a;}
+ private QueryModel model(){var q=new QueryModel();q.addDimension("d","d");q.addMetric("amount","SUM","v");return q;}
+ @Test void validatesEveryNormalizedAxisAndTarget(){assertDoesNotThrow(()->ChartAnalysisValidator.validate(advanced(0d,200d,100d),model(),"radar"));assertThrows(IllegalArgumentException.class,()->ChartAnalysisValidator.validate(advanced(100d,0d,50d),model(),"radar"));assertThrows(IllegalArgumentException.class,()->ChartAnalysisValidator.validate(advanced(0d,100d,101d),model(),"radar"));var q=model();q.addMetric("amount","AVG","mean");assertThrows(IllegalArgumentException.class,()->ChartAnalysisValidator.validate(advanced(0d,100d,50d),q,"radar"));}
+ @Test void rejectsNonfiniteAndDuplicateFunnelStages(){assertThrows(IllegalArgumentException.class,()->ChartAnalysisValidator.validate(advanced(0d,Double.NaN,null),model(),"radar"));var a=new ChartAdvancedOptions();a.setAnalysis(new ChartAdvancedOptions.Analysis("adjacent",List.of("visit","visit"),false,false,null,false,null,null,false,false,false));assertThrows(IllegalArgumentException.class,()->ChartAnalysisValidator.validate(a,model(),"funnel"));}
+ @Test void savedAnalysisRoundTripsAndScatterAcceptsOptionalBubbleRole()throws Exception{var json=new com.fasterxml.jackson.databind.ObjectMapper();var a=json.readValue(json.writeValueAsString(advanced(0d,100d,50d)),ChartAdvancedOptions.class);assertEquals(50d,a.getAnalysis().radarAxes().get(0).target());var q=model();q.addMetric("y","SUM","y");q.addMetric("size","SUM","size");assertDoesNotThrow(()->ChartTypes.validateShape("scatter",q));q.addMetric("extra","SUM","extra");assertThrows(IllegalArgumentException.class,()->ChartTypes.validateShape("scatter",q));}
+}

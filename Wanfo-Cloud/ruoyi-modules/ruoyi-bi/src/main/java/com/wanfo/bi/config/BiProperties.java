@@ -35,6 +35,11 @@ public class BiProperties
     public QueryLimits getQueryLimits(){return queryLimits;}
     public void setQueryLimits(QueryLimits limits){if(limits!=null)queryLimits=limits;}
     public static class QueryLimits {
+        private String coordination="local",namespace="wanfo-bi";
+        public String getCoordination(){return coordination;}
+        public void setCoordination(String value){if(!java.util.Set.of("local","redis").contains(value))throw new IllegalArgumentException("Query coordination must be local or redis");coordination=value;}
+        public String getNamespace(){return namespace;}
+        public void setNamespace(String value){if(value==null || !value.matches("[a-zA-Z0-9_-]{1,40}"))throw new IllegalArgumentException("Query coordination namespace is invalid");namespace=value;}
         private int maxActive=16,perUser=2,perSource=4,maxWaiting=16,waitMillis=1500,slowMillis=3000;
         public int getMaxActive(){return maxActive;} public void setMaxActive(int n){maxActive=Math.min(64,Math.max(1,n));}
         public int getPerUser(){return perUser;} public void setPerUser(int n){perUser=Math.min(16,Math.max(1,n));}

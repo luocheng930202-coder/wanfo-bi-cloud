@@ -58,6 +58,7 @@ const items = [
   { path: '/bi-admin/template', label: '模板中心', icon: Collection, permission: 'bi:template:list' },
   { path: '/bi-admin/metric', label: '数据指标', icon: TrendCharts, permission: 'bi:metric:list' },
   { path: '/bi-admin/form', label: '填报管理', icon: Document, permission: 'bi:form:list' },
+  { path: '/bi-admin/query-monitor', label: '查询监控', icon: TrendCharts, permission: 'bi:resource:admin' },
   { path: '/bi-admin/export', label: '导出中心', icon: Download, permission: 'bi:export:list' }
 ]
 const navigation = computed(() => items.filter(item =>

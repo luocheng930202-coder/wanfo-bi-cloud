@@ -17,6 +17,8 @@ public class QueryGovernor {
  private final Map<String,Run> runs=new HashMap<>();private final Set<String> pending=new HashSet<>();private final LinkedHashMap<String,Long> cancelled=new LinkedHashMap<>();
  private final ScheduledThreadPoolExecutor deadlines=new ScheduledThreadPoolExecutor(1,r->{var t=new Thread(r,"bi-query-deadline");t.setDaemon(true);return t;});
  private final ThreadPoolExecutor cancellers=new ThreadPoolExecutor(2,2,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(128),r->{var t=new Thread(r,"bi-query-cancel");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
+ private final Deque<Run> recent=new ArrayDeque<>();
+ private final String instanceId=UUID.randomUUID().toString();
  private int active,waiting;private volatile boolean shuttingDown;
  public QueryGovernor(BiProperties properties,CurrentActorProvider actors){this.properties=properties;this.actors=actors;deadlines.setRemoveOnCancelPolicy(true);}
  public Run enter(Collection<Long> ids) throws QueryGovernanceException {
@@ -51,11 +53,14 @@ public class QueryGovernor {
   }finally{if(queued)waiting--;if(key!=null)pending.remove(key);}}
  }
  private QueryGovernanceException busy(){return new QueryGovernanceException("QUERY_BUSY",UUID.randomUUID().toString(),null);}
+ public Map<String,Object> monitor(){synchronized(lock){var limits=properties.getQueryLimits();return Map.of("scope","instance","instanceId",instanceId,"active",active,"waiting",waiting,"limits",Map.of("maxActive",limits.getMaxActive(),"perUser",limits.getPerUser(),"perSource",limits.getPerSource(),"maxWaiting",limits.getMaxWaiting(),"slowMillis",limits.getSlowMillis()),"running",runs.values().stream().map(Run::view).toList(),"recent",recent.stream().map(Run::view).toList());}}
+ public boolean cancelRequest(String requestId){validKey(requestId);Run found;synchronized(lock){found=runs.values().stream().filter(r->r.id.equals(requestId)).findFirst().orElse(null);}if(found==null)return false;found.stop("QUERY_CANCELLED");return true;}
  public final class Run implements AutoCloseable {
   private final String owner,id=UUID.randomUUID().toString(),key;private final List<Long> keys;private final AtomicBoolean closed=new AtomicBoolean();private final long started=System.nanoTime(),budget=TimeUnit.SECONDS.toNanos(properties.getQueryTimeoutSeconds());
-  private final String sourceKind=sourceKind();private final Set<Statement> statements=ConcurrentHashMap.newKeySet();private volatile long finished;private volatile String reason;private ScheduledFuture<?> timer;
+  private final String sourceKind=sourceKind();private final Set<Statement> statements=ConcurrentHashMap.newKeySet();private final long startedAt=System.currentTimeMillis();private volatile boolean failed;private volatile long finished;private volatile String reason;private ScheduledFuture<?> timer;
   private Run(String owner,List<Long> keys,String key){this.owner=owner;this.keys=keys;this.key=key==null?owner+"|"+id:key;}
   public String id(){return id;}
+  private Map<String,Object> view(){String status=!closed.get()?(reason==null?"running":"cancelling"):reason!=null?reason:failed?"failed":"completed";return Map.of("requestId",id,"instanceId",instanceId,"source",sourceKind,"startedAt",startedAt,"durationMs",elapsedMillis(),"datasourceCount",keys.size(),"status",status,"slow",elapsedMillis()>=properties.getQueryLimits().getSlowMillis());}
   public long elapsedMillis(){return Math.max(0,((finished==0?System.nanoTime():finished)-started)/1_000_000);}
   public Map<String,Object> diagnostics(){return Map.of("requestId",id,"slow",elapsedMillis()>=properties.getQueryLimits().getSlowMillis(),"durationMs",elapsedMillis());}
   public void check() throws QueryGovernanceException {if(closed.get())throw new QueryGovernanceException("QUERY_CANCELLED",id,null);if(reason==null && System.nanoTime()-started>=budget)stop("QUERY_TIMEOUT");if(reason!=null)throw new QueryGovernanceException(reason,id,null);}
@@ -63,10 +68,10 @@ public class QueryGovernor {
   public void unwatch(Statement statement){statements.remove(statement);}
   void stop(String why){synchronized(this){if(closed.get() || reason!=null)return;reason=why;}for(var statement:statements)cancelStatement(statement);org.slf4j.LoggerFactory.getLogger(QueryGovernor.class).info("BI query cancellation requestId={} reason={}",id,why);}
   private void cancelStatement(Statement statement){try{cancellers.execute(()->{if(!closed.get() && statements.contains(statement))try{statement.cancel();}catch(Exception ignored){org.slf4j.LoggerFactory.getLogger(QueryGovernor.class).debug("BI driver cancellation did not complete requestId={}",id);}});}catch(RejectedExecutionException ignored){org.slf4j.LoggerFactory.getLogger(QueryGovernor.class).warn("BI cancellation queue full requestId={}",id);}}
-  public QueryGovernanceException failure(Exception cause){return new QueryGovernanceException(reason,id,cause);}
+  public QueryGovernanceException failure(Exception cause){failed=true;return new QueryGovernanceException(reason,id,cause);}
   @Override public void close(){if(!closed.compareAndSet(false,true))return;finished=System.nanoTime();if(timer!=null)timer.cancel(false);statements.clear();if(CURRENT.get()==this)CURRENT.remove();try{
    if(elapsedMillis()>=properties.getQueryLimits().getSlowMillis())org.slf4j.LoggerFactory.getLogger(QueryGovernor.class).warn("BI slow query requestId={} source={} elapsedMs={} datasourceCount={}",id,sourceKind,elapsedMillis(),keys.size());
-  }finally{synchronized(lock){runs.remove(key,this);active--;decrement(users,owner);for(var source:keys)decrement(sources,source);lock.notifyAll();}}}
+  }finally{synchronized(lock){runs.remove(key,this);recent.addFirst(this);while(recent.size()>200)recent.removeLast();active--;decrement(users,owner);for(var source:keys)decrement(sources,source);lock.notifyAll();}}}
  }
  private static String sourceKind(){var context=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();if(context instanceof org.springframework.web.context.request.ServletRequestAttributes servlet){String path=servlet.getRequest().getRequestURI();if(path.startsWith("/bi/dashboard/"))return "dashboard";if(path.startsWith("/bi/chart/"))return "chart";}return "background";}
  private static <T> void decrement(Map<T,Integer> counts,T key){counts.computeIfPresent(key,(k,n)->n<=1?null:n-1);}

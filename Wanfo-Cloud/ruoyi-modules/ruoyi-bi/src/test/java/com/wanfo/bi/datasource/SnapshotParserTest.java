@@ -25,6 +25,13 @@ class SnapshotParserTest {
         assertEquals(2,data.rows().size());assertNull(data.rows().get(1).get(0));
         for(String input:List.of("[{\"a\":{\"b\":1}}]","[{\"a\":1},{\"b\":1}]","{\"total\":10,\"rows\":[{\"a\":1}]}"))assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes(input),input.startsWith("{")?"rows":"",mapper));
     }
+    @Test void jsonNumbersPreserveExactPrecisionAndBoundScientificNotation()throws Exception {
+        var mapper=new ObjectMapper();var data=SnapshotParser.json(bytes("[{\"amount\":1234567890123456.123456789012,\"id\":123456789012345678901234567890,\"exponent\":1.25e3}]"),"",mapper);
+        assertEquals("1234567890123456.123456789012",data.rows().get(0).get(0));assertEquals("DECIMAL",data.columns().get(0).type());
+        assertEquals("123456789012345678901234567890",data.rows().get(0).get(1));assertEquals("VARCHAR",data.columns().get(1).type());
+        assertEquals("1250",data.rows().get(0).get(2));assertEquals("DECIMAL",data.columns().get(2).type());
+        assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes("[{\"a\":1e10000}]"),"",mapper));
+    }
     @Test void failedRefreshRejectsChangedFieldsAndTypes()throws Exception {
         var old=SnapshotParser.csv(bytes("code,amount\n001,12.3"));
         var next=SnapshotParser.csv(bytes("code,amount\n002,13.3"));assertEquals(old.columns(),next.compatibleWith(old).columns());

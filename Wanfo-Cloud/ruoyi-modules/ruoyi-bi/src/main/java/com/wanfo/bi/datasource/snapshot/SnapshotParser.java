@@ -71,7 +71,7 @@ public final class SnapshotParser {
     public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {
         if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("API 响应超过 5 MB");
         JsonNode root;
-        try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);root=mapper.readTree(parser);}
+        try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);root=mapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).with(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS).readTree(parser);}
         JsonNode array=root;List<JsonNode> parents=new ArrayList<>();parents.add(root);
         if(path!=null && !path.isBlank()){
             if(!path.matches("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"))throw new IllegalArgumentException("数据路径使用 data.rows 形式");
@@ -86,9 +86,16 @@ public final class SnapshotParser {
         for(JsonNode object:array){
             if(!object.isObject() || object.size()!=names.size())throw new IllegalArgumentException("API 各行字段不一致");
             List<String> row=new ArrayList<>();
-            for(String name:names){JsonNode value=object.get(name);if(value==null || value.isContainerNode())throw new IllegalArgumentException("API 仅支持固定字段的扁平对象数组");row.add(value.isNull()?null:value.asText());}
+            for(String name:names){JsonNode value=object.get(name);if(value==null || value.isContainerNode())throw new IllegalArgumentException("API 仅支持固定字段的扁平对象数组");row.add(value.isNull()?null:scalar(value));}
             rows.add(row);
         }
         return SnapshotData.infer(names,rows);
+    }
+    private static String scalar(JsonNode value){
+        if(!value.isNumber())return value.asText();
+        java.math.BigDecimal number=value.decimalValue();
+        if(Math.abs((long)number.scale())>SnapshotData.MAX_CELL || (long)number.precision()+Math.max(0L,-(long)number.scale())>SnapshotData.MAX_CELL)
+            throw new IllegalArgumentException("API 数值超过单元格限制");
+        return number.toPlainString();
     }
 }

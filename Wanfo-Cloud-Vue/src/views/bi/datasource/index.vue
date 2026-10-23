@@ -60,13 +60,14 @@
          <el-table-column prop="username" label="账号" width="110" align="center" />
          <el-table-column label="密码" width="90" align="center">
             <template #default="{ row }">
-               <span v-if="row.passwordSet" class="text-secondary">{{ row.password || '****' }}</span>
+               <span v-if="isSnapshot(row.type)" class="text-secondary">无需密码</span>
+               <span v-else-if="row.passwordSet" class="text-secondary">{{ row.password || '****' }}</span>
                <span v-else class="text-danger">未设置</span>
             </template>
          </el-table-column>
          <el-table-column label="连通性" width="90" align="center">
             <template #default="{ row }">
-               <el-tooltip :content="probeResult[row.schemaName] ? '连通正常' : (probed ? '探测失败' : '未探测')" placement="top">
+               <el-tooltip :content="probeResult[row.schemaName] ? (isSnapshot(row.type) ? '快照可用' : '连通正常') : (probed ? '探测失败' : '未探测')" placement="top">
                   <el-tag :type="probeResult[row.schemaName] ? 'success' : 'info'" size="small">
                      {{ probeResult[row.schemaName] ? '正常' : '—' }}
                   </el-tag>
@@ -86,7 +87,8 @@
          </el-table-column>
          <el-table-column label="操作" width="310" align="center" fixed="right">
             <template #default="{ row }">
-               <el-button link type="primary" icon="Edit" v-hasPermi="['bi:datasource:edit']" v-if="row.resourceActions?.includes('edit')" @click="handleUpdate(row)">编辑</el-button>
+               <el-button link type="primary" icon="Edit" v-hasPermi="['bi:datasource:edit']" v-if="row.resourceActions?.includes('edit')" @click="handleUpdate(row)">{{ isSnapshot(row.type) ? '更新快照' : '编辑' }}</el-button>
+               <el-button v-if="row.type==='api' && row.resourceActions?.includes('edit') && checkPermi(['bi:datasource:edit'])" link type="primary" @click="refreshSnapshot(row)">刷新</el-button>
                <el-button link type="success" icon="VideoPlay" v-hasPermi="['bi:datasource:test']" v-if="row.resourceActions?.includes('test')" @click="handleTest(row)">测试</el-button>
                <el-button link type="danger" icon="Delete" v-hasPermi="['bi:datasource:remove']" v-if="row.resourceActions?.includes('remove')" @click="handleDelete(row)">删除</el-button>
                <el-button v-if="row.resourceActions?.includes('model') && checkPermi(['bi:dataset:add'])" v-hasPermi="['bi:datasource:model']" link type="primary" @click="$router.push({ path: '/bi-admin/dataset', query: { datasourceId: row.id } })">建数据集</el-button>
@@ -106,6 +108,7 @@
          @pagination="getList"
       />
 
+      <SnapshotSourceDialog ref="snapshotDialog" @saved="getList" />
       <!-- 新增 / 编辑 -->
       <el-dialog :title="dialog.title" v-model="dialog.visible" :width="!form.id && createStep === 0 ? 'min(1100px, calc(100vw - 24px))' : 'min(720px, calc(100vw - 24px))'" @closed="resetForm">
          <el-steps v-if="!form.id" :active="createStep" align-center class="source-steps">
@@ -165,6 +168,7 @@
                   </el-form-item>
                </el-col>
             </el-row>
+            <el-form-item label="物理 Schema"><el-input v-model="form.sourceSchema" placeholder="PostgreSQL 默认 public，SQL Server 默认 dbo，Oracle 默认当前用户" maxlength="128" /></el-form-item>
             <el-form-item label="连接串" prop="jdbcUrl">
                <el-input v-model="form.jdbcUrl" :placeholder="DB_TYPES.find(t => t.value === form.type)?.url || 'jdbc:…'" />
             </el-form-item>
@@ -270,15 +274,22 @@ import {
   type DatasourceForm
 } from '@/api/bi/datasource'
 
+import SnapshotSourceDialog from './SnapshotSourceDialog.vue'
+import { refreshApiSource } from '@/api/bi/datasource'
+const snapshotDialog=ref<InstanceType<typeof SnapshotSourceDialog>>()
+const isSnapshot=(type:string)=>['api','csv','excel'].includes(type)
+async function refreshSnapshot(row:BiDatasource){await refreshApiSource(row.id);ElMessage.success('快照已刷新');getList()}
 const DB_TYPES = [
   { value: 'mysql', label: 'MySQL', category: 'oltp', abbr: 'My', color: '#00758f', description: '关系型数据库', url: 'jdbc:mysql://host:3306/database' },
   { value: 'postgresql', label: 'PostgreSQL', category: 'oltp', abbr: 'PG', color: '#336791', description: '关系型数据库', url: 'jdbc:postgresql://host:5432/database' },
   { value: 'oracle', label: 'Oracle', category: 'oltp', abbr: 'Or', color: '#c74634', description: '关系型数据库', url: 'jdbc:oracle:thin:@//host:1521/service' },
   { value: 'sqlserver', label: 'SQL Server', category: 'oltp', abbr: 'SQL', color: '#b52d36', description: '关系型数据库', url: 'jdbc:sqlserver://host:1433;databaseName=database' },
-  { value: 'h2', label: 'H2', category: 'oltp', abbr: 'H2', color: '#334e9e', description: '轻量级关系型数据库', url: 'jdbc:h2:~/database' },
   { value: 'doris', label: 'Doris', category: 'olap', abbr: 'Do', color: '#2876df', description: '实时分析数据库', url: 'jdbc:mysql://host:9030/database' },
   { value: 'starrocks', label: 'StarRocks', category: 'olap', abbr: 'SR', color: '#6849c9', description: '实时分析数据库', url: 'jdbc:mysql://host:9030/database' },
-  { value: 'clickhouse', label: 'ClickHouse', category: 'olap', abbr: 'CH', color: '#997400', description: '列式分析数据库', url: 'jdbc:clickhouse://host:8123/database' }
+  { value: 'clickhouse', label: 'ClickHouse', category: 'olap', abbr: 'CH', color: '#997400', description: '列式分析数据库', url: 'jdbc:clickhouse://host:8123/database' },
+  { value:'api',label:'JSON API',category:'api',abbr:'API',color:'#2876df',description:'GET JSON · 可刷新快照',url:'' },
+  { value:'csv',label:'CSV',category:'file',abbr:'CSV',color:'#248451',description:'UTF-8 · 保留标识符前导零',url:'' },
+  { value:'excel',label:'Excel',category:'file',abbr:'XLS',color:'#248451',description:'XLS / XLSX · 工作表导入',url:'' }
 ]
 const sourceCategories = [
   { value: 'recent', label: '最近创建' }, { value: 'all', label: '全部' },
@@ -304,6 +315,7 @@ const filteredSourceTypes = computed(() => {
 function nextSourceStep() {
   const source = DB_TYPES.find(t => t.value === selectedSource.value)
   if (!source) return
+  if(isSnapshot(source.value)){dialog.visible=false;snapshotDialog.value?.open(source.value);return}
   if (form.type !== source.value) {
     form.jdbcUrl = ''
     form.driverClass = ''
@@ -341,6 +353,7 @@ const defaultForm = (): DatasourceForm => ({
   name: '',
   type: 'mysql',
   schemaName: '',
+  sourceSchema: '',
   jdbcUrl: '',
   driverClass: '',
   username: '',
@@ -352,7 +365,7 @@ const defaultForm = (): DatasourceForm => ({
 })
 
 const form = reactive<DatasourceForm>(defaultForm())
-const connectionFingerprint = () => JSON.stringify([form.id, form.type, form.jdbcUrl, form.driverClass, form.username, form.password])
+const connectionFingerprint = () => JSON.stringify([form.id, form.type, form.jdbcUrl, form.sourceSchema, form.driverClass, form.username, form.password])
 watch(connectionFingerprint, () => { connectionResult.value = null })
 
 const rules = {
@@ -426,12 +439,14 @@ function handleAdd() {
 }
 
 function handleUpdate(row: BiDatasource) {
+  if(isSnapshot(row.type)){snapshotDialog.value?.open(row.type,row);return}
   resetForm()
   Object.assign(form, {
     id: row.id,
     name: row.name,
     type: row.type,
     schemaName: row.schemaName,
+    sourceSchema: row.sourceSchema,
     jdbcUrl: row.jdbcUrl,
     driverClass: row.driverClass,
     username: row.username,

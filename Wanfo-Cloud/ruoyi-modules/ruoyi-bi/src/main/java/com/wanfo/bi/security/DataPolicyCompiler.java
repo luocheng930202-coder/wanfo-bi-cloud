@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 /** Compiles only validated identifiers and enum operators. Values always use JDBC parameters. */
 public final class DataPolicyCompiler {
     private DataPolicyCompiler() { }
+    private static String identifier(String start,String name) { String end="[".equals(start)?"]":start; return start+name.replace(end,end+end)+end; }
     public record Compiled(String projection,String predicate,List<Object> params,List<String> columns) { }
     public static Compiled compile(List<String> selected,Map<String,String> types,String quote,DatasetDataPolicy.Scope scope) {
         if(quote==null || quote.isBlank()) throw new IllegalArgumentException("驱动不支持标识符引用");
@@ -12,13 +13,13 @@ public final class DataPolicyCompiler {
         if(!types.keySet().containsAll(referenced) || !types.keySet().containsAll(selected)) throw new BiAccessException(403,"数据权限字段已失效，请联系管理员");
         for(String field:selected) {
             if(scope.denied().contains(field)) continue;
-            String q=quote+field.replace(quote,quote+quote)+quote;
+            String q=identifier(quote,field);
             projection.add(scope.masked().contains(field)?"'***' AS "+q:q);columns.add(field);
         }
         if(columns.isEmpty()) throw new BiAccessException(403,"没有可查询的字段");
         Map<String,String> ops=Map.of("EQ","=","NE","<>","GT",">","GE",">=","LT","<","LE","<=");
         for(var r:scope.rows()) {
-            String field=quote+r.fieldName().replace(quote,quote+quote)+quote;
+            String field=identifier(quote,r.fieldName());
             if("IS_NULL".equals(r.ruleKind())) {conditions.add(field+" IS NULL");continue;}
             if("IS_NOT_NULL".equals(r.ruleKind())) {conditions.add(field+" IS NOT NULL");continue;}
             String op=ops.get(r.ruleKind());

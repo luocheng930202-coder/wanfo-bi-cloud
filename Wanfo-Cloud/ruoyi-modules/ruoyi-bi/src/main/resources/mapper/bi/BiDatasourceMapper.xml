@@ -8,6 +8,7 @@
         <result property="name"           column="name"/>
         <result property="type"           column="type"/>
         <result property="schemaName"     column="schema_name"/>
+        <result property="sourceSchema" column="source_schema"/>
         <result property="jdbcUrl"        column="jdbc_url"/>
         <result property="driverClass"    column="driver_class"/>
         <result property="username"       column="username"/>
@@ -30,7 +31,7 @@
     </resultMap>
 
     <sql id="selectAllVo">
-        select id, name, type, schema_name, jdbc_url, driver_class, username, password,
+        select id, name, type, schema_name, source_schema, jdbc_url, driver_class, username, password,
                ssh_host, ssh_port, ssh_user, ssh_password, ssh_private_key,
                pool_max_total, pool_min_idle, query_timeout,
                status, remark, create_by, create_time, update_by, update_time, del_flag
@@ -70,6 +71,7 @@
             <if test="name != null">name,</if>
             <if test="type != null">type,</if>
             <if test="schemaName != null">schema_name,</if>
+            <if test="sourceSchema != null">source_schema,</if>
             <if test="jdbcUrl != null">jdbc_url,</if>
             <if test="driverClass != null">driver_class,</if>
             <if test="username != null">username,</if>
@@ -91,6 +93,7 @@
             <if test="name != null">#{name},</if>
             <if test="type != null">#{type},</if>
             <if test="schemaName != null">#{schemaName},</if>
+            <if test="sourceSchema != null">#{sourceSchema},</if>
             <if test="jdbcUrl != null">#{jdbcUrl},</if>
             <if test="driverClass != null">#{driverClass},</if>
             <if test="username != null">#{username},</if>
@@ -115,6 +118,7 @@
         <set>
             <if test="name != null">name = #{name},</if>
             <if test="type != null">type = #{type},</if>
+            <if test="sourceSchema != null">source_schema = #{sourceSchema},</if>
             <if test="jdbcUrl != null">jdbc_url = #{jdbcUrl},</if>
             <if test="driverClass != null">driver_class = #{driverClass},</if>
             <if test="username != null">username = #{username},</if>

@@ -29,6 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BiDataSourceService
 {
+    private com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureSnapshots(com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots){this.snapshots=snapshots;}
     private static final Logger log = LoggerFactory.getLogger(BiDataSourceService.class);
 
     private final DbDataSourceProvider provider;
@@ -63,6 +66,7 @@ public class BiDataSourceService
             m.put("type", row.getType());
             m.put("schemaName", row.getSchemaName());
             m.put("jdbcUrl", row.getJdbcUrl());
+            m.put("sourceSchema",row.getSourceSchema());
             m.put("driverClass", row.getDriverClass());
             m.put("username", row.getUsername());
             // ★ 列表接口绝不返回密码原文，也不返回密文
@@ -129,6 +133,7 @@ public class BiDataSourceService
             throw new IllegalArgumentException("数据源不存在: " + form.getId());
         }
 
+        if(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(exists.getType()))throw new IllegalArgumentException("请使用快照刷新或重新上传入口");
         Map<String, Object> probe = testFormConnection(form);
         result.put("probe", probe);
         if (!Boolean.TRUE.equals(probe.get("ok")))
@@ -162,7 +167,7 @@ public class BiDataSourceService
 
         // 连接参数变了就重建池
         if (form.getJdbcUrl() != null || form.getPassword() != null
-                || form.getUsername() != null || form.getDriverClass() != null)
+                || form.getUsername() != null || form.getDriverClass() != null || form.getSourceSchema()!=null)
         {
             engine.invalidate(exists.getSchemaName());
             result.put("poolInvalidated", exists.getSchemaName());
@@ -216,6 +221,7 @@ public class BiDataSourceService
         if (form.getId() != null && saved == null) { throw new IllegalArgumentException("数据源不存在"); }
         target.setType(saved == null ? form.getType() : saved.getType());
         target.setJdbcUrl(form.getJdbcUrl());
+        target.setSourceSchema(form.getSourceSchema());
         target.setUsername(form.getUsername());
         target.setDriverClass(resolveDriver(target.getType(), form.getDriverClass()));
         if (target.getJdbcUrl() == null || !target.getJdbcUrl().startsWith("jdbc:")
@@ -245,6 +251,8 @@ public class BiDataSourceService
     {
         BiDatasourceDO target = new BiDatasourceDO();
         target.setJdbcUrl(ds.getJdbcUrl());
+        target.setType(ds.getType());
+        target.setSourceSchema(ds.getSourceSchema());
         target.setUsername(ds.getUsername());
         target.setDriverClass(resolveDriver(ds.getType(), ds.getDriverClass()));
         target.setPassword(cipher.decrypt(ds.getPassword()));
@@ -270,11 +278,11 @@ public class BiDataSourceService
             {
                 Class.forName(ds.getDriverClass());
             }
-            try (Connection conn = DriverManager.getConnection(url, user, pwd);
-                 Statement st = conn.createStatement();
-                 ResultSet rs = st.executeQuery("SELECT 1"))
+            try (Connection conn = DriverManager.getConnection(url, com.wanfo.bi.datasource.JdbcConnectionSettings.properties(ds));
+                 Statement st = conn.createStatement())
             {
-                result.put("ok", rs.next());
+                st.setQueryTimeout(5);
+                try(ResultSet rs=st.executeQuery(com.wanfo.bi.datasource.JdbcSourceScope.testSql(ds.getType()))){result.put("ok", rs.next());}
                 result.put("databaseProduct",
                         conn.getMetaData().getDatabaseProductName()
                                 + " " + conn.getMetaData().getDatabaseProductVersion());
@@ -299,6 +307,9 @@ public class BiDataSourceService
                 .filter(d -> schemaName.equals(d.getSchemaName()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("数据源不存在: " + schemaName));
+        if(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(row.getType())){
+            var data=snapshots.load(row.getId());return new LinkedHashMap<>(Map.of("ok",true,"costMs",0,"message","快照可用（不代表外部接口连通）","rowCount",data.rows().size()));
+        }
         Map<String, Object> r = testConnection(row);
         r.put("schemaName", schemaName);
         return r;
@@ -325,6 +336,7 @@ public class BiDataSourceService
             row.setName(c.getName());
             row.setType(c.getType());
             row.setSchemaName(c.getSchemaName());
+            row.setSourceSchema(c.getSourceSchema());
             row.setJdbcUrl(c.getUrl());
             row.setDriverClass(resolveDriver(c.getType(), c.getDriver()));
             row.setUsername(c.getUsername());
@@ -364,6 +376,8 @@ public class BiDataSourceService
 
     private void validate(BiDatasourceDO form, boolean creating)
     {
+        if (com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(form.getType()))throw new IllegalArgumentException("API 和文件请使用数据导入入口");
+        if(form.getSourceSchema()!=null && (form.getSourceSchema().length()>128 || form.getSourceSchema().chars().anyMatch(Character::isISOControl)))throw new IllegalArgumentException("物理 schema 无效");
         if (form.getName() == null || form.getName().isBlank())
         {
             throw new IllegalArgumentException("name 不能为空");

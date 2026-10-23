@@ -26,25 +26,25 @@ import {resolveChartMetricFormat,resolvedMetricStyles} from '@/utils/biChartPres
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart, ScatterChart, RadarChart, FunnelChart, GaugeChart, MapChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, GeoComponent, VisualMapComponent, TitleComponent, GraphicComponent, MarkLineComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, GeoComponent, VisualMapComponent, TitleComponent, GraphicComponent, MarkLineComponent, DataZoomComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { ChartResult, ChartDefinition } from '@/api/bi/chart'
 import type { DashboardAppearance, NumberFormat, MetricStyle } from '@/api/bi/dashboard'
 import { displayNumber, formatMetric, metricColor } from '@/utils/biPresentation'
-import { buildChartPreviewOption, metricResultKey, seriesDrawing } from '@/utils/biEchartsPreview'
+import { buildChartPreviewOption, metricResultKey, seriesDrawing, analysisRows } from '@/utils/biEchartsPreview'
 import { buildPivotDataConfig, validatePivotConfig,buildPivotOptions,pivotTheme,pivotTotalsRequested } from '@/utils/biPivotPreview'
 import { buildMapPreviewOption, validateMapConfig,mapMatchWarning,mapDrillNames } from '@/utils/biMapPreview'
 import { defaultMapScope, ensureMapRegistered,registeredGeoFeatures, type MapScopeId } from '@/utils/biMapGeo'
 import { PivotSheet } from '@antv/s2'
 import {matchGeoFeature,type GeoFeature} from '@/utils/biMapRegions'
-echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,GraphicComponent,MarkLineComponent,CanvasRenderer])
+echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,GraphicComponent,MarkLineComponent,DataZoomComponent,CanvasRenderer])
 const props=defineProps<{thumbnail?:boolean;loading?:boolean;result:ChartResult|null;definition:ChartDefinition;labels:Record<string,string>;appearance?:DashboardAppearance;numberFormat?:NumberFormat|null;metricStyles?:MetricStyle[];linkable?:boolean;drillable?:boolean;canDrillDown?:boolean}>()
 const displayDefinition=computed<ChartDefinition>(()=>{const context=props.result?.mapContext;if(props.definition.type!=='map' || !context)return props.definition;return {...props.definition,advanced:{...props.definition.advanced,mapScope:context.scope},query:{...props.definition.query,dimensions:[{field:context.field,alias:context.field}]}}})
 const displayLabels=computed(()=>{const labels=comparisonLabels(props.result,props.labels),context=props.result?.mapContext;return context?{...labels,[context.field]:context.fieldLabel || labels[context.field] || context.field}:labels})
 const emit=defineEmits<{(e:'select',value:string|number|null):void;(e:'drill',payload:{field:string;value:string|number|null}):void}>()
 function dimensionValue(row:Record<string,unknown>){const d=displayDefinition.value.query.dimensions[0];if(!d)return undefined;const v=row[d.alias || d.field];if(v===null)return null;if(typeof v==='string' || (typeof v==='number' && Number.isFinite(v) && Math.abs(v)<=Number.MAX_SAFE_INTEGER))return v;return undefined}
-function selectRow(row:Record<string,unknown>){if(props.result?.topN?.otherRowIndexes.some(i=>props.result?.rows[i]===row))return;const v=dimensionValue(row);if(v===undefined)return;if(props.linkable)emit('select',v)}
-async function onChartPick(row:Record<string,unknown>){if(props.result?.topN?.otherRowIndexes.some(i=>props.result?.rows[i]===row))return;if(props.definition.type==='map' && mapBusy.value)return;if(props.definition.type==='map' && props.drillable && props.canDrillDown && !mapRowDrillable(row)){mapWarning.value='该地区暂无可用下级边界或未绑定下级字段';return;}const d=displayDefinition.value.query.dimensions[0];if(!d)return;const v=dimensionValue(row);if(v===undefined)return;const drill=props.drillable && props.canDrillDown;const link=props.linkable;if(drill && link){try{const {ElMessageBox}=await import('element-plus');const action=await ElMessageBox.confirm('选择交互方式','图表交互',{confirmButtonText:'下钻',cancelButtonText:'联动',distinguishCancelAndClose:true,type:'info'});if(action==='confirm')emit('drill',{field:d.field,value:v});else if(action==='cancel')emit('select',v)}catch{/* closed */}return}if(drill)emit('drill',{field:d.field,value:v});else if(link)emit('select',v)}
+function selectRow(row:Record<string,unknown>){if(props.result && !props.result.rows.includes(row))return;if(props.result?.topN?.otherRowIndexes.some(i=>props.result?.rows[i]===row))return;const v=dimensionValue(row);if(v===undefined)return;if(props.linkable)emit('select',v)}
+async function onChartPick(row:Record<string,unknown>){if(props.result && !props.result.rows.includes(row))return;if(props.result?.topN?.otherRowIndexes.some(i=>props.result?.rows[i]===row))return;if(props.definition.type==='map' && mapBusy.value)return;if(props.definition.type==='map' && props.drillable && props.canDrillDown && !mapRowDrillable(row)){mapWarning.value='该地区暂无可用下级边界或未绑定下级字段';return;}const d=displayDefinition.value.query.dimensions[0];if(!d)return;const v=dimensionValue(row);if(v===undefined)return;const drill=props.drillable && props.canDrillDown;const link=props.linkable;if(drill && link){try{const {ElMessageBox}=await import('element-plus');const action=await ElMessageBox.confirm('选择交互方式','图表交互',{confirmButtonText:'下钻',cancelButtonText:'联动',distinguishCancelAndClose:true,type:'info'});if(action==='confirm')emit('drill',{field:d.field,value:v});else if(action==='cancel')emit('select',v)}catch{/* closed */}return}if(drill)emit('drill',{field:d.field,value:v});else if(link)emit('select',v)}
 const visibleGeoFeatures=ref<GeoFeature[]>([])
 function mapRegionName(row:Record<string,unknown>){const d=displayDefinition.value.query.dimensions[0];return matchGeoFeature(visibleGeoFeatures.value,row[d.alias || d.field],'code')?.name || '未匹配地区'}
 function mapRowDrillable(row:Record<string,unknown>){const dim=displayDefinition.value.query.dimensions[0];const feature=matchGeoFeature(visibleGeoFeatures.value,row[dim.alias || dim.field],props.definition.advanced?.mapValueMode || 'name');return !!feature && !!props.result?.mapContext?.drillableRegions.includes(String(feature.adcode))}
@@ -107,7 +107,7 @@ watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringi
     }else{
     const option=buildChartPreviewOption({type:type.value,definition:comparisonDefinition(props.definition,props.result),result:props.result,labels:displayLabels.value,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
     instance=echarts.init(host.value)
-    instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const drawing=props.result && seriesDrawing(props.definition,props.result);const index=drawing?drawing.rowIndex(event.seriesIndex,event.dataIndex):event.dataIndex;const row=index==null?undefined:props.result?.rows[index];if(row)onChartPick(row)}})
+    instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const drawing=props.result && seriesDrawing(props.definition,props.result);const index=drawing?drawing.rowIndex(event.seriesIndex,event.dataIndex):event.dataIndex;const row=index==null || !props.result?undefined:analysisRows(props.definition,props.result).rows[index];if(row)onChartPick(row)}})
     instance.setOption(option)
     }
     observer=new ResizeObserver(()=>instance?.resize());observer.observe(host.value)

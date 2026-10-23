@@ -94,6 +94,7 @@ public class ChartDefinitionService {
             throw new IllegalArgumentException("请选择图表类型并填写有效名称，定义版本须为 1");
         com.wanfo.bi.domain.chart.ChartStyleValidator.validate(d.style(),d.type());
         var q=d.query();
+        com.wanfo.bi.domain.chart.ChartAnalysisValidator.validate(d.advanced(),q,d.type());
         if(q.getDimensions()!=null && q.getDimensions().stream().anyMatch(dim->dim!=null && dim.getTimeGrain()!=null)) {
             if(!Set.of("bar","hbar","line","area","stack","percent","combo").contains(d.type()))
                 throw new IllegalArgumentException("当前图表类型不支持时间粒度，请恢复原始时间后切换类型");

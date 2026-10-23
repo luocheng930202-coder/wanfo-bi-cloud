@@ -19,7 +19,7 @@ public final class ChartTypes {
    return;
   }
   if ("scatter".equals(type)) {
-   if (q.getMetrics() == null || q.getMetrics().size() != 2) throw new IllegalArgumentException("散点图需要两个度量（横轴与纵轴）");
+   if (q.getMetrics() == null || (q.getMetrics().size() < 2 || q.getMetrics().size() > 3)) throw new IllegalArgumentException("散点图需要 X、Y 两个度量，可选第三个气泡大小指标");
    if (q.getDimensions() != null && q.getDimensions().size() > 1) throw new IllegalArgumentException("散点图最多一个维度用于系列分组");
    return;
   }

@@ -99,7 +99,21 @@ export interface ChartVisualStyle {
   gaugeMax?: number
   gaugeStyle?: 'pointer' | 'progress'
 }
+export interface ChartAnalysis {
+  funnelRate?:'adjacent'|'first'
+  funnelStages?:string[]
+  funnelFillZero?:boolean
+  radarNormalize?:boolean
+  radarAxes?:{key:string;min:number;max:number;target?:number}[]
+  scatterQuadrants?:boolean
+  scatterXSplit?:number
+  scatterYSplit?:number
+  scatterZoom?:boolean
+  scatterLogX?:boolean
+  scatterLogY?:boolean
+}
 export interface ChartAdvancedOptions {
+  analysis?:ChartAnalysis
   mapFields?:{province?:string;city?:string;county?:string}
   mapValueMode?:'name'|'code'
   nullMode?: 'keep' | 'zero' | 'hide'

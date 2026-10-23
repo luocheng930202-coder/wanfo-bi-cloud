@@ -24,7 +24,7 @@
           <ChartTimeGrainEditor :definition="definition" :fields="fields"/>
           <div class="section-head"><span>{{ capabilities.metric }}</span><el-button v-if="definition.type==='table'" link @click="emit('raw-table')">原始字段</el-button><el-button v-if="definition.type==='scatter' && definition.query.metrics.length<2" link @click="emit('ensure-scatter')">补齐散点轴</el-button><el-button link :disabled="metricAddDisabled(definition.type, definition.query.metrics.length)" @click="emit('add-metric')">添加</el-button></div>
           <div v-for="(metric,index) in definition.query.metrics" :key="index" class="metric-row">
-            <span v-if="definition.type==='scatter'" class="metric-axis">{{ index===0 ? 'X 轴' : 'Y 轴' }}</span><el-select v-model="metric.field" filterable @change="normalizeAggregation(index)"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
+            <span v-if="definition.type==='scatter'" class="metric-axis">{{ index===0 ? 'X 轴' : index===1?'Y 轴':'气泡大小' }}</span><el-select v-model="metric.field" filterable @change="normalizeAggregation(index)"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <el-select v-model="metric.agg"><el-option v-for="key in metricAggregations(index)" :key="key" :value="key" :label="aggregations[key]"/></el-select>
             <el-button link type="danger" @click="emit('remove-metric', index)">移除</el-button>
           </div>
@@ -83,6 +83,7 @@
       </el-tab-pane>
       <el-tab-pane label="高级" name="advanced">
         <el-form label-position="top" :disabled="disabled">
+          <ChartAnalysisEditor :definition="definition" :labels="labels"/>
           <ChartReferenceLineEditor v-if="['bar','hbar','line','area','stack','combo'].includes(definition.type)" :definition="definition" :labels="labels"/>
           <template v-if="['bar','hbar','line','area','stack','percent','combo','pie','ring'].includes(definition.type)">
             <el-form-item label="Top N 分类"><el-switch :model-value="!!definition.query.topN" @update:model-value="v=>definition.query.topN=v?{count:10,metric:metricResultKey(definition.query.metrics[0]),includeOther:true}:undefined" :disabled="!definition.query.metrics.length"/></el-form-item>
@@ -119,6 +120,7 @@ import FilterTreeEditor from './FilterTreeEditor.vue'
 import ChartTypePicker from './ChartTypePicker.vue'
 import ChartMetricStyleEditor from './ChartMetricStyleEditor.vue'
 import ChartReferenceLineEditor from './ChartReferenceLineEditor.vue'
+import ChartAnalysisEditor from './ChartAnalysisEditor.vue'
 import ChartPivotStyleEditor from './ChartPivotStyleEditor.vue'
 import ChartTableStyleEditor from './ChartTableStyleEditor.vue'
 import ChartSpecializedStyleEditor from './ChartSpecializedStyleEditor.vue'

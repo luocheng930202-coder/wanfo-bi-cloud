@@ -1,6 +1,11 @@
 package com.wanfo.bi.domain.chart;
 import java.util.List;
 public class ChartAdvancedOptions {
+    public record RadarAxis(String key,Double min,Double max,Double target){}
+    public record Analysis(String funnelRate,java.util.List<String> funnelStages,Boolean funnelFillZero,Boolean radarNormalize,java.util.List<RadarAxis> radarAxes,Boolean scatterQuadrants,Double scatterXSplit,Double scatterYSplit,Boolean scatterZoom,Boolean scatterLogX,Boolean scatterLogY){}
+    private Analysis analysis;
+    public Analysis getAnalysis(){return analysis;}
+    public void setAnalysis(Analysis value){analysis=value;}
     public record MapFields(String province,String city,String county) { }
     private MapFields mapFields;
     private String mapValueMode;

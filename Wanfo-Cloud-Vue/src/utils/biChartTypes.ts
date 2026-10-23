@@ -66,7 +66,7 @@ export function maxMetricsForType(type: ChartType): number {
   if (type === 'pivot') return 3
   if (type === 'table') return 5
   if (isPieLike(type) || type === 'gauge' || type === 'map') return 1
-  if (type === 'scatter') return 2
+  if (type === 'scatter') return 3
   return 5
 }
 
@@ -88,7 +88,7 @@ export function validateChartQueryShape(
     return null
   }
   if (type === 'scatter') {
-    if (metrics.length !== 2) return '散点图需要两个度量（横轴与纵轴）'
+    if (metrics.length < 2 || metrics.length > 3) return '散点图需要 X、Y 两个度量，可选第三个气泡大小指标'
     if (dimensions.length > 1) return '散点图最多一个维度用于系列分组'
     if (!metrics.length) return '请配置度量'
     return null

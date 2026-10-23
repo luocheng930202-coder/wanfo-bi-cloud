@@ -36,6 +36,7 @@ public final class ChartDrill {
             if (drill == null || drill.isEmpty()) return;
             throw new IllegalArgumentException("下钻维度须配置 2～5 个字段");
         }
+        if(d.query().getDimensions().size()>1)throw new IllegalArgumentException("使用系列维度时请先移除维度下钻");
         if (!supportsType(d.type())) throw new IllegalArgumentException("当前图表类型不支持下钻");
         if (drill.size() > 5) throw new IllegalArgumentException("下钻维度须配置 2～5 个字段");
         Set<String> seen = new HashSet<>();

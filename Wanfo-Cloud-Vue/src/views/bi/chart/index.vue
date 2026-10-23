@@ -188,7 +188,7 @@ async function openChart(row:ChartSummary){
   if(v===loadVersion && editorVisible.value && canPreview.value)await preview()
 }
 
-function setDimension(field:string){if(definition.type==='map' && definition.advanced?.mapFields){const old=definition.query.dimensions[0]?.field;for(const level of ['province','city','county'] as const)if(definition.advanced.mapFields[level]===old)definition.advanced.mapFields[level]=field || undefined}definition.query.dimensions=field?[{field,alias:'dimension'}]:[];definition.query.orderBys=[]}
+function setDimension(field:string){if(definition.type==='map' && definition.advanced?.mapFields){const old=definition.query.dimensions[0]?.field;for(const level of ['province','city','county'] as const)if(definition.advanced.mapFields[level]===old)definition.advanced.mapFields[level]=field || undefined}definition.query.dimensions=field?[{field,alias:'dimension'},...definition.query.dimensions.slice(1,2).filter(d=>d.field!==field)]:[];definition.query.orderBys=[]}
 function addMetric(){if(fields.value[0])definition.query.metrics.push({field:fields.value[0].name,agg:'COUNT',alias:nextChartMetricAlias(definition.query.metrics)})}
 function addMetricField(name:string){if(!name || metricAddDisabled(definition.type, definition.query.metrics.length))return;definition.query.metrics.push({field:name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})}
 function removeMetric(index:number){definition.query.metrics.splice(index,1);definition.query.orderBys=[]}

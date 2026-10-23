@@ -60,6 +60,8 @@ export function supportsDrill(type: ChartType): boolean {
   return !new Set<ChartType>(['table', 'pivot', 'map', 'gauge']).has(type)
 }
 
+export function supportsSeriesDimension(type:ChartType):boolean { return ['bar','hbar','line','area','stack','percent','combo'].includes(type) }
+
 export function maxMetricsForType(type: ChartType): number {
   if (type === 'pivot') return 3
   if (type === 'table') return 5
@@ -99,7 +101,8 @@ export function validateChartQueryShape(
     if (dimensions.length !== 1 || metrics.length !== 1) return '饼图/环形图/漏斗图须选择一个维度和一个度量'
     return null
   }
-  if (dimensions.length !== 1 || !metrics.length || metrics.length > 5) return '图形须选择一个维度和 1～5 个度量'
+  if ((dimensions.length !== 1 && !(supportsSeriesDimension(type) && dimensions.length===2 && dimensions[0].field!==dimensions[1].field)) || !metrics.length || metrics.length > 5) return '图形须选择一个分类维度、可选一个系列维度和 1～5 个度量'
+  if(dimensions.length===2 && metrics.some(m=>(m as {agg?:string}).agg==='NONE'))return '系列维度需要聚合指标'
   if (type === 'combo' && metrics.length < 2) return '柱线组合图至少需要两个度量'
   return null
 }
@@ -114,5 +117,6 @@ export function applyTypeDefaults(
   const max = maxMetricsForType(type)
   if (mets.length > max) mets = mets.slice(0, max)
   if (type === 'gauge') dims = []
+  else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot') dims=dims.slice(0,1)
   return { dimensions: dims, metrics: mets }
 }

@@ -30,7 +30,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { ChartResult, ChartDefinition } from '@/api/bi/chart'
 import type { DashboardAppearance, NumberFormat, MetricStyle } from '@/api/bi/dashboard'
 import { displayNumber, formatMetric, metricColor } from '@/utils/biPresentation'
-import { buildChartPreviewOption, metricResultKey } from '@/utils/biEchartsPreview'
+import { buildChartPreviewOption, metricResultKey, seriesDrawing } from '@/utils/biEchartsPreview'
 import { buildPivotDataConfig, validatePivotConfig,buildPivotOptions,pivotTheme,pivotTotalsRequested } from '@/utils/biPivotPreview'
 import { buildMapPreviewOption, validateMapConfig,mapMatchWarning,mapDrillNames } from '@/utils/biMapPreview'
 import { defaultMapScope, ensureMapRegistered,registeredGeoFeatures, type MapScopeId } from '@/utils/biMapGeo'
@@ -106,7 +106,7 @@ watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringi
     }else{
     const option=buildChartPreviewOption({type:type.value,definition:comparisonDefinition(props.definition,props.result),result:props.result,labels:displayLabels.value,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
     instance=echarts.init(host.value)
-    instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const row=props.result?.rows[event.dataIndex];if(row)onChartPick(row)}})
+    instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const drawing=props.result && seriesDrawing(props.definition,props.result);const index=drawing?drawing.rowIndex(event.seriesIndex,event.dataIndex):event.dataIndex;const row=index==null?undefined:props.result?.rows[index];if(row)onChartPick(row)}})
     instance.setOption(option)
     }
     observer=new ResizeObserver(()=>instance?.resize());observer.observe(host.value)

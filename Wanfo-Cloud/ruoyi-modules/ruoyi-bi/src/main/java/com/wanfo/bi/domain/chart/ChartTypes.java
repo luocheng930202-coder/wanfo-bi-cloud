@@ -29,8 +29,9 @@ public final class ChartTypes {
    return;
   }
   if (!CARTESIAN.contains(type)) throw new IllegalArgumentException("不支持的图表类型");
-  if (q.getDimensions() == null || q.getDimensions().size() != 1 || q.getMetrics() == null || q.getMetrics().isEmpty() || q.getMetrics().size() > 5)
-   throw new IllegalArgumentException("图形须选择一个维度和 1～5 个度量");
+  if (q.getDimensions() == null || (q.getDimensions().size() != 1 && !( !"radar".equals(type) && q.getDimensions().size()==2 && !q.getDimensions().get(0).getField().equals(q.getDimensions().get(1).getField()))) || q.getMetrics() == null || q.getMetrics().isEmpty() || q.getMetrics().size() > 5)
+   throw new IllegalArgumentException("图形须选择一个分类维度、可选一个系列维度和 1～5 个度量");
+  if(q.getDimensions().size()==2 && q.getMetrics().stream().anyMatch(m->m.getAgg()==null || "NONE".equalsIgnoreCase(m.getAgg())))throw new IllegalArgumentException("系列维度需要聚合指标");
   if ("combo".equals(type) && q.getMetrics().size() < 2) throw new IllegalArgumentException("柱线组合图至少需要两个度量");
  }
 }

@@ -17,6 +17,10 @@
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
+          <el-form-item v-if="supportsSeriesDimension(definition.type)" label="系列维度（可选）">
+            <el-select :model-value="definition.query.dimensions[1]?.field" clearable filterable @change="setSeries"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" :disabled="f.name===definition.query.dimensions[0]?.field"/></el-select>
+            <small class="hint">例如按月份展示销售额，再按渠道拆分系列。缺失组合保持为空；时间补齐、同比环比请先移除系列维度。</small>
+          </el-form-item>
           <ChartTimeGrainEditor :definition="definition" :fields="fields"/>
           <div class="section-head"><span>{{ capabilities.metric }}</span><el-button v-if="definition.type==='table'" link @click="emit('raw-table')">原始字段</el-button><el-button v-if="definition.type==='scatter' && definition.query.metrics.length<2" link @click="emit('ensure-scatter')">补齐散点轴</el-button><el-button link :disabled="metricAddDisabled(definition.type, definition.query.metrics.length)" @click="emit('add-metric')">添加</el-button></div>
           <div v-for="(metric,index) in definition.query.metrics" :key="index" class="metric-row">
@@ -112,10 +116,11 @@ import ChartSpecializedStyleEditor from './ChartSpecializedStyleEditor.vue'
 import ChartMapSettings from './ChartMapSettings.vue'
 import ChartTimeGrainEditor from './ChartTimeGrainEditor.vue'
 import {metricResultKey} from '@/utils/biEchartsPreview'
-import { allowsClearDimension, metricAddDisabled, supportsDrill } from '@/utils/biChartTypes'
+import { allowsClearDimension, metricAddDisabled, supportsDrill, supportsSeriesDimension } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,retainChartMetricBindings } from '@/utils/biChartPresentation'
 const props = defineProps<{ definition: ChartDefinition; fields: Field[]; datasets: DatasetSummary[]; labels: Record<string,string>; disabled?: boolean; previewing?: boolean; canPreview?: boolean; fieldLabel: (n: string) => string }>()
 const emit = defineEmits<{ (e:'type-changed'):void; (e:'dataset-changed', id:number):void; (e:'set-dimension', field:string):void; (e:'add-metric'):void; (e:'remove-metric', index:number):void; (e:'set-sort', field:string):void; (e:'raw-table'):void; (e:'ensure-scatter'):void; (e:'pivot-fields'):void; (e:'preview'):void }>()
+function setSeries(field:string){const q=props.definition.query;if(!q.dimensions[0])return;q.dimensions=q.dimensions.slice(0,1);if(field && field!==q.dimensions[0].field)q.dimensions.push({field,alias:'series'});q.orderBys=[]}
 const tab = ref('data')
 watch(()=>props.definition.query.metrics.map(m=>({...m})),(current,previous)=>retainChartMetricBindings(props.definition.style,current,previous))
 const barType=computed(()=>BAR_TYPES.includes(props.definition.type))
@@ -165,3 +170,4 @@ watch(() => props.definition.query.dimensions[0]?.field, (dim) => {
 .metric-row{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
 .hint{display:block;margin-top:6px;color:var(--bi-muted,#667085);font-size:12px;line-height:1.4}
 </style>
+

@@ -4,6 +4,7 @@ export const TIME_GRAINS = [{value:'day',label:'日'},{value:'week',label:'周�
 export function temporalField(type:string) { return /^(DATE|DATETIME|TIMESTAMP)(\(\d+\))?$/i.test(type.trim()) }
 export function supportsTimeGrain(type:string) { return ['bar','hbar','line','area','stack','percent','combo'].includes(type) }
 export function validateTimeGrain(definition:ChartDefinition,fields:Field[]):string|null {
+  if(definition.query.dimensions.length===2 && definition.advanced?.drillFields?.length)return '使用系列维度时请先移除维度下钻'
   if(definition.query.timeComparison){
     const q=definition.query,d=q.dimensions[0]
     if(!['previous','year'].includes(q.timeComparison||'') || !['bar','hbar','line','area'].includes(definition.type))return '时间比较仅支持柱状图、条形图、折线图和面积图，请先关闭比较再切换类型'

@@ -8,7 +8,7 @@ for(const file of ['biTheme.ts','biPresentation.ts','biChartTypes.ts','biChartPr
   const source=(await fs.readFile(new URL('../src/utils/'+file,import.meta.url),'utf8')).split('\n').filter(line=>!line.startsWith('import ')).join('\n')
   bundle+=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText+'\n'
 }
-const {buildChartPreviewOption,chartStylePresets,applyChartStylePreset,chartAxisLabel}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
+const {buildChartPreviewOption,chartStylePresets,applyChartStylePreset,chartAxisLabel,seriesDrawing}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
 function option(type,style={},value=20) {
   return buildChartPreviewOption({type,definition:{schemaVersion:1,name:'销售额',type,style,query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}},result:{columns:['category','value'],rows:[{category:'A',value}],rowCount:1,costMs:1},labels:{value:'销售额'},formatFor:()=>undefined})
 }
@@ -116,3 +116,8 @@ test('comparison series share metric colors and use dashed outlines without dupl
   assert.equal(o.series[2].lineStyle.color,o.series[3].lineStyle.color);assert.equal(o.series[0].lineStyle.width,6);assert.equal(o.series[0].areaStyle.opacity,0.44);assert.equal(o.series[1].areaStyle.opacity,0)
   assert.equal(o.series[0].showSymbol,false);assert.deepEqual(o.series[3].data,[null])
 })
+
+function seriesInput(type='line'){return {type,definition:{schemaVersion:1,name:'渠道趋势',type,query:{datasetId:1,dimensions:[{field:'month'},{field:'channel'}],metrics:[{field:'sales',agg:'SUM',alias:'sales'}]}},result:{columns:['month','channel','sales'],rows:[{month:'01',channel:'A',sales:10},{month:'01',channel:'B',sales:30},{month:'02',channel:'A',sales:20}],rowCount:3,costMs:1},labels:{sales:'销售额'},formatFor:()=>undefined}}
+test('series dimension aligns missing combinations and preserves original interaction row',()=>{const input=seriesInput();const original=JSON.stringify(input.result);const option=buildChartPreviewOption(input);assert.deepEqual(option.xAxis.data,['01','02']);assert.deepEqual(option.series.map(s=>s.name),['A','B']);assert.deepEqual(option.series[1].data,[30,null]);const drawing=seriesDrawing(input.definition,input.result);assert.equal(drawing.rowIndex(0,1),2);assert.equal(drawing.rowIndex(1,1),undefined);assert.equal(JSON.stringify(input.result),original)})
+test('percent series denominator includes all channel groups and rejects negative measures',()=>{const input=seriesInput('percent');assert.deepEqual(buildChartPreviewOption(input).series[0].data,[25,100]);input.result.rows[0].sales=-1;assert.throws(()=>buildChartPreviewOption(input),/非负/)})
+test('series duplicate groups and excessive cardinality fail explicitly',()=>{const input=seriesInput();input.result.rows.push({...input.result.rows[0]});assert.throws(()=>buildChartPreviewOption(input),/组合重复/);input.result.rows=Array.from({length:101},(_,i)=>({month:'01',channel:String(i),sales:1}));assert.throws(()=>buildChartPreviewOption(input),/100/)})

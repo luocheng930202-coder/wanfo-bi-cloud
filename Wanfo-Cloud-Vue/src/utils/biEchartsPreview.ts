@@ -33,6 +33,24 @@ export function chartAxisLabel(value:unknown,maxLength=14):string {
   const chars=Array.from(text);return chars.length>maxLength?chars.slice(0,maxLength-1).join('')+'…':text
 }
 
+/** Pivot only for drawing. Query/export rows retain the two original dimensions. */
+export function seriesDrawing(definition:ChartDefinition,result:ChartResult,labels:Record<string,string>={}) {
+  const q=definition.query
+  if(q.dimensions.length!==2 || !['bar','hbar','line','area','stack','percent','combo'].includes(definition.type))return null
+  const [category,series]=q.dimensions.map(d=>d.alias||d.field)
+  const identity=(v:unknown)=>JSON.stringify([v??null])
+  const categories=[...new Map(result.rows.map(r=>[identity(r[category]),r[category]])).values()]
+  const groups=[...new Map(result.rows.map(r=>[identity(r[series]),r[series]])).values()]
+  if(groups.length*q.metrics.length>100)throw new Error('系列超过 100 个，请增加筛选或减少指标')
+  const seen=new Set<string>(),indices=new Map<string,number>()
+  result.rows.forEach((r,i)=>{const k=JSON.stringify([r[category]??null,r[series]??null]);if(seen.has(k))throw new Error('分类与系列组合重复，请为指标选择聚合方式');seen.add(k);indices.set(k,i)})
+  const mapped=groups.flatMap((group,gi)=>q.metrics.map((metric,mi)=>({group,metric,source:metricResultKey(metric),key:`__series_${gi}_${mi}`})))
+  const rows=categories.map(value=>{const row:Record<string,unknown>={[category]:value};for(const m of mapped){const i=indices.get(JSON.stringify([value??null,m.group??null]));row[m.key]=i==null?null:result.rows[i][m.source]}return row})
+  const drawingLabels={...labels};for(const m of mapped)drawingLabels[m.key]=String(m.group??'空值')+(q.metrics.length>1?' · '+(labels[m.source]||m.source):'')
+  return {definition:{...definition,query:{...q,dimensions:q.dimensions.slice(0,1),metrics:mapped.map(m=>({...m.metric,alias:m.key}))},style:{...definition.style,metrics:mapped.flatMap(m=>{const setting=definition.style?.metrics?.find(x=>x.key===m.source);return setting?[{...setting,key:m.key}]:[]}),referenceLines:mapped.flatMap(m=>(definition.style?.referenceLines||[]).filter(r=>r.key===m.source).map(r=>({...r,key:m.key})))}},result:{...result,rows,rowCount:rows.length,columns:[category,...mapped.map(m=>m.key)]},labels:drawingLabels,
+    rowIndex:(seriesIndex:number,dataIndex:number)=>{const m=mapped[seriesIndex];return m?indices.get(JSON.stringify([categories[dataIndex]??null,m.group??null])):undefined}}
+}
+
 export function buildChartPreviewOption(params: {
   type: ChartType
   definition: ChartDefinition
@@ -43,6 +61,8 @@ export function buildChartPreviewOption(params: {
   metricStyles?: MetricStyle[]
   formatFor: (key: string) => NumberFormat | null | undefined
 }): EChartsOption {
+  const drawing=seriesDrawing(params.definition,params.result,params.labels)
+  if(drawing)return buildChartPreviewOption({...params,...drawing})
   const { type, definition, result, labels, appearance, numberFormat } = params
   const style = definition.style
   const metricStyles=resolvedMetricStyles(style,params.metricStyles)
@@ -258,6 +278,7 @@ export function buildChartPreviewOption(params: {
       seriesData = result.rows.map((row, rowIdx) => {
         if(filledRow(row) && result.timeFill?.mode==='null')return null
         const values = keys.map((_, k) => readNumber(result.rows[rowIdx][keys[k]]) ?? 0)
+        if(values.some(v=>v<0))throw new Error('百分比堆叠仅支持非负指标')
         const sum = values.reduce((a, b) => a + b, 0) || 1
         const v = values[mi] / sum * 100
         return Math.round(v * 100) / 100

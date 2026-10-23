@@ -59,6 +59,10 @@ public class QueryModel implements Serializable
     /** 返回行数上限 */
     private Integer limit;
     private Pivot pivot;
+    private TopN topN;
+    public record TopN(int count,String metric,boolean includeOther) implements Serializable { }
+    public TopN getTopN(){return topN;}
+    public void setTopN(TopN value){topN=value;}
     private String timeComparison;
     public String getTimeComparison(){return timeComparison;}
     public void setTimeComparison(String value){timeComparison=value;}

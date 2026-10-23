@@ -84,6 +84,15 @@
       <el-tab-pane label="高级" name="advanced">
         <el-form label-position="top" :disabled="disabled">
           <ChartReferenceLineEditor v-if="['bar','hbar','line','area','stack','combo'].includes(definition.type)" :definition="definition" :labels="labels"/>
+          <template v-if="['bar','hbar','line','area','stack','percent','combo','pie','ring'].includes(definition.type)">
+            <el-form-item label="Top N 分类"><el-switch :model-value="!!definition.query.topN" @update:model-value="v=>definition.query.topN=v?{count:10,metric:metricResultKey(definition.query.metrics[0]),includeOther:true}:undefined" :disabled="!definition.query.metrics.length"/></el-form-item>
+            <template v-if="definition.query.topN">
+              <el-form-item label="保留分类数"><el-input-number v-model="definition.query.topN.count" :min="1" :max="100" :precision="0"/></el-form-item>
+              <el-form-item label="排名指标"><el-select v-model="definition.query.topN.metric"><el-option v-for="m in definition.query.metrics" :key="metricResultKey(m)" :value="metricResultKey(m)" :label="labels[metricResultKey(m)]||m.field"/></el-select></el-form-item>
+              <el-form-item label="合并剩余分类为其他"><el-switch v-model="definition.query.topN.includeOther"/></el-form-item>
+              <small class="hint">先应用权限和筛选，再按指标降序排名；其他项从原始记录重新聚合。关闭其他项时，占比分母仅包含保留分类。不能与时间粒度、同比环比或维度下钻同时使用。</small>
+            </template>
+          </template>
           <el-form-item label="空值处理"><el-select v-model="advancedModel.nullMode" style="width:100%"><el-option value="keep" label="保持为空"/><el-option value="zero" label="置为 0"/><el-option value="hide" label="隐藏类目（饼图等）"/></el-select></el-form-item>
           <el-form-item v-if="capabilities.smooth" label="折线平滑"><el-switch v-model="advancedModel.smoothLine"/></el-form-item>
           <template v-if="definition.type==='map'">

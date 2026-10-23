@@ -21,6 +21,7 @@ public class ChartQueryCompiler {
     }
     public Compiled compile(QueryModel model,String base,Map<String,String> types) {
         validate(model,types);
+        if(model.getTopN()!=null)return TopNQuery.compile(model,base,types,this);
         TimeGapFill.validate(model);
         PivotQueryPlan.validate(model);
         if(base==null || base.isBlank()) throw invalid("数据集查询定义为空");

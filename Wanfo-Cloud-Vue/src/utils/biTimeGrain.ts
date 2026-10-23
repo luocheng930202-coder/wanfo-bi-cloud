@@ -4,6 +4,12 @@ export const TIME_GRAINS = [{value:'day',label:'日'},{value:'week',label:'周�
 export function temporalField(type:string) { return /^(DATE|DATETIME|TIMESTAMP)(\(\d+\))?$/i.test(type.trim()) }
 export function supportsTimeGrain(type:string) { return ['bar','hbar','line','area','stack','percent','combo'].includes(type) }
 export function validateTimeGrain(definition:ChartDefinition,fields:Field[]):string|null {
+  if(definition.query.topN){
+    const q=definition.query,t=q.topN!
+    if(!['bar','hbar','line','area','stack','percent','combo','pie','ring'].includes(definition.type))return '当前图表类型不支持 Top N，请先关闭'
+    if(!q.dimensions.length || q.metrics.some(m=>m.agg==='NONE') || !q.metrics.some(m=>(m.alias||m.agg.toLowerCase()+'_'+m.field)===t.metric))return 'Top N 需要分类维度和有效的聚合排名指标'
+    if(q.timeComparison || q.pivot || q.dimensions.some(d=>d.timeGrain || d.timeFill && d.timeFill!=='none') || definition.advanced?.drillFields?.length)return 'Top N 不能与透视汇总、时间粒度、同比环比或维度下钻组合'
+  }
   if(definition.query.dimensions.length===2 && definition.advanced?.drillFields?.length)return '使用系列维度时请先移除维度下钻'
   if(definition.query.timeComparison){
     const q=definition.query,d=q.dimensions[0]

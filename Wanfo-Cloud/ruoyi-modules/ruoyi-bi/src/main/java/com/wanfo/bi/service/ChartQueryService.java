@@ -139,7 +139,7 @@ public class ChartQueryService
         var run=governor==null?null:governor.enter(selectedSources.stream().map(com.wanfo.bi.datasource.BiDatasource::getId).toList());
         try (run; Connection conn = engine.open(selectedSources))
         {
-            qr = engine.queryWithParams(conn, sql, params, pivot!=null?pivot.maxRows():model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
+            qr = engine.queryWithParams(conn, sql, params, model.getTopN()!=null?10001:pivot!=null?pivot.maxRows():model.getLimit() == null ? ChartQueryCompiler.DEFAULT_LIMIT : model.getLimit());
             if(model.getTimeComparison()!=null && qr.getRows().size()<(model.getLimit()==null?ChartQueryCompiler.DEFAULT_LIMIT:model.getLimit())){
                 var baseline=com.wanfo.bi.query.TimeComparison.baseline(model,com.wanfo.bi.query.TimeGrain.calendarRows(model,qr.getRows()));
                 if(baseline!=null){var reference=compiler.compile(baseline,restricted.sql(),valid);var referenceParams=new ArrayList<>(restricted.params());referenceParams.addAll(reference.params);prior=com.wanfo.bi.query.TimeGrain.calendarRows(baseline,engine.queryWithParams(conn,reference.sql,referenceParams,1001).getRows());}
@@ -149,6 +149,7 @@ public class ChartQueryService
         catch(Exception failure){if(run!=null)throw run.failure(failure);throw failure;}
 
         Map<String, Object> result = new LinkedHashMap<>();
+        if(model.getTopN()!=null){var top=com.wanfo.bi.query.TopNQuery.decode(model,qr.getColumns(),qr.getRows());qr.setColumns(top.columns());qr.setRows(top.rows());result.put("topN",top.metadata());}
         result.put("columns", pivot==null?qr.getColumns():qr.getColumns().stream().filter(column->!column.equals(pivot.rowDepthKey()) && !column.equals(pivot.colDepthKey())).toList());
         var pivotResult=pivot==null?null:com.wanfo.bi.query.PivotQueryPlan.decode(model,pivot,qr.getRows());
         if(pivotResult!=null)result.put("pivotTotals",pivotResult.totals());

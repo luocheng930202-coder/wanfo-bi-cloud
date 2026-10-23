@@ -2,7 +2,7 @@
   <main class="query-monitor">
     <el-result v-if="!authorized" icon="warning" title="无查询监控权限" sub-title="仅 BI 资源管理员可查看和停止查询"/>
     <template v-else>
-      <header><div><h1>查询监控</h1><p>查看查询负载与慢查询记录，通过排查编号定位问题。</p></div><div class="actions"><el-switch v-model="autoRefresh" active-text="每 5 秒刷新"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>
+      <header><div><h1>查询监控</h1><p>查看查询负载与慢查询记录，通过排查编号定位问题。</p></div><div class="actions"><el-switch v-model="autoRefresh" aria-label="每5秒自动刷新" active-text="每 5 秒刷新"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
       <template v-if="data">
         <div class="stats"><article><span>运行中</span><strong>{{data.active}}<small> / {{data.limits.maxActive}}</small></strong></article><article><span>排队中</span><strong>{{data.waiting}}<small> / {{data.limits.maxWaiting}}</small></strong></article><article><span>单用户并发上限</span><strong>{{data.limits.perUser}}</strong></article><article><span>单数据源并发上限</span><strong>{{data.limits.perSource}}</strong></article></div>

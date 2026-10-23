@@ -94,7 +94,6 @@ public class ChartDefinitionService {
             throw new IllegalArgumentException("请选择图表类型并填写有效名称，定义版本须为 1");
         com.wanfo.bi.domain.chart.ChartStyleValidator.validate(d.style(),d.type());
         var q=d.query();
-        com.wanfo.bi.domain.chart.ChartAnalysisValidator.validate(d.advanced(),q,d.type());
         if(q.getDimensions()!=null && q.getDimensions().stream().anyMatch(dim->dim!=null && dim.getTimeGrain()!=null)) {
             if(!Set.of("bar","hbar","line","area","stack","percent","combo").contains(d.type()))
                 throw new IllegalArgumentException("当前图表类型不支持时间粒度，请恢复原始时间后切换类型");
@@ -105,6 +104,7 @@ public class ChartDefinitionService {
         preparePivotQuery(d);
         if(q.getTimeComparison()!=null && !Set.of("bar","hbar","line","area").contains(d.type()))throw new IllegalArgumentException("时间比较仅支持柱状图、条形图、折线图和面积图，请先关闭比较再切换类型");
         queries.compileOnly(q); // Same visible-field whitelist, filter-tree and aggregation validation as live queries.
+        com.wanfo.bi.domain.chart.ChartAnalysisValidator.validate(d.advanced(),q,d.type());
         var dataset=datasets.selectById(q.getDatasetId());
         if(dataset==null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期图表仅支持表数据集");
         if(q.getLimit()!=null && q.getLimit()>1000) throw new IllegalArgumentException("基础图表最多查询 1000 行");

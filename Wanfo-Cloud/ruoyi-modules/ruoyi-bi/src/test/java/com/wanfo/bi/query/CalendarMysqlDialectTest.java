@@ -31,4 +31,7 @@ class CalendarMysqlDialectTest {
         var plain=SqlParser.create("SELECT SUM(3), CAST(DATE '2026-01-04' AS DATE)").parseQuery();
         assertEquals(plain.toSqlString(MysqlSqlDialect.DEFAULT).getSql(),plain.toSqlString(dialect).getSql());
     }
+    @Test void nullSafeJoinPredicatesUseMysqlEqualityRatherThanUnsupportedDistinctSyntax()throws Exception{
+        for(String comparison:new String[]{"IS NOT DISTINCT FROM","IS DISTINCT FROM"}){var expression=SqlParser.create("a "+comparison+" b").parseExpression();String sql=expression.toSqlString(dialect).getSql();assertTrue(sql.contains("<=>"),sql);assertFalse(sql.contains("DISTINCT FROM"),sql);if(comparison.equals("IS DISTINCT FROM"))assertTrue(sql.contains("NOT"),sql);}
+    }
 }

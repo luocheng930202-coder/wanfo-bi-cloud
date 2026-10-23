@@ -146,7 +146,7 @@ public class ChartQueryService
             }
             if(run!=null)run.check();
         }
-        catch(Exception failure){if(run!=null)throw run.failure(failure);throw failure;}
+        catch(Exception | AssertionError failure){if(run!=null)throw run.failure(failure);throw failure;}
 
         Map<String, Object> result = new LinkedHashMap<>();
         if(model.getTopN()!=null){var top=com.wanfo.bi.query.TopNQuery.decode(model,qr.getColumns(),qr.getRows());qr.setColumns(top.columns());qr.setRows(top.rows());result.put("topN",top.metadata());}

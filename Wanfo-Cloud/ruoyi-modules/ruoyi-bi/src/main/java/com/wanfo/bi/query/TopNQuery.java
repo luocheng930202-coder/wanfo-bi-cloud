@@ -17,15 +17,16 @@ public final class TopNQuery {
   var predicate=FilterTreeCompiler.compile(q.getFilters(),q.getFilterTree(),types);
   var ranking=new QueryModel();ranking.setDatasetId(q.getDatasetId());ranking.setDimensions(List.of(new QueryModel.Dimension(dim.getField(),"__category")));ranking.setMetrics(List.of(new QueryModel.Metric(metric.getField(),metric.getAgg(),"__rank")));ranking.setLimit(top.count());ranking.setOrderBys(List.of(new QueryModel.OrderBy("__rank","DESC"),new QueryModel.OrderBy("__category","ASC")));
   var rank=compiler.compile(ranking,"SELECT * FROM bi_top_input",types);
-  String hit="EXISTS (SELECT 1 FROM bi_top_keys AS k WHERE k.\"__category\" = v."+field+" OR (k.\"__category\" IS NULL AND v."+field+" IS NULL))";
+  String join="k.\"__category\" = v."+field+" OR (k.\"__category\" IS NULL AND v."+field+" IS NULL)";
+  String hit="k.\"__bi_keep\" = 1";
   var projected=new ArrayList<String>();for(var name:types.keySet()){String column=FilterTreeCompiler.quote(name);projected.add(name.equals(dim.getField()) && top.includeOther()?"CASE WHEN "+hit+" THEN v."+column+" ELSE NULL END AS "+column:"v."+column);}
   projected.add((top.includeOther()?"CASE WHEN "+hit+" THEN 0 ELSE 1 END":"0")+" AS "+FilterTreeCompiler.quote(OTHER));
-  String mapped="SELECT "+String.join(", ",projected)+" FROM bi_top_input AS v"+(top.includeOther()?"":" WHERE "+hit);
+  String mapped="SELECT "+String.join(", ",projected)+" FROM bi_top_input AS v LEFT JOIN bi_top_keys AS k ON ("+join+")"+(top.includeOther()?"":" WHERE "+hit);
   var actual=new QueryModel();actual.setDatasetId(q.getDatasetId());var dimensions=new ArrayList<>(q.getDimensions());dimensions.add(new QueryModel.Dimension(OTHER,OTHER));actual.setDimensions(dimensions);actual.setMetrics(q.getMetrics());actual.setOrderBys(q.getOrderBys());actual.setLimit(10000);
   var extended=new LinkedHashMap<>(types);extended.put(OTHER,"INTEGER");
   // The internal sentinel fetch is one beyond the normal result bound; never return a partial denominator.
   var compiled=compiler.compile(actual,mapped,extended);compiled.sql=compiled.sql.substring(0,compiled.sql.lastIndexOf(" LIMIT "))+" LIMIT 10001";
-  compiled.sql="WITH bi_top_input AS (SELECT * FROM ("+base+") AS bi_filtered"+(predicate.sql().isEmpty()?"":" WHERE "+predicate.sql())+"), bi_top_keys AS ("+rank.sql+") "+compiled.sql;compiled.params=predicate.params();return compiled;
+  compiled.sql="WITH bi_top_input AS (SELECT * FROM ("+base+") AS bi_filtered"+(predicate.sql().isEmpty()?"":" WHERE "+predicate.sql())+"), bi_top_keys AS (SELECT ranked.*, 1 AS \"__bi_keep\" FROM ("+rank.sql+") AS ranked) "+compiled.sql;compiled.params=predicate.params();return compiled;
  }
  public record Result(List<String> columns,List<Map<String,Object>> rows,Map<String,Object> metadata){}
  public static Result decode(QueryModel q,List<String> columns,List<Map<String,Object>> input){

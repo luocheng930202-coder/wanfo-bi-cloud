@@ -99,6 +99,7 @@ public class BiProperties
         private String name;
         private String type;
         private String schemaName;
+        private String sourceSchema;
         private String url;
         private String driver;
         private String username;
@@ -109,6 +110,9 @@ public class BiProperties
 
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }
+
+        public String getSourceSchema() { return sourceSchema; }
+        public void setSourceSchema(String sourceSchema) { this.sourceSchema = sourceSchema; }
 
         public String getSchemaName() { return schemaName; }
         public void setSchemaName(String schemaName) { this.schemaName = schemaName; }

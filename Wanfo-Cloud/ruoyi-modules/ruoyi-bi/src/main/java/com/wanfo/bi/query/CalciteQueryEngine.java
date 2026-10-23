@@ -47,6 +47,9 @@ public class CalciteQueryEngine
     private com.wanfo.bi.config.BiProperties properties=new com.wanfo.bi.config.BiProperties();
     @org.springframework.beans.factory.annotation.Autowired
     public void configureQueryLimits(com.wanfo.bi.config.BiProperties properties){this.properties=properties;}
+    private com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureSnapshots(com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots){this.snapshots=snapshots;}
     private static final Logger log = LoggerFactory.getLogger(CalciteQueryEngine.class);
 
     /**
@@ -74,11 +77,10 @@ public class CalciteQueryEngine
         CalciteConnection calciteConn = conn.unwrap(CalciteConnection.class);
         SchemaPlus root = calciteConn.getRootSchema();
 
-        for (BiDatasource ds : datasources)
-        {
-            register(root, ds);
-        }
-        return conn;
+        try {
+            for (BiDatasource ds : datasources) register(root, ds);
+            return conn;
+        } catch(Exception e){conn.close();throw e;}
     }
 
     /**
@@ -92,6 +94,14 @@ public class CalciteQueryEngine
         if (ds.getSchemaName() == null || ds.getSchemaName().isBlank())
         {
             throw new IllegalArgumentException("数据源 schemaName 不能为空: " + ds.getName());
+        }
+        if(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(ds.getType())) {
+            if(snapshots==null)throw new IllegalStateException("快照服务未配置");
+            var data=snapshots.load(ds.getId());
+            root.add(ds.getSchemaName(),new org.apache.calcite.schema.impl.AbstractSchema(){
+                @Override protected Map<String,org.apache.calcite.schema.Table> getTableMap(){return Map.of("data",new com.wanfo.bi.datasource.snapshot.SnapshotTable(data));}
+            });
+            return;
         }
         if (ds.getDriverClass() != null && !ds.getDriverClass().isBlank())
         {
@@ -108,11 +118,13 @@ public class CalciteQueryEngine
             pools.put(ds.getSchemaName(), pool);
         }
 
+        com.wanfo.bi.datasource.JdbcSourceScope scope;
+        try(var connection=pool.getConnection()){scope=com.wanfo.bi.datasource.JdbcSourceScope.resolve(connection,ds.getSourceSchema());}
         JdbcSchema schema = JdbcSchema.create(root, ds.getSchemaName(), GovernedJdbc.wrap(pool,QueryGovernor.current()), metadata -> {
             var dialect=org.apache.calcite.sql.SqlDialectFactoryImpl.INSTANCE.create(metadata);
             return dialect instanceof org.apache.calcite.sql.dialect.MysqlSqlDialect
                     ? new CalendarMysqlDialect(org.apache.calcite.sql.SqlDialects.createContext(metadata)) : dialect;
-        }, null, null);
+        }, scope.catalog(), scope.schema());
         // 关键：1.42 的 create() 不会自动挂载，必须显式 add
         root.add(ds.getSchemaName(), schema);
 
@@ -126,6 +138,8 @@ public class CalciteQueryEngine
         pool.setUrl(ds.getJdbcUrl());
         pool.setUsername(ds.getUsername());
         pool.setPassword(ds.getPassword());
+        var options=com.wanfo.bi.datasource.JdbcConnectionSettings.properties(ds);
+        options.forEach((key,value)->pool.addConnectionProperty((String)key,(String)value));
         pool.setInitialSize(1);
         pool.setMaxTotal(8);
         pool.setMaxWaitMillis(10_000);
@@ -134,7 +148,7 @@ public class CalciteQueryEngine
         // 连接保活，避免长时间空闲被源库断开
         pool.setTimeBetweenEvictionRunsMillis(60_000);
         pool.setMinEvictableIdleTimeMillis(300_000);
-        pool.setValidationQuery("SELECT 1");
+        pool.setValidationQuery(com.wanfo.bi.datasource.JdbcSourceScope.testSql(ds.getType()));
         pool.setTestWhileIdle(true);
         return pool;
     }
@@ -267,11 +281,12 @@ public class CalciteQueryEngine
             BasicDataSource pool = pools.get(ds.getSchemaName());
             try
             {
-                if (pool != null)
+                if(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(ds.getType())) {snapshots.load(ds.getId());ok=true;}
+                else if (pool != null)
                 {
                     try (Connection c = pool.getConnection();
                          Statement st = c.createStatement();
-                         ResultSet rs = st.executeQuery("SELECT 1"))
+                         ResultSet rs = st.executeQuery(com.wanfo.bi.datasource.JdbcSourceScope.testSql(ds.getType())))
                     {
                         ok = rs.next();
                     }
@@ -280,10 +295,9 @@ public class CalciteQueryEngine
                 {
                     // 连接池是首次 open() 时才建立的；单独调用探测接口时池可能还不存在，
                     // 此时直接用 JDBC 探测，保证探测接口可独立使用
-                    try (Connection c = DriverManager.getConnection(
-                                ds.getJdbcUrl(), ds.getUsername(), ds.getPassword());
+                    try (Connection c = com.wanfo.bi.datasource.JdbcConnectionSettings.open(ds);
                          Statement st = c.createStatement();
-                         ResultSet rs = st.executeQuery("SELECT 1"))
+                         ResultSet rs = st.executeQuery(com.wanfo.bi.datasource.JdbcSourceScope.testSql(ds.getType())))
                     {
                         ok = rs.next();
                     }
@@ -291,9 +305,9 @@ public class CalciteQueryEngine
             }
             catch (Exception e)
             {
-                log.warn("数据源连通性探测失败 {}: {}", ds.getName(), e.getMessage());
+                log.warn("数据源连通性探测失败 {}", ds.getName());
             }
-            result.put(ds.getName(), ok);
+            result.put(ds.getSchemaName(), ok);
         }
         return result;
     }
@@ -342,7 +356,7 @@ public class CalciteQueryEngine
         {
             Class.forName(ds.getDriverClass());
         }
-        return DriverManager.getConnection(ds.getJdbcUrl(), ds.getUsername(), ds.getPassword());
+        return com.wanfo.bi.datasource.JdbcConnectionSettings.open(ds);
     }
 
     /**

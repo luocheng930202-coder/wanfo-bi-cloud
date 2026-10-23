@@ -17,6 +17,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class CatalogService
 {
+    private com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureSnapshots(com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots){this.snapshots=snapshots;}
+    private boolean snapshot(String alias){return com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(activeSource(alias).getType());}
+    private void snapshotScope(String catalog,String table){if(catalog!=null && !catalog.isBlank() && !catalog.equals("snapshot"))throw new BiAccessException(403,"快照建模范围无效");if(table!=null && !table.equals("data"))throw new IllegalArgumentException("快照仅包含 data 表");}
+    private List<Map<String,Object>> snapshotColumns(String alias){
+        return snapshots.load(activeSource(alias).getId()).columns().stream().map(c->Map.<String,Object>of("name",c.name(),"type",c.type(),"nullable",true,"primaryKey",false,"suggestAs",c.type().equals("DECIMAL")?"metric":"dimension")).toList();
+    }
     private final CalciteQueryEngine engine;
     private final DataSourceProvider provider;
     private final BiResourceAuthorizer resources;
@@ -53,19 +61,11 @@ public class CatalogService
         return ds;
     }
 
-    private String scopedCatalog(Connection conn, String requested) throws SQLException
+    private com.wanfo.bi.datasource.JdbcSourceScope sourceScope(Connection conn, String alias, String requested) throws SQLException
     {
-        String product = conn.getMetaData().getDatabaseProductName().toLowerCase(Locale.ROOT);
-        if (!product.contains("mysql") && !product.contains("mariadb"))
-        { throw new IllegalArgumentException("当前库表建模支持 MySQL 协议数据源，其他数据库适配尚未开放"); }
-        String configured = conn.getCatalog();
-        if (configured == null || configured.isBlank())
-        { throw new IllegalArgumentException("请先在数据源连接串中指定建模数据库"); }
-        if (Set.of("mysql", "sys", "information_schema", "performance_schema").contains(configured.toLowerCase(Locale.ROOT)))
-        { throw new BiAccessException(403, "系统库不可用于业务建模"); }
-        if (requested != null && !requested.isBlank() && !configured.equals(requested))
-        { throw new BiAccessException(403, "该数据库不在此数据源的建模范围内"); }
-        return configured;
+        var scope = com.wanfo.bi.datasource.JdbcSourceScope.resolve(conn, activeSource(alias).getSourceSchema());
+        scope.require(requested);
+        return scope;
     }
 
     private static String pattern(DatabaseMetaData md, String identifier) throws SQLException
@@ -82,25 +82,28 @@ public class CatalogService
 
     private static String quote(DatabaseMetaData md, String identifier) throws SQLException
     {
-        String q = md.getIdentifierQuoteString().trim();
-        if (q.isEmpty()) { throw new IllegalArgumentException("数据库驱动不支持标识符引用"); }
-        return q + identifier.replace(q, q + q) + q;
+        return com.wanfo.bi.datasource.JdbcSourceScope.quote(md, identifier);
     }
+
+    private static String logical(String name) { return "\"" + name.replace("\"", "\"\"") + "\""; }
 
     public List<String> listCatalogs(String schemaName) throws Exception
     {
         requireModel(schemaName);
-        try (Connection conn = engine.borrowConnection(schemaName)) { return List.of(scopedCatalog(conn, null)); }
+        if(snapshot(schemaName))return List.of("snapshot");
+        try (Connection conn = engine.borrowConnection(schemaName)) { return List.of(sourceScope(conn, schemaName, null).name()); }
     }
 
     public List<Map<String,Object>> listTables(String schemaName, String catalog) throws Exception
     {
         requireModel(schemaName);
+        if(snapshot(schemaName)){snapshotScope(catalog,null);return List.of(Map.of("name","data","type","TABLE","catalog","snapshot","comment","数据快照"));}
         try (Connection conn = engine.borrowConnection(schemaName))
         {
-            String cat = scopedCatalog(conn, catalog);
+            var scope = sourceScope(conn, schemaName, catalog);
+            String cat = scope.name();
             List<Map<String,Object>> tables = new ArrayList<>();
-            try (ResultSet rs = conn.getMetaData().getTables(cat, null, "%", new String[]{"TABLE","VIEW"}))
+            try (ResultSet rs = conn.getMetaData().getTables(scope.catalog(), scope.schema() == null ? null : pattern(conn.getMetaData(), scope.schema()), "%", new String[]{"TABLE","VIEW"}))
             {
                 while (rs.next())
                 {
@@ -114,25 +117,27 @@ public class CatalogService
         }
     }
 
-    private List<Map<String,Object>> columns(Connection conn, String catalog, String table) throws Exception
+    private List<Map<String,Object>> columns(Connection conn, com.wanfo.bi.datasource.JdbcSourceScope scope, String table) throws Exception
     {
         if (table == null || table.isBlank()) { throw new IllegalArgumentException("请选择物理表"); }
         DatabaseMetaData md = conn.getMetaData();
         boolean exists = false;
-        try (ResultSet rs = md.getTables(catalog, null, pattern(md, table), new String[]{"TABLE","VIEW"}))
+        try (ResultSet rs = md.getTables(scope.catalog(), scope.schema() == null ? null : pattern(md, scope.schema()), pattern(md, table), new String[]{"TABLE","VIEW"}))
         { while (rs.next()) { if (table.equals(rs.getString("TABLE_NAME"))) { exists = true; break; } } }
         if (!exists) { throw new IllegalArgumentException("表不存在或不在当前建模范围内"); }
         Set<String> primary = new HashSet<>();
-        try (ResultSet rs = md.getPrimaryKeys(catalog, null, table))
+        try (ResultSet rs = md.getPrimaryKeys(scope.catalog(), scope.schema(), table))
         { while (rs.next()) { primary.add(rs.getString("COLUMN_NAME")); } }
+        catch (SQLFeatureNotSupportedException ignored) { /* Views and some analytical drivers have no primary-key metadata. */ }
         List<Map<String,Object>> result = new ArrayList<>();
-        try (ResultSet rs = md.getColumns(catalog, null, pattern(md, table), "%"))
+        try (ResultSet rs = md.getColumns(scope.catalog(), scope.schema() == null ? null : pattern(md, scope.schema()), pattern(md, table), "%"))
         {
             while (rs.next())
             {
                 if (!table.equals(rs.getString("TABLE_NAME"))) { continue; }
                 String name = rs.getString("COLUMN_NAME"), type = rs.getString("TYPE_NAME");
-                String lower = type == null ? "" : type.toLowerCase(Locale.ROOT);
+                type = com.wanfo.bi.datasource.JdbcSourceScope.columnType(rs.getInt("DATA_TYPE"), type);
+                String lower = type.toLowerCase(Locale.ROOT);
                 boolean number = lower.matches(".*(int|decimal|numeric|float|double|real).*" );
                 Map<String,Object> field = new LinkedHashMap<>();
                 field.put("name",name); field.put("type",type); field.put("size",rs.getInt("COLUMN_SIZE"));
@@ -148,8 +153,9 @@ public class CatalogService
     public List<Map<String,Object>> listColumns(String schemaName, String catalog, String table) throws Exception
     {
         requireModel(schemaName);
+        if(snapshot(schemaName)){snapshotScope(catalog,table);return snapshotColumns(schemaName);}
         try (Connection conn = engine.borrowConnection(schemaName))
-        { return columns(conn, scopedCatalog(conn, catalog), table); }
+        { return columns(conn, sourceScope(conn, schemaName, catalog), table); }
     }
 
     public record TablePlan(String catalog, String table, List<String> selected, List<Map<String,Object>> columns, String sql) { }
@@ -168,16 +174,24 @@ public class CatalogService
         activeSource(schemaName);
         if (fields == null || fields.isEmpty() || fields.size() > 200)
         { throw new IllegalArgumentException("请选择 1～200 个字段"); }
+        if(snapshot(schemaName)){
+            snapshotScope(catalog,table);var columns=snapshotColumns(schemaName);
+            var valid=columns.stream().map(c->(String)c.get("name")).collect(Collectors.toSet());
+            var selected=new ArrayList<>(new LinkedHashSet<>(fields));
+            if(!valid.containsAll(selected))throw new IllegalArgumentException("字段不存在");
+            return new TablePlan("snapshot","data",selected,columns,"SELECT "+selected.stream().map(CatalogService::logical).collect(Collectors.joining(", "))+" FROM "+logical(schemaName)+".\"data\"");
+        }
         try (Connection conn = engine.borrowConnection(schemaName))
         {
-            String cat = scopedCatalog(conn, catalog);
-            List<Map<String,Object>> columns = columns(conn, cat, table);
+            var scope = sourceScope(conn, schemaName, catalog);
+            String cat = scope.name();
+            List<Map<String,Object>> columns = columns(conn, scope, table);
             Set<String> valid = columns.stream().map(c -> (String)c.get("name")).collect(Collectors.toSet());
             List<String> selected = new ArrayList<>(new LinkedHashSet<>(fields));
             if (!valid.containsAll(selected)) { throw new IllegalArgumentException("字段不存在，请刷新后重新选择"); }
             List<String> quoted = new ArrayList<>();
-            for (String field : selected) { quoted.add(quote(conn.getMetaData(), field)); }
-            String sql = "SELECT " + String.join(", ",quoted) + " FROM " + quote(conn.getMetaData(),cat) + "." + quote(conn.getMetaData(),table);
+            for (String field : selected) { quoted.add(logical(field)); }
+            String sql = "SELECT " + String.join(", ",quoted) + " FROM " + logical(schemaName) + "." + logical(table);
             return new TablePlan(cat,table,selected,columns,sql);
         }
     }
@@ -195,6 +209,7 @@ public class CatalogService
                            String leftKey, String rightKey) throws Exception
     {
         activeSource(schemaName);
+        if(snapshot(schemaName))throw new IllegalArgumentException("快照数据源暂不支持关联建模，请先在上游整理为完整数据表");
         if (leftTable == null || leftTable.isBlank() || rightTable == null || rightTable.isBlank())
         { throw new IllegalArgumentException("请选择关联表"); }
         if (leftKey == null || leftKey.isBlank() || rightKey == null || rightKey.isBlank())
@@ -209,9 +224,10 @@ public class CatalogService
         try (Connection conn = engine.borrowConnection(schemaName))
         {
             DatabaseMetaData meta = conn.getMetaData();
-            String cat = scopedCatalog(conn, catalog);
-            List<Map<String,Object>> leftCols = columns(conn, cat, leftTable);
-            List<Map<String,Object>> rightCols = columns(conn, cat, rightTable);
+            var scope = sourceScope(conn, schemaName, catalog);
+            String cat = scope.name();
+            List<Map<String,Object>> leftCols = columns(conn, scope, leftTable);
+            List<Map<String,Object>> rightCols = columns(conn, scope, rightTable);
             Set<String> leftValid = leftCols.stream().map(c -> (String) c.get("name")).collect(Collectors.toSet());
             Set<String> rightValid = rightCols.stream().map(c -> (String) c.get("name")).collect(Collectors.toSet());
             List<String> leftSelected = new ArrayList<>(new LinkedHashSet<>(leftFields));
@@ -222,17 +238,17 @@ public class CatalogService
             { throw new IllegalArgumentException("右表字段或关联键不存在"); }
             List<String> projections = new ArrayList<>();
             for (String field : leftSelected)
-            { projections.add("t0." + quote(meta, field)); }
+            { projections.add("t0." + logical(field)); }
             List<Map<String,Object>> pickedRight = new ArrayList<>();
             for (String field : rightSelected)
             {
                 String alias = "r_" + field;
-                projections.add("t1." + quote(meta, field) + " AS " + quote(meta, alias));
+                projections.add("t1." + logical(field) + " AS " + logical(alias));
                 rightCols.stream().filter(c -> field.equals(c.get("name"))).findFirst().ifPresent(pickedRight::add);
             }
-            String from = quote(meta, cat) + "." + quote(meta, leftTable) + " t0 "
-                    + jt + " JOIN " + quote(meta, cat) + "." + quote(meta, rightTable) + " t1 ON t0."
-                    + quote(meta, leftKey) + " = t1." + quote(meta, rightKey);
+            String from = logical(schemaName) + "." + logical(leftTable) + " t0 "
+                    + jt + " JOIN " + logical(schemaName) + "." + logical(rightTable) + " t1 ON t0."
+                    + logical(leftKey) + " = t1." + logical(rightKey);
             String sql = "SELECT " + String.join(", ", projections) + " FROM " + from;
             return new JoinPlan(cat, leftTable, rightTable, sql, pickedRight);
         }
@@ -254,13 +270,14 @@ public class CatalogService
         if (maxRows < 1 || maxRows > 100) { throw new IllegalArgumentException("预览行数须在 1～100 之间"); }
         TablePlan plan = savedPlan(schemaName, catalog, table, fields);
         long start = System.currentTimeMillis();
-        try (Connection conn = engine.borrowConnection(schemaName))
+        try (Connection conn = snapshot(schemaName)?engine.open(List.of(activeSource(schemaName))):engine.borrowConnection(schemaName))
         {
             Map<String,String> types=new LinkedHashMap<>();
             plan.columns().stream().filter(c -> fields.contains((String)c.get("name"))).forEach(c -> types.put((String)c.get("name"),String.valueOf(c.get("type"))));
             var compiled=DataPolicyCompiler.compile(plan.selected(),types,conn.getMetaData().getIdentifierQuoteString().trim(),scope);
-            String sql="SELECT "+compiled.projection()+" FROM "+quote(conn.getMetaData(),plan.catalog())+"."+quote(conn.getMetaData(),table)
-                    +(compiled.predicate().isEmpty()?"":" WHERE "+compiled.predicate())+" LIMIT "+maxRows;
+            String sql="SELECT "+compiled.projection()+" FROM "+(snapshot(schemaName)?logical(schemaName)+".\"data\"":sourceScope(conn,schemaName,plan.catalog()).relation(conn.getMetaData(),table))
+                    +(compiled.predicate().isEmpty()?"":" WHERE "+compiled.predicate());
+            sql=com.wanfo.bi.datasource.JdbcSourceScope.limit(conn.getMetaData().getDatabaseProductName(),sql,maxRows);
             try (PreparedStatement st=conn.prepareStatement(sql)) {
             st.setMaxRows(maxRows); st.setQueryTimeout(10);
             for(int p=0;p<compiled.params().size();p++) st.setObject(p+1,compiled.params().get(p));

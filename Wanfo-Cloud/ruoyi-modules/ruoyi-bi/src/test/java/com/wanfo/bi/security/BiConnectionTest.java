@@ -43,7 +43,7 @@ class BiConnectionTest
         when(meta.getDatabaseProductVersion()).thenReturn("1");
         try (var driver = mockStatic(DriverManager.class))
         {
-            driver.when(() -> DriverManager.getConnection("jdbc:bi-test:local", "testuser", "saved-secret")).thenReturn(conn);
+            driver.when(() -> DriverManager.getConnection(eq("jdbc:bi-test:local"), argThat((java.util.Properties p) -> "testuser".equals(p.getProperty("user")) && "saved-secret".equals(p.getProperty("password"))))).thenReturn(conn);
             Map<String,Object> result = service.testFormConnection(form());
             assertEquals(true, result.get("ok"));
             assertFalse(result.toString().contains("saved-secret"));
@@ -60,10 +60,10 @@ class BiConnectionTest
         try (var driver = mockStatic(DriverManager.class))
         {
             SQLException failure = new SQLException("sensitive details", "28000");
-            driver.when(() -> DriverManager.getConnection(anyString(), anyString(), anyString()))
+            driver.when(() -> DriverManager.getConnection(anyString(), any(java.util.Properties.class)))
                     .thenThrow(failure);
             Map<String,Object> result = service.testFormConnection(edit);
-            driver.verify(() -> DriverManager.getConnection("jdbc:bi-test:local", "testuser", "saved-secret"));
+            driver.verify(() -> DriverManager.getConnection(eq("jdbc:bi-test:local"), argThat((java.util.Properties p) -> "testuser".equals(p.getProperty("user")) && "saved-secret".equals(p.getProperty("password")))));
             assertEquals(false, result.get("ok"));
             assertFalse(result.toString().contains("sensitive details"));
             assertTrue(saved.getPassword().startsWith("enc:"));
@@ -93,7 +93,7 @@ class BiConnectionTest
         try (var driver = mockStatic(DriverManager.class))
         {
             SQLException failure = new SQLException("connection failed");
-            driver.when(() -> DriverManager.getConnection(anyString(), anyString(), anyString()))
+            driver.when(() -> DriverManager.getConnection(anyString(), any(java.util.Properties.class)))
                     .thenThrow(failure);
             assertEquals(true, service.create(form(), "alice").get("rolledBack"));
             BiDatasourceDO edit = form(); edit.setId(7L);

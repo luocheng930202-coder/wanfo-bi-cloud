@@ -6,6 +6,7 @@ export interface BiDatasource {
   name: string
   type: string
   schemaName: string
+  sourceSchema?: string
   jdbcUrl: string
   driverClass: string
   username: string
@@ -26,6 +27,7 @@ export interface DatasourceForm {
   name: string
   type: string
   schemaName: string
+  sourceSchema?: string
   jdbcUrl: string
   driverClass?: string
   username: string
@@ -147,4 +149,17 @@ export function grantResource(id: number, principalId: number, action: string): 
 }
 export function revokeResource(id: number, principalId: number, action: string): Promise<AjaxResult> {
   return request({ url: `/bi/datasource/${id}/grants/${principalId}/${action}`, method: 'delete' })
+}
+
+export function importApiSource(data: {id?:number;name:string;schemaName:string;url:string;dataPath:string;headers?:Record<string,string>}): Promise<AjaxResult<{id:number;rowCount:number}>> {
+  return request({url:'/bi/datasource/import/api',method:'post',data,timeout:30000,headers:{repeatSubmit:false}})
+}
+export function importFileSource(data: FormData): Promise<AjaxResult<{id:number;rowCount:number}>> {
+  return request({url:'/bi/datasource/import/file',method:'post',data,timeout:30000,headers:{'Content-Type':'multipart/form-data',repeatSubmit:false}})
+}
+export function snapshotSourceInfo(id:number): Promise<AjaxResult<{url?:string;dataPath?:string;rowCount:number;version:number}>> {
+  return request({url:`/bi/datasource/import/${id}/info`})
+}
+export function refreshApiSource(id:number): Promise<AjaxResult<{rowCount:number}>> {
+  return request({url:`/bi/datasource/import/${id}/refresh`,method:'post',timeout:30000})
 }

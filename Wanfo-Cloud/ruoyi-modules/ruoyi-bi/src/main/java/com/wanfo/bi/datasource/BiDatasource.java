@@ -31,6 +31,10 @@ public class BiDatasource implements Serializable
 
     /** JDBC 连接串 */
     private String jdbcUrl;
+    /** Physical schema inside the configured database; never the Calcite alias. */
+    private String sourceSchema;
+    public String getSourceSchema(){return sourceSchema;}
+    public void setSourceSchema(String value){sourceSchema=value;}
 
     /** 驱动类名 */
     private String driverClass;

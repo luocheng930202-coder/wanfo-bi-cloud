@@ -106,6 +106,7 @@ public class DbDataSourceProvider implements DataSourceProvider
         ds.setType(row.getType());
         ds.setSchemaName(row.getSchemaName());
         ds.setJdbcUrl(row.getJdbcUrl());
+        ds.setSourceSchema(row.getSourceSchema());
         ds.setDriverClass(row.getDriverClass());
         ds.setUsername(row.getUsername());
         // 解密失败时保留原值，由连接池报错暴露问题

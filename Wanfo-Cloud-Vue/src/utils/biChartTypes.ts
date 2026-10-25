@@ -100,9 +100,9 @@ export function validateChartQueryShape(
   if(type==='histogram')return dimensions.length===0&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'直方图需要一个未聚合的数值字段，且不需要维度'
   if(type==='geo-map')return dimensions.length<=1&&metrics.length>=2&&metrics.length<=3&&metrics.every(m=>(m as {agg?:string}).agg==='NONE')?null:'经纬度地图需要未聚合的经度、纬度，可选一个点大小指标和一个名称维度'
   if(type==='heatmap')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'热力图需要两个分类维度和一个聚合指标'
-  if(type==='sunburst')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要父级、子级两个维度和一个聚合指标'
+  if(type==='sunburst')return dimensions.length>=2&&dimensions.length<=6&&new Set(dimensions.map(d=>d.field)).size===dimensions.length&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要 2～6 个不重复层级维度和一个聚合指标'
   if(type==='sankey')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'桑基图需要来源、目标两个维度和一个聚合流量指标'
-  if(type==='treemap')return (dimensions.length===1||(dimensions.length===2&&dimensions[0].field!==dimensions[1].field))&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'矩形树图需要一个或两个不同维度和一个聚合指标'
+  if(type==='treemap')return dimensions.length>=1&&dimensions.length<=6&&new Set(dimensions.map(d=>d.field)).size===dimensions.length&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'矩形树图需要 1～6 个不重复层级维度和一个聚合指标'
   if(type==='waterfall')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'瀑布图需要一个维度和一个聚合指标'
   if(type==='boxplot')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'箱线图需要一个分类维度和一个未聚合数值字段'
   if (isMapLike(type)) {
@@ -130,7 +130,8 @@ export function applyTypeDefaults(
   if (mets.length > max) mets = mets.slice(0, max)
   if (type === 'gauge'||type==='histogram') dims = []
   else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot' && type!=='geo-map') dims=dims.slice(0,1)
-  if(['heatmap','sunburst','sankey'].includes(type))dims=dims.slice(0,2)
+  if(['heatmap','sankey'].includes(type))dims=dims.slice(0,2)
+  if(['treemap','sunburst'].includes(type))dims=dims.slice(0,6)
   if(type==='geo-map')mets=mets.map(m=>({...m,agg:'NONE'})).slice(0,3)
   if(['boxplot','histogram'].includes(type))mets=mets.map(m=>({...m,agg:'NONE'}))
   return { dimensions: dims, metrics: mets }

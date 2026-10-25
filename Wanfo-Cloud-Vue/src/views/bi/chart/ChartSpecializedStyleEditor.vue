@@ -1,6 +1,9 @@
 <template>
   <template v-if="definition.type==='map'">
     <el-form-item label="显示色阶图例"><el-switch :model-value="style.showLegend!==false" @update:model-value="v=>style.showLegend=!!v"/></el-form-item>
+    <el-form-item label="底图主题"><el-select :model-value="style.mapBaseStyle||'light'" @change="v=>style.mapBaseStyle=v"><el-option value="light" label="浅色边界"/><el-option value="dark" label="深色边界"/><el-option value="outline" label="纯边界"/></el-select></el-form-item>
+    <el-form-item label="坐标投影"><el-select :model-value="style.mapProjection||'raw'" @change="v=>style.mapProjection=v"><el-option value="raw" label="原始经纬度"/><el-option value="mercator" label="墨卡托"/></el-select></el-form-item>
+    <p class="hint">底图来自内置行政区边界数据，不依赖在线瓦片；墨卡托投影适合横向比较区域形状，纬度会限制在 ±85.05°。</p>
     <el-form-item label="地图色阶"><el-select :model-value="style.mapColorMode || 'continuous'" @change="v=>setMapMode(v)"><el-option value="continuous" label="连续渐变"/><el-option value="piecewise" label="自定义分段"/></el-select></el-form-item>
     <el-form-item v-if="style.mapColorMode==='piecewise'" label="分段边界"><div><div v-for="(value,i) in style.mapBreaks" :key="i" style="display:flex;gap:8px;margin-bottom:8px"><el-input-number :model-value="value" :precision="2" @update:model-value="v=>setBreak(i,v)"/><el-button link @click="removeBreak(i)">移除</el-button></div><el-button :disabled="(style.mapBreaks?.length || 0)>=5" @click="addBreak">添加边界</el-button><p class="hint">按原始数值从小到大填写，边界计入右侧区间；最多 5 个边界。金额单位设置不会改变分段口径。</p></div></el-form-item>
     <template v-if="style.mapColorMode==='piecewise' && style.mapBreaks?.length">
@@ -55,7 +58,7 @@
     <p class="hint">色阶按当前查询结果中的指标最小值和最大值映射。</p>
   </template>
   <template v-if="definition.type==='treemap'">
-    <el-form-item label="初始层级"><el-input-number :model-value="style.treemapLeafDepth ?? 1" :min="1" :max="2" :precision="0" @update:model-value="v=>style.treemapLeafDepth=v"/></el-form-item>
+    <el-form-item label="初始层级"><el-input-number :model-value="style.treemapLeafDepth ?? 1" :min="1" :max="Math.max(1,definition.query.dimensions.length)" :precision="0" @update:model-value="v=>style.treemapLeafDepth=v"/></el-form-item>
     <el-form-item label="显示层级导航"><el-switch :model-value="style.treemapShowBreadcrumb!==false" @update:model-value="v=>style.treemapShowBreadcrumb=!!v"/></el-form-item>
     <p class="hint">需要配置两个维度才能展示父级和子级分类。</p>
   </template>
@@ -66,7 +69,14 @@
   </template>
   <template v-if="definition.type==='boxplot'">
     <el-form-item label="横向箱线图"><el-switch :model-value="!!style.boxplotHorizontal" @update:model-value="v=>style.boxplotHorizontal=!!v"/></el-form-item>
-    <p class="hint">箱体按样本的最小值、四分位数、中位数和最大值绘制，异常值单独标记能力暂不提供。</p>
+    <el-form-item label="显示异常值"><el-switch :model-value="style.boxplotOutliers!==false" @update:model-value="v=>style.boxplotOutliers=!!v"/></el-form-item>
+    <template v-if="style.boxplotOutliers!==false">
+      <el-form-item label="异常值判定倍数"><el-input-number :model-value="style.boxplotOutlierIqrMultiplier??1.5" :min="1" :max="3" :step="0.1" :precision="1" @update:model-value="v=>style.boxplotOutlierIqrMultiplier=v"/></el-form-item>
+      <el-form-item label="标记形状"><el-select :model-value="style.boxplotOutlierSymbol||'circle'" @change="v=>style.boxplotOutlierSymbol=v"><el-option value="circle" label="圆形"/><el-option value="diamond" label="菱形"/><el-option value="triangle" label="三角形"/><el-option value="rect" label="方形"/></el-select></el-form-item>
+      <el-form-item label="标记大小"><el-input-number :model-value="style.boxplotOutlierSize??8" :min="4" :max="20" :precision="0" @update:model-value="v=>style.boxplotOutlierSize=v"/></el-form-item>
+      <el-form-item label="标记颜色"><el-color-picker :model-value="style.boxplotOutlierColor||'#E5484D'" @update:model-value="v=>style.boxplotOutlierColor=v||undefined"/></el-form-item>
+    </template>
+    <p class="hint">须线取 1.5×四分位距范围内的极值；范围外样本以散点标记。可调整 IQR 倍数，便于匹配业务异常口径。</p>
   </template>
   <template v-if="definition.type==='histogram'">
     <el-form-item label="分箱数量"><el-input-number :model-value="style.histogramBins ?? 0" :min="0" :max="50" :precision="0" @update:model-value="v=>style.histogramBins=v"/></el-form-item>

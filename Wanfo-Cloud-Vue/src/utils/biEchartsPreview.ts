@@ -23,6 +23,14 @@ function piePoint(value: number, key: string, metricStyles?: MetricStyle[]) {
   return color ? { value, itemStyle: { color } } : value
 }
 
+export function hierarchyData(rows:Record<string,unknown>[],dimensions:ChartDefinition['query']['dimensions'],key:string,value:(row:Record<string,unknown>,key:string)=>number){
+  type Node={name:string;value:number;children:Map<string,Node>}
+  const root=new Map<string,Node>()
+  for(const row of rows){let level=root;const amount=value(row,key);for(const dimension of dimensions){const field=dimension.alias||dimension.field,name=String(row[field]??'空值');let node=level.get(name);if(!node){node={name,value:0,children:new Map()};level.set(name,node)}node.value+=amount;level=node.children}}
+  const serialize=(nodes:Map<string,Node>):any[]=>[...nodes.values()].map(node=>({name:node.name,value:node.value,...(node.children.size?{children:serialize(node.children)}:{})}))
+  return serialize(root)
+}
+
 /** Display-only axis shortening; raw categories remain available to tooltips and interactions. */
 export function chartAxisLabel(value:unknown,maxLength=14):string {
   const text=String(value??'空值')
@@ -387,15 +395,11 @@ export function buildChartPreviewOption(params: {
       return {...base,tooltip:{...base.tooltip as object,trigger:'item',formatter:(p:any)=>`${xs[p.value[0]]} · ${ys[p.value[1]]}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[2])}`},grid:{left:55,right:25,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{type:'category',data:xs,axisLabel:{color:textColor}},yAxis:{type:'category',data:ys,axisLabel:{color:textColor}},visualMap:{min:Math.min(...data.map((v:any)=>v[2])),max:Math.max(...data.map((v:any)=>v[2]))||1,calculable:true,show:style?.heatmapShowScale!==false,orient:'horizontal',left:'center',bottom:4,inRange:{color:[style?.heatmapLowColor||'#E8F3FF',style?.heatmapHighColor||'#2864DC']}},series:[{type:'heatmap',data,label:{show:style?.showLabels??false},emphasis:{itemStyle:{shadowBlur:8}}}]} as EChartsOption
     }
     if(type==='treemap'){
-      let data:any[]
-      if(d1){const parents=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>();for(const row of result.rows){const parentName=field(row,d0),childName=field(row,d1),v=value(row,k0);let parent=parents.get(parentName);if(!parent){parent={name:parentName,value:0,children:new Map()};parents.set(parentName,parent)}parent.value+=v;const child=parent.children.get(childName)||{name:childName,value:0};child.value+=v;parent.children.set(childName,child)}data=[...parents.values()].map(parent=>({name:parent.name,value:parent.value,children:[...parent.children.values()]}))}
-      else data=result.rows.map(r=>({name:field(r,d0),value:value(r,k0)}))
-      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data,roam:true,leafDepth:style?.treemapLeafDepth??1,visibleMin:10,upperLabel:{show:!!d1,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:style?.treemapShowBreadcrumb!==false}}]} as EChartsOption
+      const data=hierarchyData(result.rows,definition.query.dimensions,k0,value)
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data,roam:true,leafDepth:Math.min(definition.query.dimensions.length,Math.max(1,style?.treemapLeafDepth??1)),visibleMin:10,upperLabel:{show:definition.query.dimensions.length>1,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:style?.treemapShowBreadcrumb!==false}}]} as EChartsOption
     }
     if(type==='sunburst'){
-      const root=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>()
-      for(const row of result.rows){const a=field(row,d0),b=field(row,d1),v=value(row,k0);let parent=root.get(a);if(!parent){parent={name:a,value:0,children:new Map()};root.set(a,parent)}parent.value+=v;const child=parent.children.get(b)||{name:b,value:0};child.value+=v;parent.children.set(b,child)}
-      const data=[...root.values()].map(p=>({name:p.name,value:p.value,children:[...p.children.values()]}))
+      const data=hierarchyData(result.rows,definition.query.dimensions,k0,value)
       return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'sunburst',data,radius:['12%','88%'],sort:null,emphasis:{focus:'ancestor'},label:{rotate:'radial'}}]} as EChartsOption
     }
     if(type==='sankey'){
@@ -413,9 +417,11 @@ export function buildChartPreviewOption(params: {
     if(type==='boxplot'){
       const groups=new Map<string,number[]>();for(const row of result.rows){const n=readNumber(row[k0]);if(n!=null){const name=field(row,d0);groups.set(name,[...(groups.get(name)||[]),n])}}
       const quantile=(a:number[],q:number)=>{const pos=(a.length-1)*q,lo=Math.floor(pos),fraction=pos-lo;return a[lo]+(a[Math.min(lo+1,a.length-1)]-a[lo])*fraction}
-      const names=[...groups.keys()],data=names.map(name=>{const a=groups.get(name)!.sort((x,y)=>x-y);return [a[0],quantile(a,.25),quantile(a,.5),quantile(a,.75),a[a.length-1]]})
+      const names=[...groups.keys()],outliers:{group:string;index:number;value:number}[]=[],multiplier=Math.min(3,Math.max(1,style?.boxplotOutlierIqrMultiplier??1.5)),data=names.map((name,index)=>{const a=groups.get(name)!.sort((x,y)=>x-y),q1=quantile(a,.25),median=quantile(a,.5),q3=quantile(a,.75),iqr=q3-q1,lower=q1-multiplier*iqr,upper=q3+multiplier*iqr,inside=a.filter(n=>n>=lower&&n<=upper);if(style?.boxplotOutliers!==false)a.filter(n=>n<lower||n>upper).forEach(value=>outliers.push({group:name,index,value}));return [inside[0]??a[0],q1,median,q3,inside.at(-1)??a.at(-1)]})
       const valueAxis=style?.boxplotHorizontal?{...categoryXAxis,type:'value' as const}:valueYAxis,categoryAxis=style?.boxplotHorizontal?{...valueYAxis,type:'category' as const,data:names}:{...categoryXAxis,data:names}
-      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>最小 / Q1 / 中位 / Q3 / 最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:style?.boxplotHorizontal?valueAxis:categoryAxis,yAxis:style?.boxplotHorizontal?categoryAxis:valueAxis,series:[{type:'boxplot',name:labels[k0]||k0,data,layout:style?.boxplotHorizontal?'horizontal':'vertical',itemStyle:{borderWidth:2}}]} as EChartsOption
+      const series:any[]=[{type:'boxplot',name:labels[k0]||k0,data,layout:style?.boxplotHorizontal?'horizontal':'vertical',itemStyle:{borderWidth:2}}]
+      if(outliers.length)series.push({type:'scatter',name:'异常值',symbol:style?.boxplotOutlierSymbol||'circle',symbolSize:Math.min(20,Math.max(4,style?.boxplotOutlierSize??8)),data:outliers.map(o=>({name:o.group,value:style?.boxplotHorizontal?[o.value,o.index]:[o.index,o.value]})),itemStyle:{color:style?.boxplotOutlierColor||'#E5484D'},tooltip:{formatter:(p:any)=>`${p.data.name} · 异常值<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[style?.boxplotHorizontal?0:1])}`}})
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>须线最小 / Q1 / 中位 / Q3 / 须线最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:style?.boxplotHorizontal?valueAxis:categoryAxis,yAxis:style?.boxplotHorizontal?categoryAxis:valueAxis,series} as EChartsOption
     }
     if(type==='histogram'){
       const nums=result.rows.map(r=>readNumber(r[k0])).filter((n):n is number=>n!=null);if(!nums.length)throw new Error('直方图没有可用的数值');const min=Math.min(...nums),max=Math.max(...nums),count=style?.histogramBins?Math.min(50,Math.max(1,style.histogramBins)):Math.min(20,Math.max(1,Math.ceil(Math.sqrt(nums.length)))),step=(max-min||1)/count,bins=Array.from({length:count},(_,i)=>({name:`${(min+i*step).toPrecision(4)}–${(min+(i+1)*step).toPrecision(4)}`,value:0}));for(const n of nums)bins[Math.min(count-1,Math.floor((n-min)/(step||1)))].value++

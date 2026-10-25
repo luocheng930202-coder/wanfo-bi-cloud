@@ -16,12 +16,15 @@ export function validateMapConfig(definition: ChartDefinition): string | null {
   if (dims.length !== 1 || metrics.length !== 1) return '行政区地图须选择一个地区维度和一个度量'
   const scope = definition.advanced?.mapScope || defaultMapScope()
   try{mapScopeCode(scope)}catch{return '不支持的地图范围'}
+  if(styleMapValue(definition.style?.mapBaseStyle)===false)return '不支持的地图底图主题'
+  if(definition.style?.mapProjection && !['raw','mercator'].includes(definition.style.mapProjection))return '不支持的地图坐标投影'
   if(definition.advanced?.mapValueMode && !['name','code'].includes(definition.advanced.mapValueMode))return '请选择地区名称或行政区编码'
   const style=definition.style
   if(style?.mapPieceColors?.length && (!style.mapBreaks?.length || style.mapPieceColors.length!==style.mapBreaks.length+1 || style.mapPieceColors.length>6 || style.mapPieceColors.some(c=>c!=null && !/^#[0-9a-fA-F]{6}$/.test(c))))return '逐段颜色须与分段数量一致，并使用六位十六进制颜色'
   if(style?.mapColorMode==='piecewise' && (!style.mapBreaks?.length || style.mapBreaks.length>5 || style.mapBreaks.some((v,i,a)=>!Number.isFinite(v) || Math.abs(v)>Number.MAX_SAFE_INTEGER || i>0 && v<=a[i-1]!)))return '地图分段须填写 1—5 个严格递增的原始数值边界'
   return null
 }
+function styleMapValue(value:string|undefined):boolean{return value===undefined||['light','dark','outline'].includes(value)}
 
 export function mapMatchWarning(definition:ChartDefinition,result:ChartResult,features:GeoFeature[]):string {
   if(!result.rows.length)return '当前筛选与权限范围内没有本层数据，显示区域边界'
@@ -63,6 +66,7 @@ export function buildMapPreviewOption(params: {
 }): EChartsOption {
   const { mapName, definition, result, labels, appearance, numberFormat, formatFor } = params
   const style = definition.style
+  const baseStyle=style?.mapBaseStyle || 'light',darkBase=baseStyle==='dark',outlineBase=baseStyle==='outline'
   const mergedAppearance = chartAppearance(style, appearance)
   const visualTheme=resolveBiTheme(mergedAppearance)
   const textColor = visualTheme.text
@@ -98,7 +102,11 @@ export function buildMapPreviewOption(params: {
   const low=style?.mapLowColor || '#e0f3ff',high=style?.mapHighColor || '#006edd'
   const pieces=breaks.length?Array.from({length:breaks.length+1},(_,i)=>({...(i?{gte:breaks[i-1]}:{}),...(i<breaks.length?{lt:breaks[i]}:{}),label:i===0?`< ${axisFormatter(breaks[0]!)}`:i===breaks.length?`≥ ${axisFormatter(breaks[i-1]!)}`:`${axisFormatter(breaks[i-1]!)} ≤ 值 < ${axisFormatter(breaks[i]!)}`,color:mapPieceColor(style,i)})):[]
   const labelFormatter=(p:unknown)=>{const item=p as {name?:string;value?:number};const value=item.value==null || !Number.isFinite(item.value)?'无数据':axisFormatter(item.value);return style?.mapLabelContent==='value'?value:style?.mapLabelContent==='nameValue'?`${item.name || ''}\n${value}`:item.name || ''}
+  const noDataColor=style?.mapNoDataColor || (darkBase?'#273244':'#f4f6f9')
+  const borderColor=style?.mapBorderColor || (darkBase?'#748198':outlineBase?'#8b98a9':'#c2cad5')
+  const projection=style?.mapProjection==='mercator'?{project:(point:number[])=>{const latitude=Math.max(-85.05112878,Math.min(85.05112878,point[1]));const rad=latitude*Math.PI/180;return [point[0],Math.log(Math.tan(Math.PI/4+rad/2))*180/Math.PI]},unproject:(point:number[])=>[point[0],(2*Math.atan(Math.exp(point[1]*Math.PI/180))-Math.PI/2)*180/Math.PI]}:undefined
   return {
+    backgroundColor:darkBase?'#151b26':undefined,
     color: paletteFromStyle(style, mergedAppearance),
     textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart },
     title: style?.showTitle ? { text: style.title || definition.name, left: 'center', textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.title,fontWeight:600 } } : undefined,
@@ -125,14 +133,13 @@ export function buildMapPreviewOption(params: {
       inRange: { color: [low, high] },
       textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart }
     },
+    geo:{map:mapName,roam:true,zoom:1,scaleLimit:{min:0.5,max:8},projection,itemStyle:{areaColor:noDataColor,borderColor},label:{show:!!style?.mapShowLabels,formatter:(p:unknown)=>{const v=(p as {value?:number}).value;return v==null || !Number.isFinite(v)?'':labelFormatter(p)},color:darkBase?'#e6edf7':textColor,fontSize:11},emphasis:{label:{show:true,formatter:labelFormatter}}},
     series: [{
       type: 'map',
       map: mapName,
-      roam: true,zoom:1,scaleLimit:{min:0.5,max:8},
-      itemStyle:{areaColor:style?.mapNoDataColor || '#eeeeee',borderColor:style?.mapBorderColor || '#a0a6ad'},
-      label:{show:!!style?.mapShowLabels,formatter:(p:unknown)=>{const v=(p as {value?:number}).value;return v==null || !Number.isFinite(v)?'':labelFormatter(p)},color:textColor,fontSize:11},
+      geoIndex:0,
+      itemStyle:{areaColor:noDataColor,borderColor},
       labelLayout:{hideOverlap:true},
-      emphasis: { label: { show: true,formatter:labelFormatter } },
       data
     }]
   }

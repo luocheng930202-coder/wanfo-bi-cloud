@@ -161,7 +161,7 @@ function clearLibraryFilters() { search.value = ''; statusFilter.value = 'all' }
 function canBoardAction(board: DashboardSummary, resource: string, permission: string) {
   return board.resourceActions?.includes(resource) && checkPermi([permission])
 }
-function handleBoardAction(command: string, board: DashboardSummary) {
+function handleBoardAction(command: string, board: DashboardSummary) {if(command==='refresh')return refreshList();
   if (busy.value) return
   if (command === 'view' && board.published && canBoardAction(board, 'consume', 'bi:dashboard:consume')) return openView(board.id)
   if (command === 'edit' && canBoardAction(board, 'edit', 'bi:dashboard:edit')) return router.push('/bi-admin/dashboard-workspace/' + board.id+'/edit')

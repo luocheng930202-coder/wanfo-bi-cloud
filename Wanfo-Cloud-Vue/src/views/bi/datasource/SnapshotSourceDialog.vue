@@ -1,20 +1,37 @@
 <template>
   <el-dialog v-model="visible" :title="editing ? '更新数据快照' : '导入数据源'" width="min(680px, calc(100vw - 24px))" destroy-on-close :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
     <el-alert :closable="false" type="info" title="导入成功后，在数据集选择此数据源的 data 表。更新失败会保留上一份快照。" />
-    <el-form label-position="top" class="snapshot-form" @submit.prevent>
+    <el-form label-position="top" class="snapshot-form" :disabled="busy" @submit.prevent>
       <el-form-item label="名称"><el-input v-model="name" :disabled="editing" maxlength="100" /></el-form-item>
       <el-form-item label="Schema 别名"><el-input v-model="alias" :disabled="editing" placeholder="小写字母开头，例如 sales_api" maxlength="31" /></el-form-item>
       <template v-if="kind === 'api'">
         <el-form-item label="API 地址（GET JSON）"><el-input v-model="url" placeholder="https://api.example.com/data" /></el-form-item>
         <el-form-item label="数组路径"><el-input v-model="dataPath" placeholder="data.rows；根节点为数组时留空" /></el-form-item>
         <el-form-item label="请求头 JSON"><el-input v-model="headers" type="textarea" :rows="3" :placeholder="editing ? '留空保留已保存请求头；修改地址时须重新填写，{} 表示清空' : '{ &quot;Authorization&quot;: &quot;Bearer …&quot; }'" /></el-form-item>
-        <p class="hint">接口域名须在服务端 bi.external-source.allowed-origins 中允许。当前接入完整对象数组，分页接口须先提供完整数据接口。请求头加密保存。</p>
+        <el-form-item label="页码分页"><el-switch v-model="paged" /></el-form-item>
+        <template v-if="paged">
+          <el-row :gutter="12"><el-col :span="12"><el-form-item label="页码参数名"><el-input v-model="pagination.pageParam" /></el-form-item></el-col><el-col :span="12"><el-form-item label="页大小参数名"><el-input v-model="pagination.sizeParam" /></el-form-item></el-col></el-row>
+          <el-row :gutter="12"><el-col :span="12"><el-form-item label="每页行数"><el-input-number v-model="pagination.pageSize" :min="1" :max="1000" :precision="0" /></el-form-item></el-col><el-col :span="12"><el-form-item label="起始页"><el-select v-model="pagination.startPage"><el-option :value="0" label="0"/><el-option :value="1" label="1"/></el-select></el-form-item></el-col></el-row>
+          <el-form-item label="最多页数"><el-input-number v-model="pagination.maxPages" :min="1" :max="100" :precision="0" /></el-form-item>
+          <el-form-item label="总行数路径"><el-input v-model="pagination.totalPath" placeholder="如 data.total；留空尝试识别 total / totalCount" /></el-form-item>
+        </template>
+        <el-form-item label="自动刷新间隔（分钟）"><el-input-number v-model="refreshMinutes" :min="0" :max="1440" :precision="0" /><small class="hint">0 为关闭，启用时为 5～1440 分钟；后台约每分钟检查一次，失败保留旧数据。</small></el-form-item>
+        <p v-if="scheduleStatus" class="hint">上次自动刷新状态：{{ scheduleStatus==='success'?'成功':scheduleStatus.startsWith('failed')?'失败，已保留旧数据':'尚未执行' }}</p>
+        <p class="hint">接口域名须在服务端 bi.external-source.allowed-origins 中允许。支持完整数组或显式页码分页，累计最多 5 MB、20000 行；达到页数上限仍未完成会拒绝更新。请求头加密保存。</p>
       </template>
       <template v-else>
         <el-form-item :label="kind === 'csv' ? 'UTF-8 CSV 文件' : 'Excel 文件（XLS / XLSX）'">
-          <input type="file" :accept="kind === 'csv' ? '.csv' : '.xls,.xlsx'" @change="selectFile" />
+          <input type="file" :disabled="busy" :accept="kind === 'csv' ? '.csv' : '.xls,.xlsx'" @change="selectFile" />
         </el-form-item>
         <el-form-item v-if="kind === 'excel'" label="工作表名称"><el-input v-model="sheet" placeholder="留空使用第一个工作表；请将公式转换为值" /></el-form-item>
+        <el-form-item v-if="editing" label="更新方式"><el-radio-group v-model="fileMode"><el-radio value="replace">覆盖快照</el-radio><el-radio value="append">按行追加</el-radio></el-radio-group></el-form-item>
+        <el-alert v-if="fileMode==='append'" title="追加不会自动去重；重复上传同一文件会产生重复记录。" type="warning" :closable="false" />
+        <el-button :loading="busy" :disabled="!file" @click="previewFile">预览并设置字段类型</el-button>
+        <template v-if="previewColumns.length">
+          <p>本次文件 {{ previewCount }} 行；下方预览前 10 行。修改类型后，保存时会重新校验全部行。</p>
+          <el-table :data="previewColumns" max-height="220"><el-table-column prop="name" label="字段"/><el-table-column label="类型"><template #default="{row}"><el-select v-model="row.type" :disabled="editing"><el-option v-for="option in columnTypes" :key="option.value" :label="option.label" :value="option.value" /></el-select></template></el-table-column></el-table>
+          <el-table :data="previewRows" max-height="230"><el-table-column v-for="(column,index) in previewColumns" :key="column.name" :label="column.name" :prop="String(index)" min-width="110" show-overflow-tooltip /></el-table>
+        </template>
       </template>
       <p class="hint">最多 5 MB、200 列、20000 行；不会静默截断。再次导入须保持字段和类型一致。</p>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -23,28 +40,45 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref,reactive,watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { importApiSource, importFileSource, snapshotSourceInfo, type BiDatasource } from '@/api/bi/datasource'
+import { importApiSource, importFileSource, snapshotSourceInfo, previewFileSource, type BiDatasource } from '@/api/bi/datasource'
 const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
+const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace')
+const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
+const previewColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
+const columnTypes=[{value:'VARCHAR',label:'文本'},{value:'DECIMAL',label:'数值'},{value:'BOOLEAN',label:'布尔'},{value:'DATE',label:'日期'},{value:'TIMESTAMP',label:'日期时间'}]
+watch(sheet,()=>{previewColumns.value=[];previewRows.value=[]})
 let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || ''} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination)Object.assign(pagination,result.data.pagination);refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || ''} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }
 }
-function selectFile(event: Event){file.value=(event.target as HTMLInputElement).files?.[0]}
+function selectFile(event: Event){file.value=(event.target as HTMLInputElement).files?.[0];previewColumns.value=[];previewRows.value=[];error.value=''}
+function fileData(){
+  const data=new FormData();if(file.value)data.append('file',file.value);data.append('name',name.value.trim());data.append('schemaName',alias.value);data.append('sheet',sheet.value)
+  if(id.value)data.append('id',String(id.value));return data
+}
+async function previewFile(){
+  if(!file.value || busy.value)return
+  busy.value=true;error.value=''
+  try{const response=await previewFileSource(fileData());previewColumns.value=response.data.columns;previewRows.value=response.data.rows;previewCount.value=response.data.rowCount}
+  catch{error.value='文件预览失败，请检查编码、表头、工作表及文件大小'}finally{busy.value=false}
+}
 async function save(){
   if(busy.value)return
   error.value=''
@@ -57,12 +91,12 @@ async function save(){
         parsed=JSON.parse(headers.value)
         if(!parsed || Array.isArray(parsed) || typeof parsed!=='object' || Object.values(parsed).some(v=>typeof v!=='string'))throw new Error('请求头须为字符串键值对象')
       }
-      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed})
+      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value})
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')
-      const data=new FormData();data.append('file',file.value);data.append('name',name.value.trim());data.append('schemaName',alias.value);data.append('sheet',sheet.value)
-      if(id.value)data.append('id',String(id.value))
+      const data=fileData();data.append('mode',fileMode.value)
+      if(previewColumns.value.length)data.append('columnTypes',JSON.stringify(Object.fromEntries(previewColumns.value.map(c=>[c.name,c.type]))))
       await importFileSource(data)
     }
     ElMessage.success('数据快照已保存');visible.value=false;emit('saved')

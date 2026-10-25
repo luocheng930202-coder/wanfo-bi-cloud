@@ -635,12 +635,7 @@ public class DatasetService
         List<Map<String, Object>> refs = datasetMapper.countChartRefs(id);
         if (refs != null && !refs.isEmpty())
         {
-            StringBuilder sb = new StringBuilder("数据集已被图表引用，无法删除：");
-            for (Map<String, Object> ref : refs)
-            {
-                sb.append(ref.get("chart_name")).append(" ");
-            }
-            throw new IllegalArgumentException(sb.toString().trim());
+            throw new IllegalArgumentException("数据集仍被图表引用，无法删除；请查看引用关系并先解除绑定");
         }
 
         fieldMapper.deleteByDatasetId(id);

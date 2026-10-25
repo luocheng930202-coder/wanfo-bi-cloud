@@ -90,7 +90,7 @@
                <el-button link type="primary" icon="Edit" v-hasPermi="['bi:datasource:edit']" v-if="row.resourceActions?.includes('edit')" @click="handleUpdate(row)">{{ isSnapshot(row.type) ? '更新快照' : '编辑' }}</el-button>
                <el-button v-if="row.type==='api' && row.resourceActions?.includes('edit') && checkPermi(['bi:datasource:edit'])" link type="primary" @click="refreshSnapshot(row)">刷新</el-button>
                <el-button link type="success" icon="VideoPlay" v-hasPermi="['bi:datasource:test']" v-if="row.resourceActions?.includes('test')" @click="handleTest(row)">测试</el-button>
-               <el-button link type="danger" icon="Delete" v-hasPermi="['bi:datasource:remove']" v-if="row.resourceActions?.includes('remove')" @click="handleDelete(row)">删除</el-button>
+               <ResourceImpactButton type="datasource" :id="row.id"/><el-button link type="danger" icon="Delete" v-hasPermi="['bi:datasource:remove']" v-if="row.resourceActions?.includes('remove')" @click="handleDelete(row)">删除</el-button>
                <el-button v-if="row.resourceActions?.includes('model') && checkPermi(['bi:dataset:add'])" v-hasPermi="['bi:datasource:model']" link type="primary" @click="$router.push({ path: '/bi-admin/dataset', query: { datasourceId: row.id } })">建数据集</el-button>
                <el-button v-if="row.resourceActions?.includes('grant')" v-hasPermi="['bi:datasource:grant']" link type="primary" @click="openGrants(row)">授权</el-button>
             </template>
@@ -255,6 +255,7 @@
 </template>
 
 <script setup lang="ts" name="BiDatasource">
+import ResourceImpactButton from '../components/ResourceImpactButton.vue'
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'

@@ -23,6 +23,10 @@ public class ChartDefinitionService {
     public record PanelConfig(String type,List<QueryModel.Dimension> dimensions,List<QueryModel.Metric> metrics,
             List<QueryModel.OrderBy> orderBys,Integer limit,QueryModel.FilterNode filterTree) { }
     public record SaveRequest(Integer version,Definition definition,Boolean templateLease) { }
+    private ResourceHistoryStore history;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureHistory(ResourceHistoryStore history){this.history=history;}
+    private void remember(com.wanfo.bi.domain.BiChartDO row,String operation,int version){if(history!=null)history.record("chart",row.getId(),version,operation,row.getDefinitionJson(),row.getUpdateBy());}
     private final BiChartMapper mapper;
     private final BiDatasetTableMapper datasets;
     private final ChartQueryService queries;
@@ -88,6 +92,7 @@ public class ChartDefinitionService {
         if(style!=null){if(style.getMetrics()!=null)style.setMetrics(style.getMetrics().stream().filter(m->outputs.contains(m.key())).toList());if(style.getReferenceLines()!=null)style.setReferenceLines(style.getReferenceLines().stream().filter(r->outputs.contains(r.key())).toList());}
         var result=new Definition(1,source.name(),c.type(),q,style,source.advanced());validate(result);return result;
     }
+    void validateHistorical(Definition d){validate(d);}
     private void validate(Definition d) {
         if(d==null || !Objects.equals(d.schemaVersion(),1) || d.name()==null || d.name().isBlank() || d.name().trim().length()>200
                 || d.type()==null || !ChartTypes.allowed(d.type()) || d.query()==null)
@@ -175,14 +180,16 @@ public class ChartDefinitionService {
         caps.require("bi:chart:add");if(request==null)throw new IllegalArgumentException("图表定义不能为空");
         var row=row(request.definition());row.setCreateBy(actors.currentActor().username());mapper.insert(row);resources.register("chart",row.getId());
         if(Boolean.TRUE.equals(request.templateLease()))templateLeases.register(row.getId());
+        remember(row,"create",0);
         return Map.of("id",row.getId(),"version",0);
     }
     @Transactional
     public Map<String,Object> update(Long id,SaveRequest request) {
-        caps.require("bi:chart:edit");require(id,"edit");
+        caps.require("bi:chart:edit");var before=require(id,"edit");remember(before,"baseline",before.getVersion());
         if(request==null || request.version()==null || request.version()<0)throw new IllegalArgumentException("缺少图表版本，请刷新后重试");
         var row=row(request.definition());row.setId(id);row.setVersion(request.version());
         if(mapper.update(row)!=1)throw new BiAccessException(409,"图表已被其他人修改，请重新打开后保存");
+        remember(row,"save",request.version()+1);
         return Map.of("id",id,"version",request.version()+1);
     }
     public Map<String,Object> data(Long id) throws Exception {return data(id,null);}

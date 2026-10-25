@@ -2,6 +2,7 @@ package com.wanfo.bi.service;
 
 import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +38,11 @@ import com.wanfo.bi.security.*;
 @Service
 public class ChartQueryService
 {
+    private com.wanfo.bi.query.UserQueryCache cache;
+    private CurrentActorProvider actors;
+    private com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureCache(com.wanfo.bi.query.UserQueryCache cache,CurrentActorProvider actors,com.wanfo.bi.datasource.snapshot.SnapshotRegistry snapshots){this.cache=cache;this.actors=actors;this.snapshots=snapshots;}
     private final BiDatasetTableMapper datasetMapper;
     private final BiDatasetFieldMapper fieldMapper;
     private final ChartQueryCompiler compiler;
@@ -136,6 +142,20 @@ public class ChartQueryService
         // A table dataset depends only on its bound source; unrelated offline sources
         // must not prevent its query. Administrator SQL datasets may span sources.
         var selectedSources="table".equals(ds.getType())?List.of(datasourceProvider.getById(ds.getDatasourceId())):datasourceProvider.listEnabled();
+        long cacheEpoch=cache==null?0:cache.epoch();String cacheKey=null;
+        var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        boolean bypass=request instanceof org.springframework.web.context.request.ServletRequestAttributes attributes && "true".equalsIgnoreCase(attributes.getRequest().getHeader("X-BI-Cache-Bypass"));
+        if(cache!=null && actors!=null && request!=null && !bypass && "table".equals(ds.getType()) && "1".equals(ds.getCacheEnabled())){
+            var identity=actors.currentActor();
+            List<Object> sourceKeys=new ArrayList<>();
+            for(var source:selectedSources){
+                long snapshotVersion=com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(source.getType())?snapshots.version(source.getId()):0;
+                sourceKeys.add(Arrays.asList(source.getId(),source.getType(),source.getJdbcUrl(),source.getSourceSchema(),source.getUsername(),source.getDriverClass(),cache.key(source.getPassword()),snapshotVersion));
+            }
+            cacheKey=cache.key(Arrays.asList(cacheEpoch,ds.getId(),identity.source(),identity.userId(),identity.organizationId(),identity.roleIds().stream().sorted().toList(),caps.has("bi:resource:admin"),model,sql,params,valid,sourceKeys));
+            var cached=cacheKey==null?null:cache.get(cacheKey);
+            if(cached!=null){cached.put("datasetName",ds.getName());cached.put("costMs",System.currentTimeMillis()-start);if(caps.has("bi:resource:admin")){cached.put("executedSql",sql);cached.put("params",params);}return cached;}
+        }
         var run=governor==null?null:governor.enter(selectedSources.stream().map(com.wanfo.bi.datasource.BiDatasource::getId).toList());
         try (run; Connection conn = engine.open(selectedSources))
         {
@@ -165,6 +185,7 @@ public class ChartQueryService
         if(caps.has("bi:resource:admin")) {result.put("executedSql",sql);result.put("params",params);}
         if(run!=null)result.put("queryDiagnostics",run.diagnostics());
         result.put("datasetName", ds.getName());
+        if(cacheKey!=null){cache.put(cacheKey,ds.getId(),ds.getCacheTtl()==null?300:ds.getCacheTtl(),cacheEpoch,result);result.put("cache",Map.of("hit",false,"scope","user","nodeLocal",true));}
         return result;
     }
 

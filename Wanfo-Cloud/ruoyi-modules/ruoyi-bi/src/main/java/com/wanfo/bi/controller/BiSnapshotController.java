@@ -20,8 +20,14 @@ public class BiSnapshotController {
     @GetMapping("/{id}/info") public Map<String,Object> info(@PathVariable Long id){return service.info(id);}
     @BiPermission(anyOf={"bi:datasource:add","bi:datasource:edit"})
     @PostMapping("/file") public Map<String,Object> file(@RequestParam(required=false) Long id,@RequestParam(required=false) String name,
-            @RequestParam(required=false) String schemaName,@RequestParam(required=false) String sheet,@RequestParam MultipartFile file)throws Exception {
+            @RequestParam(required=false) String schemaName,@RequestParam(required=false) String sheet,@RequestParam(defaultValue="replace") String mode,@RequestParam(required=false) String columnTypes,@RequestParam MultipartFile file)throws Exception {
         if(file.getSize()>com.wanfo.bi.datasource.snapshot.SnapshotParser.MAX_BYTES)throw new IllegalArgumentException("文件不能超过 5 MB");
-        return service.file(id,name,schemaName,file.getOriginalFilename()==null?"upload":file.getOriginalFilename(),sheet,file.getBytes());
+        return service.file(id,name,schemaName,file.getOriginalFilename()==null?"upload":file.getOriginalFilename(),sheet,file.getBytes(),mode,columnTypes);
+    }
+    @PostMapping("/file/preview")
+    @BiPermission(anyOf={"bi:datasource:add","bi:datasource:edit"})
+    public Map<String,Object> preview(@RequestParam(required=false) Long id,@RequestParam(required=false) String sheet,@RequestParam MultipartFile file)throws Exception {
+        if(file.getSize()>com.wanfo.bi.datasource.snapshot.SnapshotParser.MAX_BYTES)throw new IllegalArgumentException("文件不能超过 5 MB");
+        return service.previewFile(id,file.getOriginalFilename()==null?"upload":file.getOriginalFilename(),sheet,file.getBytes());
     }
 }

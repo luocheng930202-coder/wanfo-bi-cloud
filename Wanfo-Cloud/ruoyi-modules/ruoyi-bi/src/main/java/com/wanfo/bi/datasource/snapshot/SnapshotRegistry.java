@@ -11,6 +11,7 @@ public class SnapshotRegistry {
     private final ObjectMapper json=new ObjectMapper();
     public SnapshotRegistry(BiSourceSnapshotMapper mapper){this.mapper=mapper;}
     public static boolean supports(String type){return Set.of("api","csv","excel").contains(type==null?"":type.toLowerCase(Locale.ROOT));}
+    public long version(Long id){Long value=mapper.version(id);if(value==null)throw new IllegalArgumentException("数据快照不存在");return value;}
     public SnapshotData load(Long id){return decode(row(id));}
     public BiSourceSnapshotMapper.Row row(Long id){var row=mapper.get(id);if(row==null)throw new IllegalArgumentException("数据快照不存在");return row;}
     public SnapshotData decode(BiSourceSnapshotMapper.Row row){

@@ -1,15 +1,19 @@
 <template>
-  <el-dropdown v-if="actions.length" trigger="click" :disabled="disabled" @command="command => emit('action', command)">
+  <el-dropdown v-if="actions.length" trigger="click" :disabled="disabled" @command="action">
     <button type="button" class="board-more" :aria-label="`${board.name}的更多操作`" :disabled="disabled"><el-icon><MoreFilled /></el-icon></button>
     <template #dropdown><el-dropdown-menu class="board-menu">
       <el-dropdown-item v-for="action in actions" :key="action.value" :command="action.value" :icon="action.icon"
         :disabled="disabled" :divided="action.value === 'remove'" :class="{ 'board-menu-danger': action.value === 'remove' }">{{ action.label }}</el-dropdown-item>
     </el-dropdown-menu></template>
   </el-dropdown>
+  <ResourceImpactButton ref="impact" type="dashboard" :id="board.id" hidden-trigger/>
+  <ResourceHistoryButton ref="history" type="dashboard" :id="board.id" hidden-trigger @restored="emit('action','refresh')"/>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed,ref } from 'vue'
+import ResourceImpactButton from '../components/ResourceImpactButton.vue'
+import ResourceHistoryButton from '../components/ResourceHistoryButton.vue'
 import { MoreFilled, View, EditPen, Promotion, CircleClose, Share, User, Delete } from '@element-plus/icons-vue'
 import { checkPermi } from '@/utils/permission'
 import type { DashboardSummary } from '@/api/bi/dashboard'
@@ -18,6 +22,8 @@ const emit = defineEmits<{ action: [command: string] }>()
 const actions = computed(() => {
   const can = (resource: string, permission: string) => props.board.resourceActions?.includes(resource) && checkPermi([permission])
   return [
+    {value:'impact',label:'引用关系',icon:Share,visible:true},
+    {value:'history',label:'历史版本',icon:View,visible:can('edit','bi:dashboard:edit')},
     { value: 'view', label: '查看', icon: View, visible: props.board.published && can('consume', 'bi:dashboard:consume') },
     { value: 'edit', label: '编辑', icon: EditPen, visible: can('edit', 'bi:dashboard:edit') },
     { value: 'publish', label: props.board.published ? '更新发布' : '发布', icon: Promotion, visible: can('publish', 'bi:dashboard:publish') },
@@ -27,6 +33,8 @@ const actions = computed(() => {
     { value: 'remove', label: '删除', icon: Delete, visible: can('remove', 'bi:dashboard:remove') }
   ].filter(action => action.visible)
 })
+const impact=ref<InstanceType<typeof ResourceImpactButton>>(),history=ref<InstanceType<typeof ResourceHistoryButton>>()
+function action(command:string){if(command==='impact')return impact.value?.open();if(command==='history')return history.value?.open();emit('action',command)}
 </script>
 
 <style scoped>

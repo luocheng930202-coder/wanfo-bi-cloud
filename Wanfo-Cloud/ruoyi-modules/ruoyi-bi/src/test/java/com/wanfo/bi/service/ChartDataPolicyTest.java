@@ -10,6 +10,29 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class ChartDataPolicyTest {
+    @Test void cachedQueriesRecheckIdentityPoliciesAndRevocationBeforeReturningData()throws Exception {
+        var cache=new UserQueryCache();var actors=mock(CurrentActorProvider.class);var snapshots=mock(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.class);
+        service.configureCache(cache,actors,snapshots);var dataset=datasets.selectById(9L);dataset.setCacheEnabled("1");dataset.setCacheTtl(60);
+        when(actors.currentActor()).thenReturn(new BiActor("test",1L,"a",null,Set.of(1L)));
+        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        var request=new org.springframework.mock.web.MockHttpServletRequest();org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(new org.springframework.web.context.request.ServletRequestAttributes(request));
+        try{
+            var q=model("city");assertEquals(false,((Map<?,?>)service.query(q).get("cache")).get("hit"));assertEquals(true,((Map<?,?>)service.query(q).get("cache")).get("hit"));verify(engine,times(1)).open(anyList());
+            when(actors.currentActor()).thenReturn(new BiActor("test",2L,"b",null,Set.of(1L)));service.query(q);verify(engine,times(2)).open(anyList());
+            when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","A","admin")),Set.of(),Set.of()));service.query(q);verify(engine,times(3)).open(anyList());
+            doThrow(new BiAccessException(403,"revoked")).when(resources).require("dataset",9L,"query");assertThrows(BiAccessException.class,()->service.query(q));verify(engine,times(3)).open(anyList());
+        }finally{org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();}
+    }
+    @Test void snapshotVersionChangesAndManualBypassForceFreshExecution()throws Exception {
+        var cache=new UserQueryCache();var actors=mock(CurrentActorProvider.class);var snapshots=mock(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.class);service.configureCache(cache,actors,snapshots);
+        datasets.selectById(9L).setCacheEnabled("1");var source=sources.getById(7L);source.setId(7L);source.setType("csv");when(snapshots.version(7L)).thenReturn(1L);when(actors.currentActor()).thenReturn(new BiActor("test",1L,"a",null,Set.of()));
+        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        var request=new org.springframework.mock.web.MockHttpServletRequest();org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(new org.springframework.web.context.request.ServletRequestAttributes(request));
+        try{
+            var q=model("city");service.query(q);service.query(q);verify(engine,times(1)).open(anyList());when(snapshots.version(7L)).thenReturn(2L);service.query(q);verify(engine,times(2)).open(anyList());
+            request.addHeader("X-BI-Cache-Bypass","true");service.query(q);verify(engine,times(3)).open(anyList());
+        }finally{org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();}
+    }
     @Test void comparisonQueriesKeepSecurityAndShiftOnlyUserTimePredicates() throws Exception {
         when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","A","admin")),Set.of(),Set.of()));
         var date=new BiDatasetFieldDO();date.setOriginName("day");date.setOriginType("DATE");var city=new BiDatasetFieldDO();city.setOriginName("city");city.setOriginType("VARCHAR");var id=new BiDatasetFieldDO();id.setOriginName("id");id.setOriginType("INT");when(fields.selectByDatasetId(9L)).thenReturn(List.of(date,city,id));

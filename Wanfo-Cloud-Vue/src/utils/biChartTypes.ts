@@ -120,3 +120,47 @@ export function applyTypeDefaults(
   else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot') dims=dims.slice(0,1)
   return { dimensions: dims, metrics: mets }
 }
+
+export interface ChartConfigurationIssue { code:string; path:string; message:string; severity:'error'|'warning' }
+
+/** Explain invalid field roles before submitting a query; the server remains authoritative. */
+export function chartConfigurationIssues(definition:import('@/api/bi/chart').ChartDefinition, fields:import('@/api/bi/chart').Field[]):ChartConfigurationIssue[] {
+  const issues:ChartConfigurationIssue[]=[]
+  const add=(code:string,path:string,message:string,severity:'error'|'warning'='error')=>issues.push({code,path,message,severity})
+  const query=definition.query, type=definition.type
+  if(!query.datasetId)add('dataset','datasetId','请选择数据集')
+  const shape=validateChartQueryShape(type,query.dimensions,query.metrics)
+  if(shape && query.metrics.length>0 && query.metrics.length<=maxMetricsForType(type))add('shape','roles',shape)
+  if(!query.metrics.length && !query.dimensions.length && !['table','pivot','gauge','scatter'].includes(type))add('dimension','dimensions','请选择分类维度')
+  if(!query.metrics.length || query.metrics.length>maxMetricsForType(type))add('metrics','metrics',`请选择 1～${maxMetricsForType(type)} 个${type==='table'?'展示字段':'指标'}`)
+  const known=new Map(fields.map(f=>[f.name,f]))
+  const numeric=(field:string)=>/(int|decimal|numeric|float|double|real|number)/i.test(known.get(field)?.type || '')
+  const exists=(field:string,path:string)=>{if(!field || !known.has(field)){add('field',path,field?`字段「${field}」已失效或无权使用，请重新选择`:'请选择字段');return false}return true}
+  const keys=new Set<string>()
+  query.dimensions.forEach((d,i)=>{exists(d.field,`dimensions.${i}`);if(keys.has(d.field))add('duplicate',`dimensions.${i}`,'分类与系列维度不能重复');keys.add(d.field)})
+  query.metrics.forEach((m,i)=>{
+    const valid=exists(m.field,`metrics.${i}.field`)
+    if(!['NONE','COUNT','COUNT_DISTINCT','SUM','AVG','MIN','MAX'].includes(m.agg))add('aggregation',`metrics.${i}.agg`,'请选择有效的聚合方式')
+    if(valid && ['SUM','AVG','MIN','MAX'].includes(m.agg) && !numeric(m.field))add('numeric',`metrics.${i}.agg`,`「${known.get(m.field)?.showName || m.field}」不是数值字段，请使用计数或去重计数`)
+    const key=m.alias || (m.agg==='NONE'?m.field:`${m.agg.toLowerCase()}_${m.field}`)
+    if(keys.has(key))add('duplicate',`metrics.${i}.alias`,`结果名称「${key}」重复，请调整指标别名`)
+    keys.add(key)
+  })
+  if(type==='table' && query.metrics.some(m=>m.agg==='NONE') && query.metrics.some(m=>m.agg!=='NONE'))add('mixed','metrics','明细字段与聚合指标不能混用，请统一展示口径')
+  if(type==='pivot'){
+    const rows=definition.advanced?.pivotRowFields?.length?definition.advanced.pivotRowFields:query.pivot?.rows || [], columns=definition.advanced?.pivotColFields?.length?definition.advanced.pivotColFields:query.pivot?.columns || []
+    if(rows.length<1 || rows.length>3 || columns.length<1 || columns.length>2)add('pivot','pivot','透视表需要 1～3 个行维度、1～2 个列维度')
+    const used=new Set<string>()
+    for(const field of [...rows,...columns]){exists(field,'pivot');if(used.has(field))add('duplicate','pivot','透视表行列维度不能重复');used.add(field)}
+  }
+  const visit=(node:import('@/api/bi/chart').FilterNode,path:string):void=>{
+    if('children' in node){if(!node.children.length)add('filter',path,'筛选分组不能为空');node.children.forEach((child,i)=>visit(child,`${path}.${i}`));return}
+    exists(node.field,path)
+    if(!['IS_NULL','IS_NOT_NULL'].includes(node.op) && (node.value==null || node.value==='' || Array.isArray(node.value) && !node.value.length))add('filter',path,'请填写筛选值，或移除此筛选条件')
+  }
+  if(query.filterTree)visit(query.filterTree,'filterTree')
+  query.filters?.forEach((f,i)=>visit(f,`filters.${i}`))
+  if(['pie','ring','funnel','percent'].includes(type))add('nonnegative','data','此图要求非负数据；字段配置通过后，仍需检查实际数据中的负值及零合计','warning')
+  if(type==='radar' && query.metrics.length>1)add('units','metrics','不同量纲的指标建议在高级分析中配置评分范围，避免直接比较','warning')
+  return issues
+}

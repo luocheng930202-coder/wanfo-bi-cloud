@@ -68,10 +68,13 @@ public final class SnapshotParser {
         if(rows.size()<2)throw new IllegalArgumentException("CSV 须包含表头和数据");
         return SnapshotData.infer(rows.get(0),rows.subList(1,rows.size()));
     }
-    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {
+    public static JsonNode tree(byte[] bytes,ObjectMapper mapper)throws IOException {
         if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("API 响应超过 5 MB");
-        JsonNode root;
-        try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);root=mapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).with(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS).readTree(parser);}
+        try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);return mapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).with(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS).readTree(parser);}
+    }
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {return json(bytes,path,mapper,false);}
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated)throws IOException {
+        JsonNode root=tree(bytes,mapper);
         JsonNode array=root;List<JsonNode> parents=new ArrayList<>();parents.add(root);
         if(path!=null && !path.isBlank()){
             if(!path.matches("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"))throw new IllegalArgumentException("数据路径使用 data.rows 形式");
@@ -79,7 +82,7 @@ public final class SnapshotParser {
         }
         if(!array.isArray() || array.isEmpty())throw new IllegalArgumentException("API 数据路径须指向非空对象数组");
         if(array.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 超过 20000 行");
-        for(JsonNode parent:parents)if(parent.isObject())for(String key:List.of("total","totalCount"))if(parent.path(key).canConvertToLong() && parent.path(key).longValue()>array.size())throw new IllegalArgumentException("接口返回分页数据，请提供完整数据接口");
+        if(!paginated)for(JsonNode parent:parents)if(parent.isObject())for(String key:List.of("total","totalCount"))if(parent.path(key).canConvertToLong() && parent.path(key).longValue()>array.size())throw new IllegalArgumentException("接口返回分页数据，请提供完整数据接口");
         JsonNode first=array.get(0);if(!first.isObject())throw new IllegalArgumentException("API 数组元素须为对象");
         List<String> names=new ArrayList<>();first.fieldNames().forEachRemaining(names::add);
         List<List<String>> rows=new ArrayList<>();

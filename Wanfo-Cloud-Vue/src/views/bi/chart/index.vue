@@ -26,7 +26,7 @@
         <el-table-column label="图表类型" width="150"><template #default="{row}"><span class="chart-type">{{ chartTypeLabel(row.type) }}</span></template></el-table-column>
         <el-table-column label="数据集" min-width="160"><template #default="{row}">{{ datasetName(row.datasetId) }}</template></el-table-column>
         <el-table-column label="版本" width="90"><template #default="{row}">v{{ row.version }}</template></el-table-column>
-        <el-table-column label="操作" width="130" align="right"><template #default="{row}"><div class="board-table-actions"><el-button link type="primary" tag="a" :href="workspaceHref(row.id)" @click.prevent="openWindow(row.id)">打开</el-button><ChartActions :chart="row" :disabled="busy" @action="command=>handleChartAction(command,row)"/></div></template></el-table-column>
+        <el-table-column label="操作" width="310" align="right"><template #default="{row}"><div class="board-table-actions"><el-button link type="primary" tag="a" :href="workspaceHref(row.id)" @click.prevent="openWindow(row.id)">打开</el-button><ChartActions :chart="row" :disabled="busy" @action="command=>handleChartAction(command,row)"/></div></template></el-table-column>
       </el-table>
       <el-empty v-else-if="!listLoading && !listError" :description="search.trim() || typeFilter!=='all' ? '没有找到匹配的图表' : '暂无有权查看的图表'" :image-size="100"><el-button v-if="search.trim() || typeFilter!=='all'" @click="clearFilters">清除筛选</el-button><el-button v-else v-hasPermi="['bi:chart:add']" type="primary" @click="newChart()">创建第一个图表</el-button></el-empty>
     </section>
@@ -35,7 +35,7 @@
     <el-alert v-if="standalone && !editorVisible && error" :title="error" type="error" :closable="false" show-icon><template #default><el-button @click="initialize">重新加载</el-button><el-button @click="closeEditor">返回图表管理</el-button></template></el-alert>
     <el-skeleton v-else-if="standalone && !editorVisible" :rows="10" animated/>
     <el-card v-if="editorVisible" class="editor-card">
-      <template #header><div class="toolbar"><span>{{ currentId ? '图表 · '+definition.name : '新建图表' }} <el-tag v-if="dirty" size="small" type="warning">未保存</el-tag><el-tag v-if="!editable" size="small" type="info">只读</el-tag></span><div class="toolbar"><el-button :icon="Close" :disabled="busy" @click="closeEditor">返回图表管理</el-button><el-button v-if="readOnly && canEditResource" :disabled="busy" @click="openWindow(currentId!, 'edit')">编辑图表</el-button><el-button :loading="previewing" :disabled="busy || !canPreview" @click="preview">更新数据</el-button><el-dropdown v-if="canGrantResource || canExportResource" trigger="click" :disabled="busy" @command="handleWorkspaceAction">
+      <template #header><div class="toolbar"><span>{{ currentId ? '图表 · '+definition.name : '新建图表' }} <el-tag v-if="dirty" size="small" type="warning">未保存</el-tag><el-tag v-if="!editable" size="small" type="info">只读</el-tag></span><div class="toolbar"><el-button :icon="Close" :disabled="busy" @click="closeEditor">返回图表管理</el-button><el-button v-if="readOnly && canEditResource" :disabled="busy" @click="openWindow(currentId!, 'edit')">编辑图表</el-button><el-button :loading="previewing" :disabled="busy || !canPreview" @click="preview(true)">更新数据</el-button><el-dropdown v-if="canGrantResource || canExportResource" trigger="click" :disabled="busy" @command="handleWorkspaceAction">
           <el-button :disabled="busy" :icon="MoreFilled" aria-label="更多图表操作">更多操作<el-icon class="el-icon--right"><ArrowDown/></el-icon></el-button>
           <template #dropdown><el-dropdown-menu>
             <el-dropdown-item v-if="canGrantResource" command="grant" :icon="Lock">图表授权</el-dropdown-item>
@@ -48,7 +48,7 @@
       <div class="query-status" role="status"><span>{{ lastQueryAt ? '数据更新于 '+lastQueryAt : '尚未查询' }}</span><span v-if="result">{{ result.rowCount }} 行 · {{ result.costMs }} ms</span><el-switch v-if="editable" v-model="autoQuery" active-text="自动查询"/></div>
       <div v-if="previewing || queryStopped" class="query-status" aria-live="polite"><span role="status">{{ previewing ? queryWaitMessage(queryElapsed) : '已停止等待并请求取消，可点击更新数据重新查询。' }}</span><el-button v-if="previewing" size="small" @click="stopQuery">停止等待</el-button><span v-if="previewing" class="query-wait-hint">停止时将请求服务端取消，部分驱动可能延迟生效。</span></div>
       <section v-if="readOnly" v-loading="previewing" class="chart-view-canvas"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-empty v-if="!canPreview" description="当前账号没有此图表的取数权限"/><ChartPreview v-else-if="!queryStopped && !error" :loading="previewing || loading" :definition="definition" :result="result" :labels="labels" :drillable="definition.type==='map'" :can-drill-down="result?.mapContext?.canDrillDown" @drill="mapDrill"/></section>
-      <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" :map-drillable="definition.type==='map'" :map-can-drill-down="result?.mapContext?.canDrillDown" @map-drill="mapDrill" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview"/>
+      <ChartEditorWorkspace v-else :definition="definition" :fields="fields" :datasets="datasets" :labels="labels" :result="result" :error="error" :loading="loading" :disabled="!editable" :busy="busy" :previewing="previewing" :can-preview="canPreview" :field-label="fieldLabel" :map-drillable="definition.type==='map'" :map-can-drill-down="result?.mapContext?.canDrillDown" @map-drill="mapDrill" @type-changed="typeChanged" @dataset-changed="datasetChanged" @set-dimension="setDimension" @add-metric="addMetric" @pick-metric="addMetricField" @remove-metric="removeMetric" @set-sort="setSort" @raw-table="rawTable" @ensure-scatter="ensureScatterMetrics" @pivot-fields="syncPivotFields" @preview="preview(true)"/>
     </el-card>
     <el-dialog v-model="grantDialog.visible" :title="'图表授权 · '+grantDialog.name" width="min(700px, calc(100vw - 24px))">
       <el-alert title="图表授权不自动授予数据集权限；使用者还需对应数据集的查看、查询及若依功能权限。" :closable="false" class="mb8"/>
@@ -63,6 +63,7 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
 import { listDatasets, type DatasetSummary } from '@/api/bi/dataset'
+import { chartConfigurationIssues } from '@/utils/biChartTypes'
 import { listCharts, getChart, saveChart, deleteChart, previewChart, savedChartData,previewMapChart, chartFields, searchChartPrincipals, listChartGrants, grantChart, revokeChartGrant, type ChartDefinition, type ChartSummary, type Field, type ChartResult } from '@/api/bi/chart'
 import { submitExport, type ExportFormat } from '@/api/bi/export'
 import type {DrillPathSegment} from '@/api/bi/dashboard'
@@ -118,7 +119,7 @@ const pageCharts=computed(()=>filteredCharts.value.slice((page.value-1)*pageSize
 watch([search,typeFilter],()=>page.value=1)
 function clearFilters(){search.value='';typeFilter.value='all'}
 function datasetName(id:number){return datasets.value.find(row=>row.id===id)?.name || '数据集 #'+id}
-function handleChartAction(command:string,row:ChartSummary){if(busy.value)return;if(command==='open')return openWindow(row.id,row.resourceActions.includes('edit') && checkPermi(['bi:chart:edit'])?'edit':'view');if(command==='grant' && row.resourceActions.includes('grant') && checkPermi(['bi:chart:grant']))return openGrants(row);if(command==='remove' && row.resourceActions.includes('remove') && checkPermi(['bi:chart:remove']))return removeChart(row)}
+function handleChartAction(command:string,row:ChartSummary){if(command==='refresh')return refresh();if(busy.value)return;if(command==='open')return openWindow(row.id,row.resourceActions.includes('edit') && checkPermi(['bi:chart:edit'])?'edit':'view');if(command==='grant' && row.resourceActions.includes('grant') && checkPermi(['bi:chart:grant']))return openGrants(row);if(command==='remove' && row.resourceActions.includes('remove') && checkPermi(['bi:chart:remove']))return removeChart(row)}
 async function closeEditor(){await router.push('/bi-admin/chart')}
 const definition=reactive<ChartDefinition>(empty())
 const charts=ref<ChartSummary[]>([]),datasets=ref<DatasetSummary[]>([]),fields=ref<Field[]>([]),result=ref<ChartResult|null>(null)
@@ -145,7 +146,7 @@ const labels=computed(()=>{const names:Record<string,string>={};for(const d of d
 watch(queryFingerprint,()=>{
   chartMapPath.value=[];mapRootName.value='';mapPathNames.value=[];revision++;queryRun.cancel();queryController?.abort();clearInterval(queryClock);queryStopped.value=false;previewing.value=false;result.value=null;error.value='';lastQueryAt.value=''
   clearTimeout(autoQueryTimer)
-  if(autoQuery.value && editorVisible.value && !loading.value)autoQueryTimer=setTimeout(()=>{if(canPreview.value)void preview()},500)
+  if(autoQuery.value && editorVisible.value && !loading.value)autoQueryTimer=setTimeout(()=>{if(canPreview.value && (readOnly.value || !chartConfigurationIssues(definition,fields.value).some(i=>i.severity==='error')))void preview()},500)
 })
 watch(autoQuery,enabled=>{clearTimeout(autoQueryTimer);if(enabled && canPreview.value && !result.value)void preview()})
 onDeactivated(()=>{clearTimeout(autoQueryTimer);if(previewing.value)stopQuery()})
@@ -231,7 +232,8 @@ function ensureScatterMetrics(){
     definition.query.metrics.push({field:pick.name,agg:'SUM',alias:nextChartMetricAlias(definition.query.metrics)})
   }
 }
-async function preview(){
+async function preview(bypassCache=false){
+  if(!readOnly.value){const issue=chartConfigurationIssues(definition,fields.value).find(i=>i.severity==='error');if(issue){ElMessage.warning(issue.message);return}}
   if(!definition.query.datasetId){ElMessage.warning('请选择数据集');return}
   const shape=validateChartQueryShape(definition.type,definition.query.dimensions,definition.query.metrics) || validatePivotConfig(definition) || validateMapConfig(definition) || validateTimeGrain(definition,fields.value)
   if(shape){ElMessage.warning(shape);return}
@@ -240,7 +242,7 @@ async function preview(){
   const controller=queryRun.begin();if(!controller)return;clearTimeout(autoQueryTimer);queryController=controller
   clearInterval(queryClock);queryElapsed.value=0;queryStopped.value=false;const started=Date.now();queryClock=setInterval(()=>{queryElapsed.value=Date.now()-started},1000)
   const snapshot=queryFingerprint(),r=revision;previewing.value=true;result.value=null;error.value=''
-  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal,definition.type==='map'?{drills:{chart:chartMapPath.value}}:undefined):definition.type==='map'?await previewMapChart(JSON.parse(fingerprint()),{drills:{chart:chartMapPath.value}},controller.signal):await previewChart(JSON.parse(snapshot),controller.signal);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value,controller.signal);if(latest.data.version!==version.value)throw {code:409}}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;if(response.data.mapContext){mapRootName.value=response.data.mapContext.rootName;mapPathNames.value=response.data.mapContext.breadcrumbs.map(v=>v.name)}lastQueryAt.value=new Date().toLocaleTimeString()}}
+  try {const response=currentId.value && snapshot===baselineQuery.value?await savedChartData(currentId.value,controller.signal,definition.type==='map'?{drills:{chart:chartMapPath.value}}:undefined,bypassCache):definition.type==='map'?await previewMapChart(JSON.parse(fingerprint()),{drills:{chart:chartMapPath.value}},controller.signal,bypassCache):await previewChart(JSON.parse(snapshot),controller.signal,bypassCache);if(currentId.value && snapshot===baselineQuery.value && !controller.signal.aborted){const latest=await getChart(currentId.value,controller.signal);if(latest.data.version!==version.value)throw {code:409}}if(!controller.signal.aborted && r===revision && snapshot===queryFingerprint()){result.value=response.data;if(response.data.mapContext){mapRootName.value=response.data.mapContext.rootName;mapPathNames.value=response.data.mapContext.breadcrumbs.map(v=>v.name)}lastQueryAt.value=new Date().toLocaleTimeString()}}
   catch(failure){if(!controller.signal.aborted && r===revision)error.value=queryErrorText(failure)}finally{if(queryRun.finish(controller)){clearInterval(queryClock);previewing.value=false}}
 }
 async function exportSaved(format:ExportFormat){
@@ -250,6 +252,7 @@ async function exportSaved(format:ExportFormat){
   finally{saving.value=false}
 }
 async function save(){
+  const issue=chartConfigurationIssues(definition,fields.value).find(i=>i.severity==='error');if(issue){ElMessage.warning(issue.message);return}
   const presentationError=validateChartMetricPresentation(definition) || validateTimeGrain(definition,fields.value);if(presentationError){ElMessage.warning(presentationError);return}
   if(!definition.name.trim()){ElMessage.warning('请填写图表名称');return}
   const snapshot=JSON.parse(fingerprint()) as ChartDefinition;snapshot.name=snapshot.name.trim();saving.value=true;error.value=''

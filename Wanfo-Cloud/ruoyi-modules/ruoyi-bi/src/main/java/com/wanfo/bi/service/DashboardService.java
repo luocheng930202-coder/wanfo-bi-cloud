@@ -38,6 +38,10 @@ public class DashboardService {
         public Publication {interaction=interaction==null?DashboardInteraction.empty():interaction;}
         public Publication(Integer schemaVersion,String name,List<PublishedPanel> panels){this(schemaVersion,name,panels,null,null,null,null);}
     }
+    private ResourceHistoryStore history;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureHistory(ResourceHistoryStore history){this.history=history;}
+    private void remember(BiDashboardDO row,String operation,int version){if(history!=null)history.record("dashboard",row.getId(),version,operation,row.getDefinitionJson(),"baseline".equals(operation)?row.getUpdateBy():actor());}
     private final BiDashboardMapper mapper;
     private final ChartDefinitionService charts;
     private final ChartQueryService queries;
@@ -102,6 +106,7 @@ public class DashboardService {
         var normalized=d.panels().stream().map(this::normalize).toList();DashboardContainers.validate(normalized,d.kind());
         return new Definition(1,d.name(),normalized,"screen".equals(d.kind())?"screen":"dashboard","screen".equals(d.kind())?"absolute":"grid",DashboardPresentation.normalize(d.appearance()),d.interaction(),DashboardPresentation.scene(d.kind(),d.scene()));
     }
+    void validateHistorical(Definition d){validate(normalize(d));}
     private List<PublishedPanel> validate(Definition d) {
         if(d==null || !Objects.equals(d.schemaVersion(),1) || d.name()==null || d.name().isBlank() || d.name().length()>200 || d.panels()==null || d.panels().size()>20)
             throw new IllegalArgumentException("看板须为 v1 定义，名称不超过 200 字符，最多 20 个图表");
@@ -153,27 +158,27 @@ public class DashboardService {
     public Map<String,Object> create(SaveRequest request) {
         caps.require("bi:dashboard:add");if(request==null)throw new IllegalArgumentException("看板定义不能为空");
         var d=normalize(request.definition());var panels=validate(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setCreateBy(actor());row.setUpdateBy(actor());
-        mapper.insert(row);resources.register("dashboard",row.getId());bindings(row.getId(),"draft",panels);return Map.of("id",row.getId(),"version",0);
+        mapper.insert(row);resources.register("dashboard",row.getId());bindings(row.getId(),"draft",panels);remember(row,"create",0);return Map.of("id",row.getId(),"version",0);
     }
     @Transactional
     public Map<String,Object> update(Long id,SaveRequest request) {
-        caps.require("bi:dashboard:edit");require(id,"edit");if(request==null)throw new IllegalArgumentException("看板定义不能为空");version(request.version());
+        caps.require("bi:dashboard:edit");var before=require(id,"edit");remember(before,"baseline",before.getVersion());if(request==null)throw new IllegalArgumentException("看板定义不能为空");version(request.version());
         var d=normalize(request.definition());var panels=validate(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setId(id);row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setVersion(request.version());row.setUpdateBy(actor());
-        updated(mapper.update(row));bindings(id,"draft",panels);return Map.of("id",id,"version",request.version()+1);
+        updated(mapper.update(row));bindings(id,"draft",panels);remember(row,"save",request.version()+1);return Map.of("id",id,"version",request.version()+1);
     }
     @Transactional
     public Map<String,Object> publish(Long id,Integer expected) {
-        caps.require("bi:dashboard:publish");var row=require(id,"publish");version(expected);
+        caps.require("bi:dashboard:publish");var row=require(id,"publish");remember(row,"baseline",row.getVersion());version(expected);
         if(!Objects.equals(row.getVersion(),expected))throw new BiAccessException(409,"草稿已改变，请重新打开后发布");
         var d=normalize(read(row.getDefinitionJson(),Definition.class));var panels=validate(d);if(panels.stream().noneMatch(p->!Boolean.TRUE.equals(p.layout().hidden())))throw new IllegalArgumentException("请先加入可见组件再发布");
         d=withInteraction(d,panels);
         for(var p:panels)if(p.chart()==null && ((p.layout().componentType().equals("text") && p.layout().content().text().isBlank()) || (p.layout().componentType().equals("image") && p.layout().content().image().isEmpty())))throw new IllegalArgumentException("请完善文本或图片内容后发布");
         String snapshot=json.writeValueAsString(new Publication(1,d.name(),panels,d.kind(),d.layout(),d.appearance(),d.interaction(),d.scene()));if(snapshot.length()>1048576)throw new IllegalArgumentException("发布快照超过 1M 字符，请减少组件或筛选条件");
-        updated(mapper.publish(id,expected,expected+1,snapshot,actor()));bindings(id,"published",panels);return Map.of("id",id,"version",expected+1,"revision",expected+1);
+        updated(mapper.publish(id,expected,expected+1,snapshot,actor()));bindings(id,"published",panels);remember(row,"publish",expected+1);return Map.of("id",id,"version",expected+1,"revision",expected+1);
     }
     @Transactional
     public Map<String,Object> unpublish(Long id,Integer expected) {
-        caps.require("bi:dashboard:publish");require(id,"publish");version(expected);updated(mapper.unpublish(id,expected,actor()));mapper.clearBindings(id,"published");return Map.of("version",expected+1);
+        caps.require("bi:dashboard:publish");var row=require(id,"publish");remember(row,"baseline",row.getVersion());version(expected);updated(mapper.unpublish(id,expected,actor()));mapper.clearBindings(id,"published");remember(row,"unpublish",expected+1);return Map.of("version",expected+1);
     }
     private BiDashboardDO published(Long id) {
         caps.require("bi:dashboard:consume");var row=require(id,"consume");

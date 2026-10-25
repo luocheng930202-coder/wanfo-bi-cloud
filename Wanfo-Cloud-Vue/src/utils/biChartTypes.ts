@@ -62,7 +62,7 @@ export function supportsDrill(type: ChartType): boolean {
   return !new Set<ChartType>(['table', 'pivot', 'map', 'geo-map', 'gauge','histogram']).has(type)
 }
 
-export function supportsSeriesDimension(type:ChartType):boolean { return ['bar','hbar','line','area','stack','percent','combo','heatmap','sunburst','sankey'].includes(type) }
+export function supportsSeriesDimension(type:ChartType):boolean { return ['bar','hbar','line','area','stack','percent','combo','heatmap','sunburst','sankey','treemap'].includes(type) }
 
 export function maxMetricsForType(type: ChartType): number {
   if (type === 'pivot') return 3
@@ -102,7 +102,8 @@ export function validateChartQueryShape(
   if(type==='heatmap')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'热力图需要两个分类维度和一个聚合指标'
   if(type==='sunburst')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要父级、子级两个维度和一个聚合指标'
   if(type==='sankey')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'桑基图需要来源、目标两个维度和一个聚合流量指标'
-  if(type==='treemap'||type==='waterfall')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:`${CHART_TYPE_LABELS[type]}需要一个维度和一个聚合指标`
+  if(type==='treemap')return (dimensions.length===1||(dimensions.length===2&&dimensions[0].field!==dimensions[1].field))&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'矩形树图需要一个或两个不同维度和一个聚合指标'
+  if(type==='waterfall')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'瀑布图需要一个维度和一个聚合指标'
   if(type==='boxplot')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'箱线图需要一个分类维度和一个未聚合数值字段'
   if (isMapLike(type)) {
     if (dimensions.length !== 1 || metrics.length !== 1) return '行政区地图须选择一个地区维度和一个度量'

@@ -61,14 +61,17 @@ public class SnapshotImportService {
     }
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes)throws Exception {return file(id,name,alias,filename,sheet,bytes,"replace",null);}
     public Map<String,Object> previewFile(Long id,String filename,String sheet,byte[] bytes)throws Exception {
-        authorize(id,filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel");var data=SnapshotParser.file(bytes,filename,sheet);
-        return Map.of("columns",data.columns(),"rows",data.rows().subList(0,Math.min(10,data.rows().size())),"rowCount",data.rows().size());
+        var old=authorize(id,filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel");var data=SnapshotParser.file(bytes,filename,sheet);
+        return Map.of("columns",data.columns(),"rows",data.rows().subList(0,Math.min(10,data.rows().size())),"rowCount",data.rows().size(),"existingColumns",old==null?List.of():registry.decode(old).columns());
     }
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes)throws Exception {return file(id,name,alias,filename,sheet,bytes,mode,columnTypes,"reject");}
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes,String invalidMode)throws Exception {
+        return file(id,name,alias,filename,sheet,bytes,mode,columnTypes,invalidMode,null,"none",null);
+    }
+    public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes,String invalidMode,String columnMapping,String dedupeMode,String dedupeKeys)throws Exception {
         String kind=filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel";
         var old=authorize(id,kind);
-        var data=SnapshotParser.file(bytes,filename,sheet);
+        var data=mapColumns(SnapshotParser.file(bytes,filename,sheet),columnMapping);
         if(columnTypes!=null && !columnTypes.isBlank()){
             if(columnTypes.length()>32768)throw new IllegalArgumentException("字段类型配置过大");
             Map<String,String> types=json.readValue(columnTypes,json.getTypeFactory().constructMapType(Map.class,String.class,String.class));
@@ -86,12 +89,45 @@ public class SnapshotImportService {
         data=new SnapshotData(data.columns(),validRows);
         if("append".equals(mode)){
             if(old==null)throw new IllegalArgumentException("追加需要选择已有文件数据源");
-            var prior=registry.decode(old);data=data.compatibleWith(prior);var rows=new ArrayList<List<String>>(prior.rows());rows.addAll(data.rows());data=new SnapshotData(prior.columns(),rows);
+            var prior=registry.decode(old);data=alignToSchema(data,prior).compatibleWith(prior);var rows=new ArrayList<List<String>>(prior.rows());rows.addAll(data.rows());data=new SnapshotData(prior.columns(),rows);
         }
+        else if(old!=null && !"replace-structure".equals(mode))data=alignToSchema(data,registry.decode(old));
+        var deduplicated=deduplicate(data,dedupeMode,dedupeKeys);data=deduplicated.data();
         String safe=filename.replace('\\','/');safe=safe.substring(safe.lastIndexOf('/')+1);
         if(safe.length()>200)safe=safe.substring(safe.length()-200);
         boolean structureChange="replace-structure".equals(mode);
-        Map<String,Object> result=new LinkedHashMap<>(publish(id,name,alias,kind,data,null,safe,old,structureChange));result.put("rejectedRows",rejected);result.put("rowErrors",errors);return result;
+        Map<String,Object> result=new LinkedHashMap<>(publish(id,name,alias,kind,data,null,safe,old,structureChange));result.put("rejectedRows",rejected);result.put("rowErrors",errors);result.put("duplicateRows",deduplicated.removed());return result;
+    }
+    private SnapshotData mapColumns(SnapshotData data,String mappingJson)throws Exception {
+        if(mappingJson==null||mappingJson.isBlank())return data;
+        if(mappingJson.length()>32768)throw new IllegalArgumentException("字段映射配置过大");
+        Map<String,String> mapping=json.readValue(mappingJson,json.getTypeFactory().constructMapType(Map.class,String.class,String.class));
+        Set<String> sourceNames=new HashSet<>(data.columns().stream().map(SnapshotData.Column::name).toList());if(!sourceNames.containsAll(mapping.keySet()))throw new IllegalArgumentException("字段映射包含不存在的源字段");
+        List<Integer> indexes=new ArrayList<>();List<SnapshotData.Column> columns=new ArrayList<>();Set<String> targets=new HashSet<>();
+        for(int i=0;i<data.columns().size();i++){
+            var source=data.columns().get(i);String target=mapping.getOrDefault(source.name(),source.name());if(target==null||target.isBlank())continue;target=target.trim();
+            String key=target.toLowerCase(Locale.ROOT);if(!targets.add(key))throw new IllegalArgumentException("多个源字段不能映射到同一个目标字段："+target);
+            indexes.add(i);columns.add(new SnapshotData.Column(target,source.type()));
+        }
+        if(columns.isEmpty())throw new IllegalArgumentException("至少保留一个目标字段");
+        List<List<String>> rows=data.rows().stream().map(row->{List<String> mapped=new ArrayList<>(indexes.size());for(Integer i:indexes)mapped.add(row.get(i));return mapped;}).toList();
+        return new SnapshotData(columns,rows);
+    }
+    private SnapshotData alignToSchema(SnapshotData incoming,SnapshotData schema){
+        List<String> names=schema.columns().stream().map(SnapshotData.Column::name).toList();Map<String,Integer> indexes=new HashMap<>();for(int i=0;i<incoming.columns().size();i++){String field=incoming.columns().get(i).name();if(!names.contains(field))throw new IllegalArgumentException("追加字段「"+field+"」未映射到已有结构；新增字段请使用结构替换");indexes.put(field,i);}
+        List<List<String>> rows=incoming.rows().stream().map(source->{List<String> aligned=new ArrayList<>(names.size());for(String name:names){Integer index=indexes.get(name);aligned.add(index==null?null:source.get(index));}return aligned;}).toList();
+        return new SnapshotData(schema.columns(),rows);
+    }
+    private record DedupeResult(SnapshotData data,int removed){}
+    private DedupeResult deduplicate(SnapshotData data,String mode,String keysJson)throws Exception {
+        String selected=mode==null||mode.isBlank()?"none":mode.trim();if(!Set.of("none","all-columns","keys").contains(selected))throw new IllegalArgumentException("去重策略无效");
+        if("none".equals(selected))return new DedupeResult(data,0);
+        List<String> keys;
+        if("all-columns".equals(selected))keys=data.columns().stream().map(SnapshotData.Column::name).toList();
+        else {if(keysJson==null||keysJson.isBlank()||keysJson.length()>8192)throw new IllegalArgumentException("请选择去重键字段");keys=json.readValue(keysJson,json.getTypeFactory().constructCollectionType(List.class,String.class));if(keys.isEmpty()||!data.columns().stream().map(SnapshotData.Column::name).toList().containsAll(keys)||new HashSet<>(keys).size()!=keys.size())throw new IllegalArgumentException("去重键包含重复或不存在的字段");}
+        List<String> names=data.columns().stream().map(SnapshotData.Column::name).toList();List<Integer> indexes=keys.stream().map(names::indexOf).toList();
+        LinkedHashMap<List<String>,List<String>> unique=new LinkedHashMap<>();for(List<String> row:data.rows()){List<String> key=indexes.stream().map(row::get).toList();unique.remove(key);unique.put(key,row);}
+        int removed=data.rows().size()-unique.size();return new DedupeResult(new SnapshotData(data.columns(),new ArrayList<>(unique.values())),removed);
     }
     private BiSourceSnapshotMapper.Row authorize(Long id,String kind){
         capabilities.require(id==null?"bi:datasource:add":"bi:datasource:edit");

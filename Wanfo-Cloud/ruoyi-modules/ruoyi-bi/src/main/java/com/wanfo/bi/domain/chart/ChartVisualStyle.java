@@ -220,4 +220,18 @@ public class ChartVisualStyle {
     private java.util.List<String> mapPieceColors;
     public java.util.List<String> getMapPieceColors(){return mapPieceColors;}
     public void setMapPieceColors(java.util.List<String> v){mapPieceColors=v;}
+    private String heatmapLowColor,heatmapHighColor;
+    private Boolean heatmapShowScale,treemapShowBreadcrumb,boxplotHorizontal,waterfallShowTotal;
+    private Integer treemapLeafDepth,sankeyNodeGap,histogramBins;
+    private Double sankeyCurveness;
+    public String getHeatmapLowColor(){return heatmapLowColor;} public void setHeatmapLowColor(String v){heatmapLowColor=v;}
+    public String getHeatmapHighColor(){return heatmapHighColor;} public void setHeatmapHighColor(String v){heatmapHighColor=v;}
+    public Boolean getHeatmapShowScale(){return heatmapShowScale;} public void setHeatmapShowScale(Boolean v){heatmapShowScale=v;}
+    public Integer getTreemapLeafDepth(){return treemapLeafDepth;} public void setTreemapLeafDepth(Integer v){treemapLeafDepth=v;}
+    public Boolean getTreemapShowBreadcrumb(){return treemapShowBreadcrumb;} public void setTreemapShowBreadcrumb(Boolean v){treemapShowBreadcrumb=v;}
+    public Integer getSankeyNodeGap(){return sankeyNodeGap;} public void setSankeyNodeGap(Integer v){sankeyNodeGap=v;}
+    public Double getSankeyCurveness(){return sankeyCurveness;} public void setSankeyCurveness(Double v){sankeyCurveness=v;}
+    public Boolean getBoxplotHorizontal(){return boxplotHorizontal;} public void setBoxplotHorizontal(Boolean v){boxplotHorizontal=v;}
+    public Integer getHistogramBins(){return histogramBins;} public void setHistogramBins(Integer v){histogramBins=v;}
+    public Boolean getWaterfallShowTotal(){return waterfallShowTotal;} public void setWaterfallShowTotal(Boolean v){waterfallShowTotal=v;}
 }

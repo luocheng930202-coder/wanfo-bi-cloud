@@ -119,4 +119,9 @@ class ChartStyleValidatorTest {
         s.setMapPieceColors(java.util.List.of("url(x)","#FFFFFF"));assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(s,"map"));
         s.setMapPieceColors(java.util.Arrays.asList(null,null));assertDoesNotThrow(()->ChartStyleValidator.validate(s,"map"));
     }
+    @Test void specializedChartStylesRoundtripAndEnforceBounds() {
+        var s=new ChartVisualStyle();s.setHeatmapLowColor("#E8F3FF");s.setHeatmapHighColor("#2864DC");s.setHeatmapShowScale(false);s.setTreemapLeafDepth(2);s.setTreemapShowBreadcrumb(false);s.setSankeyNodeGap(20);s.setSankeyCurveness(.75);s.setBoxplotHorizontal(true);s.setHistogramBins(12);s.setWaterfallShowTotal(true);
+        var mapper=new ObjectMapper();var restored=mapper.readValue(mapper.writeValueAsString(s),ChartVisualStyle.class);assertDoesNotThrow(()->ChartStyleValidator.validate(restored,"heatmap"));assertEquals(12,restored.getHistogramBins());assertTrue(restored.getBoxplotHorizontal());assertFalse(restored.getTreemapShowBreadcrumb());
+        restored.setSankeyCurveness(1.1);assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"sankey"));restored.setSankeyCurveness(.5);restored.setHistogramBins(51);assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"histogram"));
+    }
 }

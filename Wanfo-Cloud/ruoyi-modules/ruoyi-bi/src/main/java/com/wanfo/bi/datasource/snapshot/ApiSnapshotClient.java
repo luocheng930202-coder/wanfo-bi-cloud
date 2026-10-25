@@ -10,7 +10,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ApiSnapshotClient {
     private final Set<String> origins;
-    public record Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath){}
+    public record Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath,String cursorParam,String nextCursorPath,String initialCursor){
+        public Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath){this(pageParam,sizeParam,pageSize,startPage,maxPages,totalPath,null,null,null);}
+    }
     public record OAuth(String tokenUrl,String clientId,String clientSecret,String scope,String tokenField){}
     public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth){
         public Config(String url,String path,Map<String,String> headers){this(url,path,headers,null,"GET",null,false,null);}

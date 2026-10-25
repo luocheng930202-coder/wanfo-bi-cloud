@@ -86,9 +86,9 @@
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="质量检查" name="quality">
-        <div class="quality-toolbar"><span>基于当前权限可见的最多 100 行样本</span><el-button :loading="qualityLoading" @click="loadQuality">运行检查</el-button></div>
-        <el-alert v-if="quality" type="info" :closable="false" :title="`${quality.sampledRows} 行样本 · ${quality.duplicateRows} 行重复 · ${quality.note}`" />
-        <el-table v-if="quality" :data="quality.columns" border size="small" class="mt8"><el-table-column prop="field" label="字段"/><el-table-column prop="nullCount" label="空值" width="90"/><el-table-column label="空值率" width="110"><template #default="{row}">{{ (row.nullRate*100).toFixed(1) }}%</template></el-table-column><el-table-column prop="distinctCount" label="不同值" width="100"/><el-table-column prop="duplicateValueCount" label="重复值" width="100"/></el-table>
+        <div class="quality-toolbar"><span>规则和结果仅覆盖当前权限可见的最多 100 行样本</span><div><el-button v-if="quality" v-hasPermi="['bi:datasource:model']" :loading="savingRules" @click="saveQualityRules">保存规则</el-button><el-button :loading="qualityLoading" @click="loadQuality">运行检查</el-button></div></div>
+        <el-alert v-if="quality" :type="quality.qualityStatus==='failed'?'warning':'info'" :closable="false" :title="`${quality.sampledRows} 行样本 · ${quality.duplicateRows} 行重复 · ${quality.ruleFailureCount} 项规则问题 · ${quality.ruleNote}`" />
+        <el-table v-if="quality" :data="qualityRuleRows" border size="small" class="mt8"><el-table-column prop="field" label="字段" min-width="130"/><el-table-column label="必填" width="90"><template #default="{row}"><el-switch v-model="row.required"/></template></el-table-column><el-table-column label="唯一值" width="100"><template #default="{row}"><el-switch v-model="row.unique"/></template></el-table-column><el-table-column label="最大空值率" width="180"><template #default="{row}"><el-input-number v-model="row.maxNullRate" :min="0" :max="1" :step="0.05" :precision="2" :controls="false" placeholder="关闭"/><small>0～1</small></template></el-table-column><el-table-column label="抽样检查" width="125"><template #default="{row}"><el-tag v-if="row.qualityStatus==='failed'" type="danger">未通过</el-tag><el-tag v-else-if="row.qualityStatus==='passed'" type="success">通过</el-tag><el-tag v-else type="info">未配置</el-tag></template></el-table-column><el-table-column label="问题" min-width="150"><template #default="{row}">{{ row.violations?.join('、')||'—' }}</template></el-table-column><el-table-column prop="nullCount" label="空值" width="75"/><el-table-column label="空值率" width="90"><template #default="{row}">{{ (row.nullRate*100).toFixed(1) }}%</template></el-table-column><el-table-column prop="distinctCount" label="不同值" width="90"/></el-table>
       </el-tab-pane>
     </el-tabs>
   </el-dialog>
@@ -97,7 +97,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getDataset, getDatasetQuality, listTables, listColumns, listModelSources, getDatasetModel, applyDatasetJoin, clearDatasetJoin, addCalculatedField, removeCalculatedField, updateDatasetField, type DatasetField, type CatalogTable, type CatalogColumn, type DatasetJoinModel } from '@/api/bi/dataset'
+import { getDataset, getDatasetQuality, getDatasetQualityRules, saveDatasetQualityRules, listTables, listColumns, listModelSources, getDatasetModel, applyDatasetJoin, clearDatasetJoin, addCalculatedField, removeCalculatedField, updateDatasetField, type DatasetField, type CatalogTable, type CatalogColumn, type DatasetJoinModel, type DatasetQualityRule, type DatasetQualityColumn } from '@/api/bi/dataset'
 
 const props = defineProps<{ visible: boolean; datasetId: number; name: string }>()
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void; (e: 'saved'): void }>()
@@ -115,8 +115,10 @@ const join = reactive<DatasetJoinModel>({ joinType: 'LEFT', rightTable: '', left
 const calc = reactive({ originName: '', showName: '', formula: '', dimFlag: '1' })
 const calcFields = computed(() => leftFields.value.filter(f => f.extFlag === '1'))
 const physicalFields = computed(() => leftFields.value.filter(f => f.extFlag !== '1'))
-const quality=ref<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;columns:{field:string;nullCount:number;nonNullCount:number;distinctCount:number;duplicateValueCount:number;nullRate:number}[]}>(),qualityLoading=ref(false)
-async function loadQuality(){qualityLoading.value=true;try{quality.value=(await getDatasetQuality(props.datasetId)).data}catch{ElMessage.error('质量检查失败，请确认数据集查询权限及数据源状态')}finally{qualityLoading.value=false}}
+const quality=ref<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;ruleNote:string;qualityStatus:string;ruleFailureCount:number;columns:DatasetQualityColumn[]}>(),qualityLoading=ref(false),savingRules=ref(false)
+const qualityRuleRows=ref<(DatasetQualityRule&DatasetQualityColumn)[]>([])
+async function loadQuality(){if(qualityLoading.value)return;qualityLoading.value=true;try{const [report,saved]=await Promise.all([getDatasetQuality(props.datasetId),getDatasetQualityRules(props.datasetId)]);quality.value=report.data;const configured=new Map((saved.data||[]).map(rule=>[rule.field,rule]));qualityRuleRows.value=report.data.columns.map(column=>({...column,required:configured.get(column.field)?.required||false,unique:configured.get(column.field)?.unique||false,maxNullRate:configured.get(column.field)?.maxNullRate??undefined}))}catch{ElMessage.error('质量检查失败，请确认数据集查询权限及数据源状态')}finally{qualityLoading.value=false}}
+async function saveQualityRules(){if(savingRules.value)return;savingRules.value=true;try{const rules=qualityRuleRows.value.filter(row=>row.required||row.unique||row.maxNullRate!==undefined&&row.maxNullRate!==null).map(row=>({field:row.field,required:row.required,unique:row.unique,maxNullRate:row.maxNullRate}));await saveDatasetQualityRules(props.datasetId,rules);ElMessage.success('质量规则已保存');await loadQuality()}catch(e){ElMessage.error(e instanceof Error?e.message:'规则保存失败')}finally{savingRules.value=false}}
 
 async function saveFieldLabel(row: DatasetField) {
   if (!row.id || !props.datasetId) return

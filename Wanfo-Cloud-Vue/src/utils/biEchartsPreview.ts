@@ -331,7 +331,11 @@ export function buildChartPreviewOption(params: {
     const mean=indexedValues.length?indexedValues.reduce((sum,entry)=>sum+entry.value,0)/indexedValues.length:0
     const deviation=indexedValues.length?Math.sqrt(indexedValues.reduce((sum,entry)=>sum+(entry.value-mean)**2,0)/indexedValues.length):0
     const sensitivity=Math.max(1,Math.min(4,analysis?.anomalySensitivity??2))
-    const anomalyPoints=analysis?.anomalyDetection && deviation>0?indexedValues.filter(entry=>Math.abs(entry.value-mean)>=sensitivity*deviation).map(entry=>({coord:[categories[entry.i],entry.value],name:`异常点（${sensitivity}σ）`,value:entry.value,itemStyle:{color:'#e5484d'}})):[]
+    const anomalyMethod=analysis?.anomalyMethod||'stddev',sortedValues=indexedValues.map(entry=>entry.value).sort((a,b)=>a-b),median=(values:number[])=>values.length%2?values[Math.floor(values.length/2)]:(values[values.length/2-1]+values[values.length/2])/2
+    const center=anomalyMethod==='mad'&&sortedValues.length?median(sortedValues):mean
+    const mad=anomalyMethod==='mad'&&sortedValues.length?median(sortedValues.map(value=>Math.abs(value-center)).sort((a,b)=>a-b)):0
+    const spread=anomalyMethod==='mad'?1.4826*mad:deviation
+    const anomalyPoints=analysis?.anomalyDetection && spread>0?indexedValues.filter(entry=>Math.abs(entry.value-center)>=sensitivity*spread).map(entry=>({coord:[categories[entry.i],entry.value],name:anomalyMethod==='mad'?`异常点（稳健 ${sensitivity}×MAD）`:`异常点（${sensitivity}σ）`,value:entry.value,itemStyle:{color:'#e5484d'}})):[]
     const original=result.timeComparison?.fields.find(f=>f.baseline===key)?.key
     const originalKeys=keys.filter(k=>!comparisonBase(k))
     const pairColor=result.timeComparison?style?.metrics?.find(m=>m.key===(original||key))?.color || palette[Math.max(0,originalKeys.indexOf(original||key))%palette.length]:undefined
@@ -380,9 +384,14 @@ export function buildChartPreviewOption(params: {
     const value=(row:Record<string,unknown>,key:string)=>readNumber(row[key])??0
     if(type==='heatmap'){
       const xs=[...new Set(result.rows.map(r=>field(r,d0)))],ys=[...new Set(result.rows.map(r=>field(r,d1)))],data=result.rows.map(r=>[xs.indexOf(field(r,d0)),ys.indexOf(field(r,d1)),value(r,k0)])
-      return {...base,tooltip:{...base.tooltip as object,trigger:'item',formatter:(p:any)=>`${xs[p.value[0]]} · ${ys[p.value[1]]}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[2])}`},grid:{left:55,right:25,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{type:'category',data:xs,axisLabel:{color:textColor}},yAxis:{type:'category',data:ys,axisLabel:{color:textColor}},visualMap:{min:Math.min(...data.map((v:any)=>v[2])),max:Math.max(...data.map((v:any)=>v[2]))||1,calculable:true,orient:'horizontal',left:'center',bottom:4},series:[{type:'heatmap',data,label:{show:style?.showLabels??false},emphasis:{itemStyle:{shadowBlur:8}}}]} as EChartsOption
+      return {...base,tooltip:{...base.tooltip as object,trigger:'item',formatter:(p:any)=>`${xs[p.value[0]]} · ${ys[p.value[1]]}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[2])}`},grid:{left:55,right:25,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{type:'category',data:xs,axisLabel:{color:textColor}},yAxis:{type:'category',data:ys,axisLabel:{color:textColor}},visualMap:{min:Math.min(...data.map((v:any)=>v[2])),max:Math.max(...data.map((v:any)=>v[2]))||1,calculable:true,show:style?.heatmapShowScale!==false,orient:'horizontal',left:'center',bottom:4,inRange:{color:[style?.heatmapLowColor||'#E8F3FF',style?.heatmapHighColor||'#2864DC']}},series:[{type:'heatmap',data,label:{show:style?.showLabels??false},emphasis:{itemStyle:{shadowBlur:8}}}]} as EChartsOption
     }
-    if(type==='treemap')return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data:result.rows.map(r=>({name:field(r,d0),value:value(r,k0)})),roam:true,leafDepth:1,visibleMin:10,upperLabel:{show:true,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:true}}]} as EChartsOption
+    if(type==='treemap'){
+      let data:any[]
+      if(d1){const parents=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>();for(const row of result.rows){const parentName=field(row,d0),childName=field(row,d1),v=value(row,k0);let parent=parents.get(parentName);if(!parent){parent={name:parentName,value:0,children:new Map()};parents.set(parentName,parent)}parent.value+=v;const child=parent.children.get(childName)||{name:childName,value:0};child.value+=v;parent.children.set(childName,child)}data=[...parents.values()].map(parent=>({name:parent.name,value:parent.value,children:[...parent.children.values()]}))}
+      else data=result.rows.map(r=>({name:field(r,d0),value:value(r,k0)}))
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data,roam:true,leafDepth:style?.treemapLeafDepth??1,visibleMin:10,upperLabel:{show:!!d1,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:style?.treemapShowBreadcrumb!==false}}]} as EChartsOption
+    }
     if(type==='sunburst'){
       const root=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>()
       for(const row of result.rows){const a=field(row,d0),b=field(row,d1),v=value(row,k0);let parent=root.get(a);if(!parent){parent={name:a,value:0,children:new Map()};root.set(a,parent)}parent.value+=v;const child=parent.children.get(b)||{name:b,value:0};child.value+=v;parent.children.set(b,child)}
@@ -392,21 +401,24 @@ export function buildChartPreviewOption(params: {
     if(type==='sankey'){
       const edges=new Map<string,{source:string;target:string;value:number}>(),nodes=new Set<string>()
       for(const row of result.rows){const source=field(row,d0),target=field(row,d1),id=source+'\u0000'+target;nodes.add(source);nodes.add(target);const edge=edges.get(id)||{source,target,value:0};edge.value+=value(row,k0);edges.set(id,edge)}
-      return {...base,tooltip:{trigger:'item'},series:[{type:'sankey',data:[...nodes].map(name=>({name})),links:[...edges.values()],emphasis:{focus:'adjacency'},lineStyle:{curveness:.5,opacity:.45},label:{color:textColor}}]} as EChartsOption
+      return {...base,tooltip:{trigger:'item'},series:[{type:'sankey',data:[...nodes].map(name=>({name})),links:[...edges.values()],nodeGap:style?.sankeyNodeGap??10,emphasis:{focus:'adjacency'},lineStyle:{curveness:style?.sankeyCurveness??.5,opacity:.45},label:{color:textColor}}]} as EChartsOption
     }
     if(type==='waterfall'){
       let cumulative=0;const categories=result.rows.map(r=>field(r,d0)),baseValues:number[]=[],changes:number[]=[]
       for(const row of result.rows){const delta=value(row,k0);baseValues.push(delta>=0?cumulative:cumulative+delta);changes.push(Math.abs(delta));cumulative+=delta}
-      return {...base,tooltip:{trigger:'axis'},xAxis:{...categoryXAxis,data:categories},yAxis:valueYAxis,series:[{name:'累计偏移',type:'bar',stack:'waterfall',itemStyle:{color:'transparent',borderColor:'transparent'},emphasis:{itemStyle:{color:'transparent'}},data:baseValues},{name:labels[k0]||k0,type:'bar',stack:'waterfall',data:changes,label:{show:style?.showLabels??false,position:'top'}}]} as EChartsOption
+      if(style?.waterfallShowTotal){categories.push('总计');baseValues.push(0);changes.push(cumulative)}
+      const waterfallData=style?.waterfallShowTotal?[...changes.slice(0,-1),{value:cumulative,itemStyle:{color:cumulative>=0?'#16A34A':'#DC2626'}}]:changes
+      return {...base,tooltip:{trigger:'axis'},xAxis:{...categoryXAxis,data:categories},yAxis:valueYAxis,series:[{name:'累计偏移',type:'bar',stack:'waterfall',itemStyle:{color:'transparent',borderColor:'transparent'},emphasis:{itemStyle:{color:'transparent'}},data:baseValues},{name:labels[k0]||k0,type:'bar',stack:'waterfall',data:waterfallData,label:{show:style?.showLabels??false,position:'top'}}]} as EChartsOption
     }
     if(type==='boxplot'){
       const groups=new Map<string,number[]>();for(const row of result.rows){const n=readNumber(row[k0]);if(n!=null){const name=field(row,d0);groups.set(name,[...(groups.get(name)||[]),n])}}
       const quantile=(a:number[],q:number)=>{const pos=(a.length-1)*q,lo=Math.floor(pos),fraction=pos-lo;return a[lo]+(a[Math.min(lo+1,a.length-1)]-a[lo])*fraction}
       const names=[...groups.keys()],data=names.map(name=>{const a=groups.get(name)!.sort((x,y)=>x-y);return [a[0],quantile(a,.25),quantile(a,.5),quantile(a,.75),a[a.length-1]]})
-      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>最小 / Q1 / 中位 / Q3 / 最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{...categoryXAxis,data:names},yAxis:valueYAxis,series:[{type:'boxplot',name:labels[k0]||k0,data,itemStyle:{borderWidth:2}}]} as EChartsOption
+      const valueAxis=style?.boxplotHorizontal?{...categoryXAxis,type:'value' as const}:valueYAxis,categoryAxis=style?.boxplotHorizontal?{...valueYAxis,type:'category' as const,data:names}:{...categoryXAxis,data:names}
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>最小 / Q1 / 中位 / Q3 / 最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:style?.boxplotHorizontal?valueAxis:categoryAxis,yAxis:style?.boxplotHorizontal?categoryAxis:valueAxis,series:[{type:'boxplot',name:labels[k0]||k0,data,layout:style?.boxplotHorizontal?'horizontal':'vertical',itemStyle:{borderWidth:2}}]} as EChartsOption
     }
     if(type==='histogram'){
-      const nums=result.rows.map(r=>readNumber(r[k0])).filter((n):n is number=>n!=null);if(!nums.length)throw new Error('直方图没有可用的数值');const min=Math.min(...nums),max=Math.max(...nums),count=Math.min(20,Math.max(1,Math.ceil(Math.sqrt(nums.length)))),step=(max-min||1)/count,bins=Array.from({length:count},(_,i)=>({name:`${(min+i*step).toPrecision(4)}–${(min+(i+1)*step).toPrecision(4)}`,value:0}));for(const n of nums)bins[Math.min(count-1,Math.floor((n-min)/(step||1)))].value++
+      const nums=result.rows.map(r=>readNumber(r[k0])).filter((n):n is number=>n!=null);if(!nums.length)throw new Error('直方图没有可用的数值');const min=Math.min(...nums),max=Math.max(...nums),count=style?.histogramBins?Math.min(50,Math.max(1,style.histogramBins)):Math.min(20,Math.max(1,Math.ceil(Math.sqrt(nums.length)))),step=(max-min||1)/count,bins=Array.from({length:count},(_,i)=>({name:`${(min+i*step).toPrecision(4)}–${(min+(i+1)*step).toPrecision(4)}`,value:0}));for(const n of nums)bins[Math.min(count-1,Math.floor((n-min)/(step||1)))].value++
       return {...base,tooltip:{trigger:'axis'},xAxis:{...categoryXAxis,data:bins.map(b=>b.name),axisLabel:{...categoryXAxis.axisLabel,rotate:30}},yAxis:{...valueYAxis,name:'频数'},series:[{type:'bar',name:'频数',data:bins.map(b=>b.value),barMaxWidth:40}]} as EChartsOption
     }
     if(type==='geo-map'){

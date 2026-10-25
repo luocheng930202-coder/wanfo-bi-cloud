@@ -141,9 +141,13 @@ export function getDataset(id: number): Promise<AjaxResult<DatasetDetail>> {
   })
 }
 
-export function getDatasetQuality(id:number):Promise<AjaxResult<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;columns:{field:string;nullCount:number;nonNullCount:number;distinctCount:number;duplicateValueCount:number;nullRate:number}[]}>>{
+export interface DatasetQualityRule {field:string;required:boolean;unique:boolean;maxNullRate?:number|null}
+export interface DatasetQualityColumn {field:string;nullCount:number;nonNullCount:number;distinctCount:number;duplicateValueCount:number;nullRate:number;violations:string[];qualityStatus:'passed'|'failed'|'unconfigured'}
+export function getDatasetQuality(id:number):Promise<AjaxResult<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;ruleNote:string;qualityStatus:string;ruleFailureCount:number;columns:DatasetQualityColumn[]}>>{
   return request({url:`/bi/dataset/${id}/quality`,method:'get'})
 }
+export function getDatasetQualityRules(id:number):Promise<AjaxResult<DatasetQualityRule[]>>{return request({url:`/bi/dataset/${id}/quality/rules`,method:'get'})}
+export function saveDatasetQualityRules(id:number,rules:DatasetQualityRule[]):Promise<AjaxResult<DatasetQualityRule[]>>{return request({url:`/bi/dataset/${id}/quality/rules`,method:'put',data:{rules}})}
 
 export interface TableDatasetFieldInput {
   name: string

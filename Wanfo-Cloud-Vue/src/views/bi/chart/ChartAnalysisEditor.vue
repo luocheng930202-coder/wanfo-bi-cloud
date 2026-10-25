@@ -29,8 +29,9 @@
       <el-form-item label="趋势拟合"><el-select v-model="analysis.trendMethod" clearable placeholder="关闭"><el-option value="linear" label="线性回归"/><el-option value="moving-average" label="3 点移动平均"/></el-select></el-form-item>
       <el-form-item v-if="analysis.trendMethod==='linear'" label="线性外推周期"><el-input-number v-model="analysis.forecastPeriods" :min="0" :max="12" :precision="0"/><small class="hint">0 表示不外推；按结果顺序把类别索引作为等间距时间。</small></el-form-item>
       <el-form-item label="异常点检测"><el-switch v-model="analysis.anomalyDetection"/></el-form-item>
-      <el-form-item v-if="analysis.anomalyDetection" label="标准差阈值"><el-input-number v-model="analysis.anomalySensitivity" :min="1" :max="4" :step="0.5"/></el-form-item>
-      <small class="hint">趋势使用当前已查询序列；异常点按总体均值 ± k×总体标准差标记。季节性和置信区间不在此口径内。</small>
+      <el-form-item v-if="analysis.anomalyDetection" label="异常检测算法"><el-select v-model="analysis.anomalyMethod"><el-option value="stddev" label="均值与标准差"/><el-option value="mad" label="中位数与 MAD（稳健）"/></el-select></el-form-item>
+      <el-form-item v-if="analysis.anomalyDetection" :label="analysis.anomalyMethod==='mad'?'MAD 阈值':'标准差阈值'"><el-input-number v-model="analysis.anomalySensitivity" :min="1" :max="4" :step="0.5"/></el-form-item>
+      <small class="hint">趋势只拟合当前已查询序列，外推按类别等间距处理。MAD 使用 1.4826×中位绝对偏差缩放；季节性预测和置信区间暂不提供。</small>
     </template>
   </section>
 </template>

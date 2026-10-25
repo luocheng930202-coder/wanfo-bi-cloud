@@ -151,11 +151,11 @@ export function revokeResource(id: number, principalId: number, action: string):
   return request({ url: `/bi/datasource/${id}/grants/${principalId}/${action}`, method: 'delete' })
 }
 
-export interface ApiPagination {pageParam:string;sizeParam:string;pageSize:number;startPage:number;maxPages:number;totalPath:string}
+export interface ApiPagination {pageParam:string;sizeParam:string;pageSize:number;startPage:number;maxPages:number;totalPath:string;cursorParam?:string;nextCursorPath?:string;initialCursor?:string}
 export function importApiSource(data: {id?:number;name:string;schemaName:string;url:string;dataPath:string;headers?:Record<string,string>;pagination?:ApiPagination;refreshMinutes?:number;method?:string;body?:Record<string,unknown>;flatten?:boolean;oauth?:{tokenUrl:string;clientId:string;clientSecret:string;scope:string;tokenField:string}}): Promise<AjaxResult<{id:number;rowCount:number}>> {
   return request({url:'/bi/datasource/import/api',method:'post',data,timeout:30000,headers:{repeatSubmit:false}})
 }
-export function importFileSource(data: FormData): Promise<AjaxResult<{id:number;rowCount:number;rejectedRows?:number;rowErrors?:{row:number;message:string}[]}>> {
+export function importFileSource(data: FormData): Promise<AjaxResult<{id:number;rowCount:number;rejectedRows?:number;duplicateRows?:number;rowErrors?:{row:number;message:string}[]}>> {
   return request({url:'/bi/datasource/import/file',method:'post',data,timeout:30000,headers:{'Content-Type':'multipart/form-data',repeatSubmit:false}})
 }
 export function snapshotSourceInfo(id:number): Promise<AjaxResult<{url?:string;dataPath?:string;rowCount:number;version:number;pagination?:ApiPagination|null;method?:string;body?:Record<string,unknown>|null;flatten?:boolean;oauth?:{tokenUrl:string;clientId:string;scope:string;tokenField:string;secretSet:boolean};schedule?:{intervalMinutes:number;nextRun?:string;lastStatus?:string}|null}>> {
@@ -165,7 +165,7 @@ export function refreshApiSource(id:number): Promise<AjaxResult<{rowCount:number
   return request({url:`/bi/datasource/import/${id}/refresh`,method:'post',timeout:30000})
 }
 
-export interface FileSourcePreview {columns:{name:string;type:string}[];rows:(string|null)[][];rowCount:number}
+export interface FileSourcePreview {columns:{name:string;type:string}[];existingColumns:{name:string;type:string}[];rows:(string|null)[][];rowCount:number}
 export function previewFileSource(data:FormData):Promise<AjaxResult<FileSourcePreview>> {
   return request({url:'/bi/datasource/import/file/preview',method:'post',data,timeout:30000,headers:{'Content-Type':'multipart/form-data',repeatSubmit:false}})
 }

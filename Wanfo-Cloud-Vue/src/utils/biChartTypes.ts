@@ -144,11 +144,20 @@ export function chartConfigurationIssues(definition:import('@/api/bi/chart').Cha
   const issues:ChartConfigurationIssue[]=[]
   const add=(code:string,path:string,message:string,severity:'error'|'warning'='error')=>issues.push({code,path,message,severity})
   const query=definition.query, type=definition.type
+  const analysis=definition.advanced?.analysis
   if(!query.datasetId)add('dataset','datasetId','请选择数据集')
   const shape=validateChartQueryShape(type,query.dimensions,query.metrics)
   if(shape && query.metrics.length>0 && query.metrics.length<=maxMetricsForType(type))add('shape','roles',shape)
   if(!query.metrics.length && !query.dimensions.length && !['table','pivot','gauge','scatter','histogram','geo-map'].includes(type))add('dimension','dimensions','请选择分类维度')
   if(!query.metrics.length || query.metrics.length>maxMetricsForType(type))add('metrics','metrics',`请选择 1～${maxMetricsForType(type)} 个${type==='table'?'展示字段':'指标'}`)
+  if(analysis?.trendMethod==='seasonal'){
+    const dimension=query.dimensions[0]
+    if(!['line','area'].includes(type)||query.dimensions.length!==1||!dimension?.timeGrain||!['null','zero'].includes(dimension.timeFill||'')||query.metrics.length!==1||query.metrics[0]?.agg==='NONE'||query.timeComparison||query.topN)add('forecast-roles','analysis','季节性预测要求单一时间粒度、聚合指标，并明确缺失周期处理；需关闭同比环比和 TopN')
+    if(!Number.isInteger(analysis.seasonLength)||(analysis.seasonLength??0)<2||(analysis.seasonLength??0)>366)add('forecast-season','analysis.seasonLength','请将季节长度设为 2～366 个周期')
+    if(!Number.isInteger(analysis.forecastPeriods)||(analysis.forecastPeriods??0)<1||(analysis.forecastPeriods??0)>12)add('forecast-periods','analysis.forecastPeriods','预测周期须为 1～12')
+    if(!['80','90','95'].includes(analysis.forecastConfidence||''))add('forecast-confidence','analysis.forecastConfidence','请选择 80%、90% 或 95% 经验区间')
+    if((analysis.forecastMetricDefinition||'').trim().length<10)add('forecast-definition','analysis.forecastMetricDefinition','请填写至少 10 字的业务指标口径说明')
+  }
   const known=new Map(fields.map(f=>[f.name,f]))
   const numeric=(field:string)=>/(int|decimal|numeric|float|double|real|number)/i.test(known.get(field)?.type || '')
   const exists=(field:string,path:string)=>{if(!field || !known.has(field)){add('field',path,field?`字段「${field}」已失效或无权使用，请重新选择`:'请选择字段');return false}return true}

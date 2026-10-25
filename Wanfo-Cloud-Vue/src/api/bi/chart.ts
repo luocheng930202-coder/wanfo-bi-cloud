@@ -128,8 +128,11 @@ export interface ChartAnalysis {
   scatterZoom?:boolean
   scatterLogX?:boolean
   scatterLogY?:boolean
-  trendMethod?:'linear'|'moving-average'
+  trendMethod?:'linear'|'moving-average'|'seasonal'
   forecastPeriods?:number
+  seasonLength?:number
+  forecastConfidence?:'80'|'90'|'95'
+  forecastMetricDefinition?:string
   anomalyDetection?:boolean
   anomalySensitivity?:number
   anomalyMethod?:'stddev'|'mad'

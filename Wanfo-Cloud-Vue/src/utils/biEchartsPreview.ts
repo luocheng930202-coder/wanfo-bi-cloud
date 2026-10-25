@@ -31,6 +31,19 @@ export function hierarchyData(rows:Record<string,unknown>[],dimensions:ChartDefi
   return serialize(root)
 }
 
+export function seasonalForecast(values:(number|null)[],seasonLength:number,periods:number,confidenceLevel:'80'|'90'|'95'){
+  if(!Number.isInteger(seasonLength)||seasonLength<2||!Number.isInteger(periods)||periods<1)throw new Error('季节长度或预测周期无效')
+  if(values.length<seasonLength*2)throw new Error(`季节性预测至少需要 ${seasonLength*2} 个连续周期`)
+  if(values.some(value=>value==null||!Number.isFinite(value)))throw new Error('时间序列存在空值，请先补齐周期或调整筛选范围')
+  const actual=values as number[],absoluteErrors:number[]=[]
+  for(let i=seasonLength;i<actual.length;i++)absoluteErrors.push(Math.abs(actual[i]-actual[i-seasonLength]))
+  if(absoluteErrors.length<8)throw new Error('季节性预测的历史回测样本不足，至少需要 8 个季节误差')
+  absoluteErrors.sort((a,b)=>a-b)
+  const quantile=Number(confidenceLevel)/100,width=absoluteErrors[Math.min(absoluteErrors.length-1,Math.max(0,Math.ceil(quantile*absoluteErrors.length)-1))]
+  const forecast=Array.from({length:periods},(_,i)=>actual[actual.length-seasonLength+(i%seasonLength)])
+  return {forecast,lower:forecast.map(value=>value-width),upper:forecast.map(value=>value+width),intervalWidth:width,residualCount:absoluteErrors.length}
+}
+
 /** Display-only axis shortening; raw categories remain available to tooltips and interactions. */
 export function chartAxisLabel(value:unknown,maxLength=14):string {
   const text=String(value??'空值')
@@ -366,13 +379,14 @@ export function buildChartPreviewOption(params: {
     axisLine: { lineStyle: { color: visualTheme.border } }
   }
 
-  const forecastPeriods=type==='line'&&analysis?.trendMethod==='linear'?Math.max(0,Math.min(12,Math.floor(analysis.forecastPeriods||0))):0
+  const seasonal=analysis?.trendMethod==='seasonal'
+  const forecastPeriods=['line','area'].includes(type)&&['linear','seasonal'].includes(analysis?.trendMethod||'')?Math.max(seasonal?1:0,Math.min(12,Math.floor(analysis?.forecastPeriods||0))):0
   const forecastLabels=Array.from({length:forecastPeriods},(_,i)=>`预测 +${i+1}`)
   if(forecastPeriods)categoryXAxis.data=[...categories,...forecastLabels]
   if(['line','area'].includes(type) && analysis?.trendMethod){
     for(const metric of metrics){
-      const key=metricResultKey(metric),points=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((point):point is {i:number;value:number}=>point.value!=null&&!filledRow(result.rows[point.i]))
-      if(points.length<2)continue
+      const key=metricResultKey(metric),points=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((point):point is {i:number;value:number}=>point.value!=null&&(!filledRow(result.rows[point.i])||seasonal&&result.timeFill?.mode==='zero'))
+      if(points.length<2&&!seasonal)continue
       let fitted:(number|null)[]=Array(result.rows.length).fill(null),slope=0,intercept=0
       if(analysis.trendMethod==='linear'){
         const mx=points.reduce((s,p)=>s+p.i,0)/points.length,my=points.reduce((s,p)=>s+p.value,0)/points.length,den=points.reduce((s,p)=>s+(p.i-mx)**2,0)
@@ -381,8 +395,20 @@ export function buildChartPreviewOption(params: {
       }else{
         const raw=result.rows.map(r=>normalizeValue(r[key],key));fitted=raw.map((_,i)=>{const window=raw.slice(Math.max(0,i-2),i+1).filter((v):v is number=>v!=null);return window.length===3?window.reduce((a,b)=>a+b,0)/3:null})
       }
-      cartesianSeries.push({name:`${labels[key]||key} · 趋势`,type:'line',data:fitted,lineStyle:{type:'dashed',width:2},symbol:'none',tooltip:{show:false},silent:true})
-      if(forecastPeriods){const last=points.at(-1)!,forecastData=Array(categories.length+forecastPeriods).fill(null);forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=intercept+slope*(last.i+i+1);cartesianSeries.push({name:`${labels[key]||key} · 线性预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3},symbol:'emptyCircle',showSymbol:true,connectNulls:false})}
+      if(!seasonal)cartesianSeries.push({name:`${labels[key]||key} · 趋势`,type:'line',data:fitted,lineStyle:{type:'dashed',width:2},symbol:'none',tooltip:{show:false},silent:true})
+      if(forecastPeriods){
+        const last=points.at(-1)!,forecastData=Array(categories.length+forecastPeriods).fill(null)
+        if(seasonal){
+          const values=result.rows.map(row=>normalizeValue(row[key],key)),interval=seasonalForecast(values,analysis?.seasonLength||0,forecastPeriods,analysis?.forecastConfidence||'95'),metricIndex=metrics.findIndex(item=>metricResultKey(item)===key),color=style?.metrics?.find(m=>m.key===key)?.color||palette[Math.max(0,metricIndex)%palette.length]
+          forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=interval.forecast[i]
+          const lower=Array(categories.length+forecastPeriods).fill(null),width=Array(categories.length+forecastPeriods).fill(null)
+          for(let i=0;i<forecastPeriods;i++){lower[categories.length+i]=interval.lower[i];width[categories.length+i]=interval.upper[i]-interval.lower[i]}
+          const stack=`forecast-band-${key}`
+          cartesianSeries.push({name:`${labels[key]||key} · ${analysis?.forecastConfidence||'95'}%区间下界`,type:'line',data:lower,stack,lineStyle:{opacity:0},areaStyle:{opacity:0},symbol:'none',tooltip:{show:false},silent:true})
+          cartesianSeries.push({name:`${labels[key]||key} · ${analysis?.forecastConfidence||'95'}%预测区间`,type:'line',data:width,stack,lineStyle:{opacity:0},areaStyle:{color,opacity:.14},symbol:'none',tooltip:{show:false},silent:true})
+          cartesianSeries.push({name:`${labels[key]||key} · 季节预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3,color},symbol:'emptyCircle',showSymbol:true,connectNulls:false,tooltip:{formatter:(p:any)=>{const i=p.dataIndex-categories.length;return i<0?`${p.name}<br/>实际值: ${formatValue(key,p.value)}`:`${p.name}<br/>预测值: ${formatValue(key,p.value)}<br/>区间范围: ${formatValue(key,interval.lower[i])} ～ ${formatValue(key,interval.upper[i])}`}}})
+        }else{forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=intercept+slope*(last.i+i+1);cartesianSeries.push({name:`${labels[key]||key} · 线性预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3},symbol:'emptyCircle',showSymbol:true,connectNulls:false})}
+      }
     }
   }
 

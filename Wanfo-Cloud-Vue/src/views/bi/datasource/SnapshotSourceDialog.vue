@@ -19,16 +19,20 @@
         </template>
         <el-form-item label="数组路径"><el-input v-model="dataPath" placeholder="data.rows；根节点为数组时留空" /></el-form-item>
         <el-form-item label="请求头 JSON"><el-input v-model="headers" type="textarea" :rows="3" :placeholder="editing ? '留空保留已保存请求头；修改地址时须重新填写，{} 表示清空' : '{ &quot;Authorization&quot;: &quot;Bearer …&quot; }'" /></el-form-item>
-        <el-form-item label="页码分页"><el-switch v-model="paged" /></el-form-item>
+        <el-form-item label="自动分页"><el-switch v-model="paged" /></el-form-item>
         <template v-if="paged">
-          <el-row :gutter="12"><el-col :span="12"><el-form-item label="页码参数名"><el-input v-model="pagination.pageParam" /></el-form-item></el-col><el-col :span="12"><el-form-item label="页大小参数名"><el-input v-model="pagination.sizeParam" /></el-form-item></el-col></el-row>
-          <el-row :gutter="12"><el-col :span="12"><el-form-item label="每页行数"><el-input-number v-model="pagination.pageSize" :min="1" :max="1000" :precision="0" /></el-form-item></el-col><el-col :span="12"><el-form-item label="起始页"><el-select v-model="pagination.startPage"><el-option :value="0" label="0"/><el-option :value="1" label="1"/></el-select></el-form-item></el-col></el-row>
+          <el-form-item label="分页方式"><el-radio-group v-model="paginationMode"><el-radio-button value="page">页码分页</el-radio-button><el-radio-button value="cursor">游标分页</el-radio-button></el-radio-group></el-form-item>
+          <el-row v-if="paginationMode==='page'" :gutter="12"><el-col :span="12"><el-form-item label="页码参数名"><el-input v-model="pagination.pageParam" /></el-form-item></el-col><el-col :span="12"><el-form-item label="页大小参数名"><el-input v-model="pagination.sizeParam" /></el-form-item></el-col></el-row>
+          <el-row v-else :gutter="12"><el-col :span="12"><el-form-item label="游标参数名"><el-input v-model="pagination.cursorParam" placeholder="cursor"/></el-form-item></el-col><el-col :span="12"><el-form-item label="下一游标 JSON 路径"><el-input v-model="pagination.nextCursorPath" placeholder="data.nextCursor"/></el-form-item></el-col></el-row>
+          <el-row :gutter="12"><el-col :span="12"><el-form-item label="页大小参数名"><el-input v-model="pagination.sizeParam" /></el-form-item></el-col><el-col :span="12"><el-form-item label="每页行数"><el-input-number v-model="pagination.pageSize" :min="1" :max="1000" :precision="0" /></el-form-item></el-col></el-row>
+          <el-row v-if="paginationMode==='page'" :gutter="12"><el-col :span="12"><el-form-item label="起始页"><el-select v-model="pagination.startPage"><el-option :value="0" label="0"/><el-option :value="1" label="1"/></el-select></el-form-item></el-col></el-row>
+          <el-form-item v-if="paginationMode==='cursor'" label="初始游标（可选）"><el-input v-model="pagination.initialCursor" /></el-form-item>
           <el-form-item label="最多页数"><el-input-number v-model="pagination.maxPages" :min="1" :max="100" :precision="0" /></el-form-item>
           <el-form-item label="总行数路径"><el-input v-model="pagination.totalPath" placeholder="如 data.total；留空尝试识别 total / totalCount" /></el-form-item>
         </template>
         <el-form-item label="自动刷新间隔（分钟）"><el-input-number v-model="refreshMinutes" :min="0" :max="1440" :precision="0" /><small class="hint">0 为关闭，启用时为 5～1440 分钟；后台约每分钟检查一次，失败保留旧数据。</small></el-form-item>
         <p v-if="scheduleStatus" class="hint">上次自动刷新状态：{{ scheduleStatus==='success'?'成功':scheduleStatus.startsWith('failed')?'失败，已保留旧数据':'尚未执行' }}</p>
-        <p class="hint">接口域名须在服务端 bi.external-source.allowed-origins 中允许。支持完整数组或显式页码分页，累计最多 5 MB、20000 行；达到页数上限仍未完成会拒绝更新。请求头加密保存。</p>
+        <p class="hint">接口域名须在服务端 bi.external-source.allowed-origins 中允许。支持页码或下一游标分页，累计最多 5 MB、20000 行；达到页数上限仍未完成会拒绝更新。请求头加密保存。</p>
       </template>
       <template v-else>
         <el-form-item :label="kind === 'csv' ? 'UTF-8 CSV 文件' : 'Excel 文件（XLS / XLSX）'">
@@ -63,9 +67,9 @@ const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
+const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
 const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
-const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
+const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
 const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
 const schemaChangeSummary=computed(()=>{const before=existingColumns.value.map(c=>c.name),after=previewColumns.value.map(c=>c.targetName).filter(Boolean),kept=after.filter(c=>before.includes(c)),added=after.filter(c=>!before.includes(c)),missing=before.filter(c=>!after.includes(c));return `结构预览：保留 ${kept.length} 个既有字段，新增 ${added.length} 个，移除 ${missing.length} 个。${added.length?` 新增：${added.join('、')}。`:''}${missing.length?` 移除：${missing.join('、')}。`:''}`})
 watch(previewColumns,()=>{const valid=new Set(previewColumns.value.map(c=>c.targetName).filter(Boolean));dedupeKeys.value=dedupeKeys.value.filter(key=>valid.has(key))},{deep:true})
@@ -76,13 +80,13 @@ async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
   paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
-  Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
+  paginationMode.value='page';Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination)Object.assign(pagination,result.data.pagination);refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }

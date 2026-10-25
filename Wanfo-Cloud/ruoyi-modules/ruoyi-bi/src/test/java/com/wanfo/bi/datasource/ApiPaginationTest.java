@@ -26,4 +26,10 @@ class ApiPaginationTest {
             assertThrows(IllegalArgumentException.class,()->ApiSnapshotReader.read(client,new ApiSnapshotClient.Config(origin+"/pages?page=1","rows",Map.of(),pagination),json));
         }finally{server.stop(0);}
     }
+    @Test void cursorPaginationFollowsNextTokenAndRejectsRepeatedTokens()throws Exception {
+        var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        server.createContext("/cursor",exchange->{String query=exchange.getRequestURI().getRawQuery();String body=query!=null&&query.contains("cursor=next%2Btoken")?"{\"rows\":[{\"id\":3}],\"next\":null}":"{\"rows\":[{\"id\":1},{\"id\":2}],\"next\":\"next+token\"}";byte[] bytes=body.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(200,bytes.length);exchange.getResponseBody().write(bytes);exchange.close();});
+        server.createContext("/loop",exchange->{byte[] bytes="{\"rows\":[{\"id\":1}],\"next\":\"same\"}".getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(200,bytes.length);exchange.getResponseBody().write(bytes);exchange.close();});server.start();
+        try{String origin="http://127.0.0.1:"+server.getAddress().getPort();var client=new ApiSnapshotClient(origin);var json=new ObjectMapper();var pagination=new ApiSnapshotClient.Pagination(null,"limit",2,1,5,null,"cursor","next",null);var data=ApiSnapshotReader.read(client,new ApiSnapshotClient.Config(origin+"/cursor","rows",Map.of(),pagination),json);assertEquals(List.of(List.of("1"),List.of("2"),List.of("3")),data.rows());var loop=new ApiSnapshotClient.Pagination(null,"limit",1,1,5,null,"cursor","next",null);assertThrows(IllegalArgumentException.class,()->ApiSnapshotReader.read(client,new ApiSnapshotClient.Config(origin+"/loop","rows",Map.of(),loop),json));}finally{server.stop(0);}
+    }
 }

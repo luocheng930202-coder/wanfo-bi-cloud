@@ -151,7 +151,7 @@ export function revokeResource(id: number, principalId: number, action: string):
   return request({ url: `/bi/datasource/${id}/grants/${principalId}/${action}`, method: 'delete' })
 }
 
-export interface ApiPagination {pageParam:string;sizeParam:string;pageSize:number;startPage:number;maxPages:number;totalPath:string}
+export interface ApiPagination {pageParam:string;sizeParam:string;pageSize:number;startPage:number;maxPages:number;totalPath:string;cursorParam?:string;nextCursorPath?:string;initialCursor?:string}
 export function importApiSource(data: {id?:number;name:string;schemaName:string;url:string;dataPath:string;headers?:Record<string,string>;pagination?:ApiPagination;refreshMinutes?:number;method?:string;body?:Record<string,unknown>;flatten?:boolean;oauth?:{tokenUrl:string;clientId:string;clientSecret:string;scope:string;tokenField:string}}): Promise<AjaxResult<{id:number;rowCount:number}>> {
   return request({url:'/bi/datasource/import/api',method:'post',data,timeout:30000,headers:{repeatSubmit:false}})
 }

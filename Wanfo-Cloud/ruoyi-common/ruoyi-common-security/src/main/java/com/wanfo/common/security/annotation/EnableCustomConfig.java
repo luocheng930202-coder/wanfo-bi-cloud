@@ -11,6 +11,7 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableAsync;
 import com.wanfo.common.security.config.ApplicationConfig;
+import com.wanfo.common.security.config.ActuatorMetricsSecurityConfiguration;
 import com.wanfo.common.security.feign.FeignAutoConfiguration;
 
 @Target(ElementType.TYPE)
@@ -24,7 +25,7 @@ import com.wanfo.common.security.feign.FeignAutoConfiguration;
 // 开启线程异步执行
 @EnableAsync
 // 自动加载类
-@Import({ ApplicationConfig.class, FeignAutoConfiguration.class })
+@Import({ ApplicationConfig.class, FeignAutoConfiguration.class, ActuatorMetricsSecurityConfiguration.class })
 public @interface EnableCustomConfig
 {
 

@@ -2,7 +2,9 @@ package com.wanfo.auth;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import com.wanfo.common.security.config.ActuatorMetricsSecurityConfiguration;
 import com.wanfo.common.security.annotation.EnableRyFeignClients;
 
 /**
@@ -11,6 +13,7 @@ import com.wanfo.common.security.annotation.EnableRyFeignClients;
  * @author ruoyi
  */
 @EnableRyFeignClients
+@Import(ActuatorMetricsSecurityConfiguration.class)
 @SpringBootApplication(exclude = {DataSourceAutoConfiguration.class })
 public class RuoYiAuthApplication
 {

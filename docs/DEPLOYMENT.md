@@ -24,6 +24,8 @@ export WANFO_JWT_SECRET='<由密钥系统注入>'
 export WANFO_DB_USER='<数据库用户>'
 export WANFO_DB_PASSWORD='<由密钥系统注入>'
 export WANFO_REDIS_PASSWORD='<由密钥系统注入>'
+export WANFO_ACTUATOR_USERNAME='wanfo-prometheus'
+export WANFO_ACTUATOR_PASSWORD='<由密钥系统注入；Prometheus password_file 使用同一值>'
 java -jar <服务.jar> \
   --spring.config.import=optional:file:/etc/wanfo/application-dev.yml \
   --spring.config.additional-location=optional:file:/etc/wanfo/
@@ -32,6 +34,14 @@ java -jar <服务.jar> \
 网关还需显式加载 `ruoyi-gateway-dev.yml`；BI 额外指定 `--spring.flyway.enabled=true`，其他服务不启用 BI Flyway。设置生产监听地址和服务 URI；内部认证、系统、BI、Redis 和数据库端口不直接对公网开放。
 
 使用 Nacos 服务发现/配置中心时，应提供各个服务对应的 Data ID，保留 `ruoyi-*` 标识，显式启用 Nacos 组件，并替换单机的静态路由及 simple-discovery 配置。配置中的旧包名前缀需调整为 `com.wanfo`。Nacos 配置本身及认证凭据不入库。代码生成、MyBatis、定时任务的历史全限定类名迁移见 [命名迁移说明](../Wanfo-Cloud/doc/WANFO-NAMING-MIGRATION.md)。
+
+### Prometheus 与 JVM 指标
+
+认证、系统、BI 和网关服务在依赖 `micrometer-registry-prometheus` 后提供 `/actuator/prometheus` 与 `/actuator/metrics`。Prometheus 指标及详细 metrics 使用 HTTP Basic 认证，用户名和强密码分别通过 `WANFO_ACTUATOR_USERNAME`、`WANFO_ACTUATOR_PASSWORD` 注入；Prometheus 侧使用只读挂载的 `password_file` 保存同一密码。不要把真实密码写入 Git 或公开的 Prometheus 配置。仅 `health`、`info` 保持匿名访问，健康详情关闭；不要开放 `heapdump`、`env`、`configprops`、`beans` 或 `loggers`。
+
+Nacos 注册元数据同时带有 Spring Boot Admin 使用的 `user.name`、`user.password`，使 Admin 能读取受保护的 actuator 指标。Nacos 注册/配置需要限制为受信任的管理端访问，因为实例元数据包含监控凭据。修改暴露端点或凭据后重启对应服务。Prometheus 抓取目标使用宿主端口 `9200`（auth）、`9201`（system）、`9206`（BI）、`8080`（gateway），并配置同一 Basic 认证账号和密码文件。
+
+跨服务 Trace 使用 OpenTelemetry Java Agent + Collector + Tempo + Grafana。开发环境组件、启动步骤、Grafana 查询方式与关闭命令见 [OpenTelemetry 链路追踪接入与使用说明](OPENTELEMETRY-TRACING-PLAN.md)。追踪栈使用独立 Compose 文件和数据卷，不与业务数据库、Redis 或 Prometheus 共用生命周期；Agent 默认关闭，生产环境需先完成 TLS、采样率和数据保留评估。
 
 ## 数据库
 

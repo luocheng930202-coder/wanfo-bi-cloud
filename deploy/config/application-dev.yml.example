@@ -67,10 +67,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       show-details: never
+monitor:
+  actuator:
+    # Set the same strong credential in the service environment and Prometheus secret file.
+    username: ${WANFO_ACTUATOR_USERNAME}
+    password: ${WANFO_ACTUATOR_PASSWORD}
 bi:
   security:
     mode: ruoyi

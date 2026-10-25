@@ -2,6 +2,24 @@
 server:
   port: 9206
 
+# Log correlation identifiers added by the OpenTelemetry Java Agent MDC instrumentation.
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level trace_id=%X{trace_id:-} span_id=%X{span_id:-} trace_flags=%X{trace_flags:-} %logger{36} - %msg%n%ex"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never
+monitor:
+  actuator:
+    username: ${WANFO_ACTUATOR_USERNAME:}
+    password: ${WANFO_ACTUATOR_PASSWORD:}
+
 # Spring
 spring:
   application:
@@ -12,6 +30,9 @@ spring:
     nacos:
       discovery:
         server-addr: 127.0.0.1:8848
+        metadata:
+          user.name: ${WANFO_ACTUATOR_USERNAME:}
+          user.password: ${WANFO_ACTUATOR_PASSWORD:}
       config:
         server-addr: 127.0.0.1:8848
   config:

@@ -4,6 +4,11 @@
       <el-tab-pane label="数据" name="data">
         <el-form label-position="top" :disabled="disabled">
           <el-alert :title="capabilities.hint" type="info" :closable="false" class="mb8"/>
+          <section class="configuration-check" aria-label="图表配置检查" aria-live="polite">
+            <strong>{{ configurationErrors.length ? `还有 ${configurationErrors.length} 项配置需要完善` : '字段配置检查通过' }}</strong>
+            <ul v-if="configurationIssues.length"><li v-for="(issue,index) in configurationIssues" :key="issue.code+issue.path+index" :class="issue.severity">{{ issue.message }}</li></ul>
+            <small v-else>可更新数据查看效果。实际值与高级配置仍由服务端校验。</small>
+          </section>
           <el-form-item label="图表名称" required><el-input v-model="definition.name" maxlength="200"/></el-form-item>
           <el-form-item label="图表类型">
             <ChartTypePicker v-model="definition.type" :disabled="disabled" @change="emit('type-changed')"/>
@@ -35,7 +40,7 @@
           <el-form-item v-if="definition.query.orderBys?.length" label="排序方向"><el-select v-model="definition.query.orderBys[0].order" style="width:100%"><el-option value="asc" label="升序"/><el-option value="desc" label="降序"/></el-select></el-form-item>
           <small class="hint">清除排序时，时间汇总默认按周期升序；其他查询保留原默认排序。</small>
           <el-form-item label="最多行数"><el-input-number v-model="definition.query.limit" :min="1" :max="1000" :precision="0" style="width:100%"/></el-form-item>
-          <el-button type="primary" :loading="previewing" :disabled="!canPreview" style="width:100%" @click="emit('preview')">更新数据</el-button>
+          <el-button type="primary" :loading="previewing" :disabled="!canPreview || configurationErrors.length>0" style="width:100%" @click="emit('preview')">更新数据</el-button>
         </el-form>
       </el-tab-pane>
       <el-tab-pane label="样式" name="style">
@@ -129,7 +134,10 @@ import ChartTimeGrainEditor from './ChartTimeGrainEditor.vue'
 import {metricResultKey} from '@/utils/biEchartsPreview'
 import { allowsClearDimension, metricAddDisabled, supportsDrill, supportsSeriesDimension } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,retainChartMetricBindings } from '@/utils/biChartPresentation'
+import { chartConfigurationIssues } from '@/utils/biChartTypes'
 const props = defineProps<{ definition: ChartDefinition; fields: Field[]; datasets: DatasetSummary[]; labels: Record<string,string>; disabled?: boolean; previewing?: boolean; canPreview?: boolean; fieldLabel: (n: string) => string }>()
+const configurationIssues=computed(()=>chartConfigurationIssues(props.definition,props.fields))
+const configurationErrors=computed(()=>configurationIssues.value.filter(i=>i.severity==='error'))
 const emit = defineEmits<{ (e:'type-changed'):void; (e:'dataset-changed', id:number):void; (e:'set-dimension', field:string):void; (e:'add-metric'):void; (e:'remove-metric', index:number):void; (e:'set-sort', field:string):void; (e:'raw-table'):void; (e:'ensure-scatter'):void; (e:'pivot-fields'):void; (e:'preview'):void }>()
 function setSeries(field:string){const q=props.definition.query;if(!q.dimensions[0])return;q.dimensions=q.dimensions.slice(0,1);if(field && field!==q.dimensions[0].field)q.dimensions.push({field,alias:'series'});q.orderBys=[]}
 const tab = ref('data')
@@ -182,3 +190,5 @@ watch(() => props.definition.query.dimensions[0]?.field, (dim) => {
 .hint{display:block;margin-top:6px;color:var(--bi-muted,#667085);font-size:12px;line-height:1.4}
 </style>
 
+
+<style scoped>.configuration-check{margin:12px 0;padding:12px;background:var(--el-fill-color-light);border:1px solid var(--el-border-color-light);border-radius:8px;font-size:12px;line-height:1.7}.configuration-check ul{padding-left:18px;margin:6px 0}.configuration-check .error{color:var(--el-color-danger)}.configuration-check .warning{color:var(--el-color-warning-dark-2)}</style>

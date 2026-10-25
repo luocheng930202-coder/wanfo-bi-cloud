@@ -13,7 +13,18 @@
 | CSV | UTF-8 文件上传，支持 BOM、引号、逗号和换行 | 同上 | 解析、类型、异常输入、Calcite 聚合 |
 | Excel | XLS / XLSX，指定工作表或默认首表 | 同上 | 工作表解析、公式拒绝、持久化、查询 |
 
-**PostgreSQL、SQL Server、Oracle、ClickHouse 尚未连接用户真实实例验收。** H2 兼容模式用于检查 JDBC 建模和 Calcite 查询链路，不能替代相应服务器的版本、权限、TLS、时区及复杂 SQL 联调。当前工作不扩展业务填报的跨数据库写入能力。
+PostgreSQL 与 ClickHouse 已完成基础本地实例冒烟验收；这不等于生产验收。H2 兼容模式用于检查 JDBC 建模和 Calcite 查询链路，不能替代相应服务器的版本、权限、TLS、时区及复杂 SQL 联调。当前工作不扩展业务填报的跨数据库写入能力。
+
+### 本地真实实例冒烟验收（2026-10-25）
+
+在本机 Docker 实例上，通过 BI 数据源页面测试连接，并在未保存的数据集表单中读取表结构和预览数据：
+
+| 数据库 | 实例版本 | 表 | 连接测试 | 元数据与预览 |
+| --- | --- | --- | --- | --- |
+| PostgreSQL | 17.11 | `analytics.sales_demo` | 成功，约 1473 ms | 识别 8 个字段，预览 40 行，约 456 ms |
+| ClickHouse | 25.8 | `wanfo_bi.sales_demo` | 成功，约 850 ms | 识别 8 个字段，预览 40 行，约 56 ms |
+
+预览表单随后取消，未保存临时数据集。本次只证明当前本地账号、驱动和基础元数据/读取链路可用；未覆盖最小权限与跨 schema 隔离、日期时区和数值边界、视图/关联、复杂图表与透视查询、慢查询取消及 TLS。SQL Server、Oracle 仍未连接真实实例验收。
 
 ## JDBC 配置
 
@@ -76,4 +87,4 @@ Flyway `V21__bi_source_snapshots.sql` 为 `bi_datasource` 添加 `source_schema`
 参考驱动文档：[PostgreSQL](https://jdbc.postgresql.org/documentation/use/)、[SQL Server 超时](https://learn.microsoft.com/en-us/sql/connect/jdbc/understand-timeouts)、[ClickHouse JDBC](https://clickhouse.com/docs/integrations/language-clients/java/jdbc)。
 
 
-本批本地验收：BI 后端 427 项测试、前端 155 项测试全部通过；BI 范围类型诊断 0 条，宿主原有 268 条诊断保留；前端生产构建通过。真实本地服务完成 CSV / Excel 上传、元数据、创建数据集、图表聚合、重新上传后的取数、失败更新保留、API 默认拒绝外部请求及原地图查询回归。临时数据源和数据集已从有效列表清理。四种新增数据库仍按上表的自动化适配级别标记，等待真实实例联调。
+本批本地验收：BI 后端 427 项测试、前端 155 项测试全部通过；BI 范围类型诊断 0 条，宿主原有 268 条诊断保留；前端生产构建通过。真实本地服务完成 CSV / Excel 上传、元数据、创建数据集、图表聚合、重新上传后的取数、失败更新保留、API 默认拒绝外部请求及原地图查询回归。临时数据源和数据集已从有效列表清理。PostgreSQL 与 ClickHouse 的真实本地实例冒烟结果见上表；SQL Server 和 Oracle 仍按自动化适配级别标记，等待真实实例联调。

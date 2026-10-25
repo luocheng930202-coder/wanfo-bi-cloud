@@ -8,6 +8,7 @@ import com.wanfo.bi.domain.BiDatasetTableDO;
 import com.wanfo.bi.domain.dataset.DatasetJoinModel;
 import com.wanfo.bi.service.DatasetModelService;
 import com.wanfo.bi.service.DatasetService;
+import com.wanfo.bi.service.DatasetQualityRuleService;
 import com.wanfo.bi.security.BiPermission;
 import com.wanfo.bi.security.CurrentActorProvider;
 import com.wanfo.bi.security.BiResourceAuthorizer;
@@ -36,14 +37,15 @@ public class DatasetController
 {
     private final DatasetService service;
     private final DatasetModelService modelService;
+    private final DatasetQualityRuleService qualityRules;
     private final CurrentActorProvider actors;
     private final BiResourceAuthorizer resources;
     private final PrincipalCatalog catalog;
     private final com.wanfo.bi.security.DatasetDataPolicy policies;
 
-    public DatasetController(DatasetService service, DatasetModelService modelService, CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog, com.wanfo.bi.security.DatasetDataPolicy policies)
+    public DatasetController(DatasetService service, DatasetModelService modelService, DatasetQualityRuleService qualityRules, CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog, com.wanfo.bi.security.DatasetDataPolicy policies)
     {
-        this.service = service; this.modelService = modelService; this.actors = actors; this.resources = resources; this.catalog = catalog;this.policies=policies;
+        this.service = service; this.modelService = modelService; this.qualityRules=qualityRules; this.actors = actors; this.resources = resources; this.catalog = catalog;this.policies=policies;
     }
 
     // ==================== 目录 ====================
@@ -237,7 +239,17 @@ public class DatasetController
     @Operation(summary = "数据集质量检查（最多抽样 100 行）")
     @GetMapping("/{id}/quality")
     @BiPermission("bi:dataset:query")
-    public Map<String,Object> quality(@PathVariable Long id)throws Exception{return service.qualityReport(id);}
+    public Map<String,Object> quality(@PathVariable Long id)throws Exception{return qualityRules.evaluate(id,service.qualityReport(id));}
+
+    @GetMapping("/{id}/quality/rules")
+    @BiPermission("bi:dataset:query")
+    public List<DatasetQualityRuleService.Rule> qualityRules(@PathVariable Long id){return qualityRules.get(id);}
+
+    @PutMapping("/{id}/quality/rules")
+    @BiPermission("bi:datasource:model")
+    public List<DatasetQualityRuleService.Rule> saveQualityRules(@PathVariable Long id,@RequestBody QualityRulesRequest request){return qualityRules.save(id,request.rules(),actors.currentActor().username());}
+
+    public record QualityRulesRequest(List<DatasetQualityRuleService.Rule> rules){}
 
     @Operation(summary = "删除数据集（级联删除字段）")
     @DeleteMapping("/{id}")

@@ -1,5 +1,5 @@
 <template>
-  <section v-if="['funnel','radar','scatter'].includes(definition.type)" aria-label="图表专属分析">
+  <section v-if="['funnel','radar','scatter','line','area'].includes(definition.type)" aria-label="图表专属分析">
     <el-divider content-position="left">专属分析</el-divider>
     <template v-if="definition.type==='funnel'">
       <el-form-item label="转化率口径"><el-select v-model="analysis.funnelRate" clearable placeholder="不显示转化率"><el-option value="adjacent" label="相对上一阶段"/><el-option value="first" label="相对首阶段"/></el-select></el-form-item>
@@ -24,6 +24,13 @@
       <el-form-item label="数据缩放"><el-switch v-model="analysis.scatterZoom"/></el-form-item>
       <el-form-item label="X 对数轴"><el-switch v-model="analysis.scatterLogX"/></el-form-item><el-form-item label="Y 对数轴"><el-switch v-model="analysis.scatterLogY"/></el-form-item>
       <small class="hint">对数轴只接受正数。在数据页添加第三个指标即可控制气泡大小，数值必须非负。</small>
+    </template>
+    <template v-if="['line','area'].includes(definition.type)">
+      <el-form-item label="趋势拟合"><el-select v-model="analysis.trendMethod" clearable placeholder="关闭"><el-option value="linear" label="线性回归"/><el-option value="moving-average" label="3 点移动平均"/></el-select></el-form-item>
+      <el-form-item v-if="analysis.trendMethod==='linear'" label="线性外推周期"><el-input-number v-model="analysis.forecastPeriods" :min="0" :max="12" :precision="0"/><small class="hint">0 表示不外推；按结果顺序把类别索引作为等间距时间。</small></el-form-item>
+      <el-form-item label="异常点检测"><el-switch v-model="analysis.anomalyDetection"/></el-form-item>
+      <el-form-item v-if="analysis.anomalyDetection" label="标准差阈值"><el-input-number v-model="analysis.anomalySensitivity" :min="1" :max="4" :step="0.5"/></el-form-item>
+      <small class="hint">趋势使用当前已查询序列；异常点按总体均值 ± k×总体标准差标记。季节性和置信区间不在此口径内。</small>
     </template>
   </section>
 </template>

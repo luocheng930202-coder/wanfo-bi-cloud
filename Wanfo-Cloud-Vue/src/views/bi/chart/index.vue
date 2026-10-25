@@ -223,7 +223,12 @@ async function typeChanged(){
     if(definition.query.metrics[0] && definition.query.metrics[0].agg==='NONE')definition.query.metrics[0].agg='SUM'
     if(!definition.query.dimensions.length && fields.value[0])setDimension((fields.value.find(f=>!numeric(f))||fields.value[0]).name)
   }
-  else if(definition.type!=='table' && definition.type!=='gauge' && !definition.query.dimensions.length && fields.value[0])setDimension((fields.value.find(f=>!numeric(f))||fields.value[0]).name)
+  else if(['histogram','boxplot'].includes(definition.type))definition.query.metrics=definition.query.metrics.map(m=>({...m,agg:'NONE'}))
+  else if(definition.type==='geo-map'){
+    const numericFields=fields.value.filter(f=>numeric(f)).slice(0,3)
+    if(numericFields.length>=2)definition.query.metrics=numericFields.map((f,i)=>({field:f.name,agg:'NONE',alias:i===0?'longitude':i===1?'latitude':'weight'}))
+  }
+  else if(!['table','gauge','histogram','geo-map'].includes(definition.type) && !definition.query.dimensions.length && fields.value[0])setDimension((fields.value.find(f=>!numeric(f))||fields.value[0]).name)
 }
 function ensureScatterMetrics(){
   while(definition.query.metrics.length<2 && fields.value.length){

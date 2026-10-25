@@ -153,6 +153,7 @@ export function buildChartPreviewOption(params: {
     return value
   }
 
+
   if (type === 'gauge') {
     const key = metricResultKey(metrics[0])
     const raw = result.rows[0]?.[key]
@@ -285,7 +286,7 @@ export function buildChartPreviewOption(params: {
     })
   )
 
-  const cartesianSeries: EChartsOption['series'] = metrics.map((m, mi) => {
+  const cartesianSeries: any[] = metrics.map((m, mi) => {
     const key = keys[mi]
     const name = labels[key] || key
     const data = valueMatrix.map(row => row[mi])
@@ -326,6 +327,11 @@ export function buildChartPreviewOption(params: {
       if(value==null || !Number.isFinite(value))return []
       return [{name:line.name || '参考线',...(type==='hbar'?{xAxis:value}:{yAxis:value}),lineStyle:{color:line.color,type:line.lineType},label:{position:lineIndex%2?'insideStartTop' as const:'insideEndBottom' as const,fontSize:11,backgroundColor:visualTheme.surface,padding:3,formatter:()=>`${line.name || '参考线'}: ${formatValue(key,value)}`}}]
     })
+    const indexedValues=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((entry):entry is {i:number;value:number}=>entry.value!=null&&!filledRow(result.rows[entry.i]))
+    const mean=indexedValues.length?indexedValues.reduce((sum,entry)=>sum+entry.value,0)/indexedValues.length:0
+    const deviation=indexedValues.length?Math.sqrt(indexedValues.reduce((sum,entry)=>sum+(entry.value-mean)**2,0)/indexedValues.length):0
+    const sensitivity=Math.max(1,Math.min(4,analysis?.anomalySensitivity??2))
+    const anomalyPoints=analysis?.anomalyDetection && deviation>0?indexedValues.filter(entry=>Math.abs(entry.value-mean)>=sensitivity*deviation).map(entry=>({coord:[categories[entry.i],entry.value],name:`异常点（${sensitivity}σ）`,value:entry.value,itemStyle:{color:'#e5484d'}})):[]
     const original=result.timeComparison?.fields.find(f=>f.baseline===key)?.key
     const originalKeys=keys.filter(k=>!comparisonBase(k))
     const pairColor=result.timeComparison?style?.metrics?.find(m=>m.key===(original||key))?.color || palette[Math.max(0,originalKeys.indexOf(original||key))%palette.length]:undefined
@@ -333,7 +339,8 @@ export function buildChartPreviewOption(params: {
       ...('lineStyle' in series?{lineStyle:{...series.lineStyle,...(pairColor?{color:pairColor,type:original?'dashed' as const:'solid' as const}:{}),...(setting?.color?{color:setting.color}:{})}}:{}),
       ...(original && 'areaStyle' in series?{areaStyle:{opacity:0}}:{}),
       label:{...series.label,formatter:type==='percent'?'{c}%':(input:unknown)=>{const p=input as {dataIndex?:number};return formatValue(key,result.rows[p.dataIndex??0]?.[key])}},
-      markLine:markData.length?{symbol:['none','none'],silent:true,data:markData}:undefined}
+      markLine:markData.length?{symbol:['none','none'],silent:true,data:markData}:undefined,
+      markPoint:anomalyPoints.length?{symbol:'pin',symbolSize:42,label:{show:true,formatter:'异常'},data:anomalyPoints}:undefined}
   })
 
   const valueYAxis = { type: 'value' as const,splitNumber:5,axisLine:{show:false},axisTick:{show:false},axisLabel: { color: visualTheme.muted,margin:12, formatter: axisFormatter }, splitLine: { lineStyle: { color: visualTheme.border,type:'dashed' as const,opacity:0.65 } } }
@@ -345,6 +352,67 @@ export function buildChartPreviewOption(params: {
     data: categories,
       axisTick:{show:false},axisLabel: { rotate: style?.axisLabelRotate ?? 0, color: visualTheme.muted,margin:12,hideOverlap:true,showMinLabel:true,showMaxLabel:true,alignMinLabel:'left' as const,alignMaxLabel:'right' as const,formatter:(value:string)=>chartAxisLabel(value) },
     axisLine: { lineStyle: { color: visualTheme.border } }
+  }
+
+  const forecastPeriods=type==='line'&&analysis?.trendMethod==='linear'?Math.max(0,Math.min(12,Math.floor(analysis.forecastPeriods||0))):0
+  const forecastLabels=Array.from({length:forecastPeriods},(_,i)=>`预测 +${i+1}`)
+  if(forecastPeriods)categoryXAxis.data=[...categories,...forecastLabels]
+  if(['line','area'].includes(type) && analysis?.trendMethod){
+    for(const metric of metrics){
+      const key=metricResultKey(metric),points=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((point):point is {i:number;value:number}=>point.value!=null&&!filledRow(result.rows[point.i]))
+      if(points.length<2)continue
+      let fitted:(number|null)[]=Array(result.rows.length).fill(null),slope=0,intercept=0
+      if(analysis.trendMethod==='linear'){
+        const mx=points.reduce((s,p)=>s+p.i,0)/points.length,my=points.reduce((s,p)=>s+p.value,0)/points.length,den=points.reduce((s,p)=>s+(p.i-mx)**2,0)
+        slope=den?points.reduce((s,p)=>s+(p.i-mx)*(p.value-my),0)/den:0;intercept=my-slope*mx
+        fitted=fitted.map((_,i)=>intercept+slope*i)
+      }else{
+        const raw=result.rows.map(r=>normalizeValue(r[key],key));fitted=raw.map((_,i)=>{const window=raw.slice(Math.max(0,i-2),i+1).filter((v):v is number=>v!=null);return window.length===3?window.reduce((a,b)=>a+b,0)/3:null})
+      }
+      cartesianSeries.push({name:`${labels[key]||key} · 趋势`,type:'line',data:fitted,lineStyle:{type:'dashed',width:2},symbol:'none',tooltip:{show:false},silent:true})
+      if(forecastPeriods){const last=points.at(-1)!,forecastData=Array(categories.length+forecastPeriods).fill(null);forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=intercept+slope*(last.i+i+1);cartesianSeries.push({name:`${labels[key]||key} · 线性预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3},symbol:'emptyCircle',showSymbol:true,connectNulls:false})}
+    }
+  }
+
+  if(['heatmap','treemap','sunburst','sankey','boxplot','histogram','waterfall','geo-map'].includes(type)){
+    const d0=definition.query.dimensions[0],d1=definition.query.dimensions[1],k0=keys[0],k1=keys[1],k2=keys[2]
+    const field=(row:Record<string,unknown>,d:typeof d0)=>String(row[d?.alias||d?.field||'']??'空值')
+    const value=(row:Record<string,unknown>,key:string)=>readNumber(row[key])??0
+    if(type==='heatmap'){
+      const xs=[...new Set(result.rows.map(r=>field(r,d0)))],ys=[...new Set(result.rows.map(r=>field(r,d1)))],data=result.rows.map(r=>[xs.indexOf(field(r,d0)),ys.indexOf(field(r,d1)),value(r,k0)])
+      return {...base,tooltip:{...base.tooltip as object,trigger:'item',formatter:(p:any)=>`${xs[p.value[0]]} · ${ys[p.value[1]]}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[2])}`},grid:{left:55,right:25,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{type:'category',data:xs,axisLabel:{color:textColor}},yAxis:{type:'category',data:ys,axisLabel:{color:textColor}},visualMap:{min:Math.min(...data.map((v:any)=>v[2])),max:Math.max(...data.map((v:any)=>v[2]))||1,calculable:true,orient:'horizontal',left:'center',bottom:4},series:[{type:'heatmap',data,label:{show:style?.showLabels??false},emphasis:{itemStyle:{shadowBlur:8}}}]} as EChartsOption
+    }
+    if(type==='treemap')return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data:result.rows.map(r=>({name:field(r,d0),value:value(r,k0)})),roam:true,leafDepth:1,visibleMin:10,upperLabel:{show:true,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:true}}]} as EChartsOption
+    if(type==='sunburst'){
+      const root=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>()
+      for(const row of result.rows){const a=field(row,d0),b=field(row,d1),v=value(row,k0);let parent=root.get(a);if(!parent){parent={name:a,value:0,children:new Map()};root.set(a,parent)}parent.value+=v;const child=parent.children.get(b)||{name:b,value:0};child.value+=v;parent.children.set(b,child)}
+      const data=[...root.values()].map(p=>({name:p.name,value:p.value,children:[...p.children.values()]}))
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'sunburst',data,radius:['12%','88%'],sort:null,emphasis:{focus:'ancestor'},label:{rotate:'radial'}}]} as EChartsOption
+    }
+    if(type==='sankey'){
+      const edges=new Map<string,{source:string;target:string;value:number}>(),nodes=new Set<string>()
+      for(const row of result.rows){const source=field(row,d0),target=field(row,d1),id=source+'\u0000'+target;nodes.add(source);nodes.add(target);const edge=edges.get(id)||{source,target,value:0};edge.value+=value(row,k0);edges.set(id,edge)}
+      return {...base,tooltip:{trigger:'item'},series:[{type:'sankey',data:[...nodes].map(name=>({name})),links:[...edges.values()],emphasis:{focus:'adjacency'},lineStyle:{curveness:.5,opacity:.45},label:{color:textColor}}]} as EChartsOption
+    }
+    if(type==='waterfall'){
+      let cumulative=0;const categories=result.rows.map(r=>field(r,d0)),baseValues:number[]=[],changes:number[]=[]
+      for(const row of result.rows){const delta=value(row,k0);baseValues.push(delta>=0?cumulative:cumulative+delta);changes.push(Math.abs(delta));cumulative+=delta}
+      return {...base,tooltip:{trigger:'axis'},xAxis:{...categoryXAxis,data:categories},yAxis:valueYAxis,series:[{name:'累计偏移',type:'bar',stack:'waterfall',itemStyle:{color:'transparent',borderColor:'transparent'},emphasis:{itemStyle:{color:'transparent'}},data:baseValues},{name:labels[k0]||k0,type:'bar',stack:'waterfall',data:changes,label:{show:style?.showLabels??false,position:'top'}}]} as EChartsOption
+    }
+    if(type==='boxplot'){
+      const groups=new Map<string,number[]>();for(const row of result.rows){const n=readNumber(row[k0]);if(n!=null){const name=field(row,d0);groups.set(name,[...(groups.get(name)||[]),n])}}
+      const quantile=(a:number[],q:number)=>{const pos=(a.length-1)*q,lo=Math.floor(pos),fraction=pos-lo;return a[lo]+(a[Math.min(lo+1,a.length-1)]-a[lo])*fraction}
+      const names=[...groups.keys()],data=names.map(name=>{const a=groups.get(name)!.sort((x,y)=>x-y);return [a[0],quantile(a,.25),quantile(a,.5),quantile(a,.75),a[a.length-1]]})
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>最小 / Q1 / 中位 / Q3 / 最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{...categoryXAxis,data:names},yAxis:valueYAxis,series:[{type:'boxplot',name:labels[k0]||k0,data,itemStyle:{borderWidth:2}}]} as EChartsOption
+    }
+    if(type==='histogram'){
+      const nums=result.rows.map(r=>readNumber(r[k0])).filter((n):n is number=>n!=null);if(!nums.length)throw new Error('直方图没有可用的数值');const min=Math.min(...nums),max=Math.max(...nums),count=Math.min(20,Math.max(1,Math.ceil(Math.sqrt(nums.length)))),step=(max-min||1)/count,bins=Array.from({length:count},(_,i)=>({name:`${(min+i*step).toPrecision(4)}–${(min+(i+1)*step).toPrecision(4)}`,value:0}));for(const n of nums)bins[Math.min(count-1,Math.floor((n-min)/(step||1)))].value++
+      return {...base,tooltip:{trigger:'axis'},xAxis:{...categoryXAxis,data:bins.map(b=>b.name),axisLabel:{...categoryXAxis.axisLabel,rotate:30}},yAxis:{...valueYAxis,name:'频数'},series:[{type:'bar',name:'频数',data:bins.map(b=>b.value),barMaxWidth:40}]} as EChartsOption
+    }
+    if(type==='geo-map'){
+      const dim=definition.query.dimensions[0],points=result.rows.map((r,i)=>[readNumber(r[k0]),readNumber(r[k1]),k2?Math.max(0,value(r,k2)):1,dim?field(r,dim):String(i+1)]).filter(p=>p[0]!=null&&p[1]!=null)
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.value[3]}<br/>经度 ${p.value[0]}，纬度 ${p.value[1]}${k2?`<br/>${labels[k2]||k2}: ${formatValue(k2,p.value[2])}`:''}`},grid:{left:50,right:25,top:chartTop,bottom:chartBottom},xAxis:{type:'value',name:'经度',min:-180,max:180,splitLine:{lineStyle:{color:visualTheme.border}}},yAxis:{type:'value',name:'纬度',min:-90,max:90,splitLine:{lineStyle:{color:visualTheme.border}}},series:[{type:'scatter',name:'位置',data:points,symbolSize:k2?(v:any)=>Math.max(5,Math.sqrt(Number(v[2])||1)):10,encode:{x:0,y:1},label:{show:!!dim,formatter:(p:any)=>p.value[3]} }]} as EChartsOption
+    }
   }
 
   if (type === 'hbar') {

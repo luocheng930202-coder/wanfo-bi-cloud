@@ -111,6 +111,10 @@ export interface ChartAnalysis {
   scatterZoom?:boolean
   scatterLogX?:boolean
   scatterLogY?:boolean
+  trendMethod?:'linear'|'moving-average'
+  forecastPeriods?:number
+  anomalyDetection?:boolean
+  anomalySensitivity?:number
 }
 export interface ChartAdvancedOptions {
   analysis?:ChartAnalysis

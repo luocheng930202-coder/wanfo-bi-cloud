@@ -1,7 +1,8 @@
 /** Chart visual kinds persisted on bi_chart and rendered in ChartPreview. */
 export const CHART_TYPES = [
   'bar', 'line', 'area', 'hbar', 'stack', 'percent',
-  'pie', 'ring', 'funnel', 'radar', 'scatter', 'gauge', 'combo', 'table', 'pivot', 'map'
+  'pie', 'ring', 'funnel', 'radar', 'scatter', 'gauge', 'combo', 'table', 'pivot', 'map',
+  'heatmap','treemap','sunburst','sankey','boxplot','histogram','waterfall','geo-map'
 ] as const
 
 export type ChartType = (typeof CHART_TYPES)[number]
@@ -10,7 +11,8 @@ export type ChartType = (typeof CHART_TYPES)[number]
 export const CHART_TYPE_GROUPS: { title: string; types: ChartType[] }[] = [
   { title: '柱线与趋势', types: ['bar', 'line', 'area', 'hbar', 'stack', 'percent', 'combo'] },
   { title: '占比与构成', types: ['pie', 'ring', 'funnel', 'radar'] },
-  { title: '分布与指标', types: ['scatter', 'gauge', 'map'] },
+  { title: '分布与指标', types: ['scatter', 'boxplot', 'histogram', 'gauge', 'map', 'geo-map'] },
+  { title: '层级与流向', types: ['heatmap','treemap','sunburst','sankey','waterfall'] },
   { title: '表格分析', types: ['table', 'pivot'] }
 ]
 
@@ -30,7 +32,7 @@ export const CHART_TYPE_LABELS: Record<ChartType, string> = {
   combo: '柱线组合',
   table: '明细表',
   pivot: '透视表',
-  map: '行政区地图'
+  map: '行政区地图', heatmap:'热力图',treemap:'矩形树图',sunburst:'旭日图',sankey:'桑基图',boxplot:'箱线图',histogram:'直方图',waterfall:'瀑布图','geo-map':'经纬度地图'
 }
 
 const PIE_LIKE = new Set<ChartType>(['pie', 'ring', 'funnel'])
@@ -49,7 +51,7 @@ export function isMapLike(type: ChartType): boolean {
 }
 
 export function allowsClearDimension(type: ChartType): boolean {
-  return type === 'table' || type === 'gauge' || type === 'scatter'
+  return type === 'table' || type === 'gauge' || type === 'scatter' || type==='histogram' || type==='geo-map'
 }
 
 export function isPivotType(type: ChartType): boolean {
@@ -57,13 +59,15 @@ export function isPivotType(type: ChartType): boolean {
 }
 
 export function supportsDrill(type: ChartType): boolean {
-  return !new Set<ChartType>(['table', 'pivot', 'map', 'gauge']).has(type)
+  return !new Set<ChartType>(['table', 'pivot', 'map', 'geo-map', 'gauge','histogram']).has(type)
 }
 
-export function supportsSeriesDimension(type:ChartType):boolean { return ['bar','hbar','line','area','stack','percent','combo'].includes(type) }
+export function supportsSeriesDimension(type:ChartType):boolean { return ['bar','hbar','line','area','stack','percent','combo','heatmap','sunburst','sankey'].includes(type) }
 
 export function maxMetricsForType(type: ChartType): number {
   if (type === 'pivot') return 3
+  if (['heatmap','treemap','sunburst','sankey','boxplot','histogram','waterfall'].includes(type)) return 1
+  if(type==='geo-map')return 3
   if (type === 'table') return 5
   if (isPieLike(type) || type === 'gauge' || type === 'map') return 1
   if (type === 'scatter') return 3
@@ -93,6 +97,13 @@ export function validateChartQueryShape(
     if (!metrics.length) return '请配置度量'
     return null
   }
+  if(type==='histogram')return dimensions.length===0&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'直方图需要一个未聚合的数值字段，且不需要维度'
+  if(type==='geo-map')return dimensions.length<=1&&metrics.length>=2&&metrics.length<=3&&metrics.every(m=>(m as {agg?:string}).agg==='NONE')?null:'经纬度地图需要未聚合的经度、纬度，可选一个点大小指标和一个名称维度'
+  if(type==='heatmap')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'热力图需要两个分类维度和一个聚合指标'
+  if(type==='sunburst')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要父级、子级两个维度和一个聚合指标'
+  if(type==='sankey')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'桑基图需要来源、目标两个维度和一个聚合流量指标'
+  if(type==='treemap'||type==='waterfall')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:`${CHART_TYPE_LABELS[type]}需要一个维度和一个聚合指标`
+  if(type==='boxplot')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'箱线图需要一个分类维度和一个未聚合数值字段'
   if (isMapLike(type)) {
     if (dimensions.length !== 1 || metrics.length !== 1) return '行政区地图须选择一个地区维度和一个度量'
     return null
@@ -116,8 +127,11 @@ export function applyTypeDefaults(
   let mets = metrics
   const max = maxMetricsForType(type)
   if (mets.length > max) mets = mets.slice(0, max)
-  if (type === 'gauge') dims = []
-  else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot') dims=dims.slice(0,1)
+  if (type === 'gauge'||type==='histogram') dims = []
+  else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot' && type!=='geo-map') dims=dims.slice(0,1)
+  if(['heatmap','sunburst','sankey'].includes(type))dims=dims.slice(0,2)
+  if(type==='geo-map')mets=mets.map(m=>({...m,agg:'NONE'})).slice(0,3)
+  if(['boxplot','histogram'].includes(type))mets=mets.map(m=>({...m,agg:'NONE'}))
   return { dimensions: dims, metrics: mets }
 }
 
@@ -131,7 +145,7 @@ export function chartConfigurationIssues(definition:import('@/api/bi/chart').Cha
   if(!query.datasetId)add('dataset','datasetId','请选择数据集')
   const shape=validateChartQueryShape(type,query.dimensions,query.metrics)
   if(shape && query.metrics.length>0 && query.metrics.length<=maxMetricsForType(type))add('shape','roles',shape)
-  if(!query.metrics.length && !query.dimensions.length && !['table','pivot','gauge','scatter'].includes(type))add('dimension','dimensions','请选择分类维度')
+  if(!query.metrics.length && !query.dimensions.length && !['table','pivot','gauge','scatter','histogram','geo-map'].includes(type))add('dimension','dimensions','请选择分类维度')
   if(!query.metrics.length || query.metrics.length>maxMetricsForType(type))add('metrics','metrics',`请选择 1～${maxMetricsForType(type)} 个${type==='table'?'展示字段':'指标'}`)
   const known=new Map(fields.map(f=>[f.name,f]))
   const numeric=(field:string)=>/(int|decimal|numeric|float|double|real|number)/i.test(known.get(field)?.type || '')

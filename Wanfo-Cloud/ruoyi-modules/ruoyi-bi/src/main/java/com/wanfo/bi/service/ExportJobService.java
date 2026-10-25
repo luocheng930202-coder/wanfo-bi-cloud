@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExportJobService {
     public record Submit(String sourceType, Long sourceId, String panelKey, Integer revision, String format, String name, Map<String,Object> input) { }
-    public record File(String name, String type, byte[] bytes) { }
+    public record File(String name, String type, byte[] bytes, int rowCount) { }
     private static final int MAX_BYTES = 8 * 1024 * 1024;
     private final BiExportJobMapper mapper;
     private final ChartDefinitionService charts;
@@ -41,6 +41,40 @@ public class ExportJobService {
     public Map<String,Object> submit(Submit request) {
         caps.require("bi:export:add");
         return asLive(actors.currentActor(),"bi:export:add",()->submitCurrent(request));
+    }
+    /** Generate the same permission-checked artifact as export jobs for a scheduled subscriber. */
+    public File generateForSubscription(BiActor actor, Submit request) {
+        return asLive(actor,"bi:export:add",()->{
+            if (request == null || request.sourceId() == null || request.sourceId() < 1) throw new IllegalArgumentException("订阅资源无效");
+            String type=request.sourceType()==null?"":request.sourceType().trim();
+            String format=request.format()==null?"":request.format().trim().toLowerCase(Locale.ROOT);
+            if(!Set.of("chart","dashboard").contains(type)||!Set.of("csv","xlsx","pdf").contains(format))throw new IllegalArgumentException("订阅来源或格式无效");
+            Map<String,Object> payload=new LinkedHashMap<>();payload.put("sourceType",type);payload.put("sourceId",request.sourceId());payload.put("format",format);
+            if(request.panelKey()!=null&&!request.panelKey().isBlank())payload.put("panelKey",request.panelKey().trim());
+            if(request.revision()!=null)payload.put("revision",request.revision());
+            Map<String,Object> safeInput=input(type,request.input());if(!safeInput.isEmpty())payload.put("input",safeInput);
+            List<ExportTables.Sheet> sheets;
+            try{sheets=load(payload,request.name()==null?"订阅报表":request.name());}
+            catch(RuntimeException ex){throw ex;}
+            catch(Exception ex){throw new IllegalArgumentException("报表数据生成失败，请检查当前权限和数据源",ex);}
+            if(sheets.isEmpty())throw new IllegalArgumentException("没有可发送的数据");
+            byte[] bytes=encode(sheets,format);if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("报表超过 8MB 限制");
+            int rowCount=sheets.stream().mapToInt(ExportTables.Sheet::rowCount).sum();
+            return new File(ExportTables.fileName(request.name()==null?"订阅报表":request.name(),format),contentType(format),bytes,rowCount);
+        });
+    }
+    public void validateSubscription(BiActor actor,Submit request){
+        asLive(actor,"bi:export:add",()->{
+            if(request==null||request.sourceId()==null||request.sourceId()<1)throw new IllegalArgumentException("订阅资源无效");
+            String type=request.sourceType()==null?"":request.sourceType().trim();String format=request.format()==null?"":request.format().trim().toLowerCase(Locale.ROOT);
+            if(!Set.of("chart","dashboard").contains(type)||!Set.of("csv","xlsx","pdf").contains(format))throw new IllegalArgumentException("订阅来源或格式无效");
+            if("chart".equals(type)){caps.require("bi:chart:query");charts.detail(request.sourceId());return null;}
+            caps.require("bi:dashboard:consume");var view=dashboards.view(request.sourceId());List<Map<String,Object>> panels=dataPanels(view);
+            String key=request.panelKey()==null?"":request.panelKey().trim();if(panels.isEmpty())throw new IllegalArgumentException("看板没有可导出的数据组件");
+            if(!key.isEmpty()&&panels.stream().noneMatch(p->key.equals(String.valueOf(p.get("key")))))throw new IllegalArgumentException("数据组件不属于此看板或不能导出");
+            if(Set.of("csv","pdf").contains(format)&&key.isEmpty()&&panels.size()>1)throw new IllegalArgumentException("多个数据组件请选择一个组件，或改用 Excel");
+            return null;
+        });
     }
     private Map<String,Object> submitCurrent(Submit request) {
         if (request == null || request.sourceId() == null || request.sourceId() < 1) throw new IllegalArgumentException("请指定已保存图表或已发布看板");
@@ -119,7 +153,7 @@ public class ExportJobService {
             if(!(expected instanceof String) || !expected.equals(fingerprint(load(request,String.valueOf(row.get("name"))))))
                 throw new BiAccessException(409,"数据、身份或权限范围已变化，请重新导出");
         }catch(BiAccessException ex){throw ex;}catch(Exception ex){throw new BiAccessException(403,"无法验证当前数据权限，请重新导出");}
-        return new File(fileName, type, content);
+        return new File(fileName, type, content,((Number)row.getOrDefault("rowCount",0)).intValue());
     }
     void run(Long id) {
         var row = mapper.get(id);

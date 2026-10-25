@@ -34,3 +34,13 @@ test('pivot row/column collisions and unfinished filters are actionable',()=>{
   d.advanced.pivotColFields=['date'];d.query.filterTree={field:'amount',op:'GT',value:''};assert.ok(errors(d).some(i=>i.code==='filter'))
   d.query.filterTree.value=0;assert.deepEqual(errors(d),[])
 })
+test('specialized chart types require their own field roles and raw-value modes',()=>{
+  const heat={type:'heatmap',query:{datasetId:1,dimensions:[{field:'region'},{field:'date'}],metrics:[{field:'amount',agg:'SUM'}]}}
+  assert.deepEqual(errors(heat),[])
+  const hist={type:'histogram',query:{datasetId:1,dimensions:[],metrics:[{field:'amount',agg:'NONE'}]}}
+  assert.deepEqual(errors(hist),[])
+  const box={type:'boxplot',query:{datasetId:1,dimensions:[{field:'region'}],metrics:[{field:'amount',agg:'NONE'}]}}
+  assert.deepEqual(errors(box),[])
+  const geo={type:'geo-map',query:{datasetId:1,dimensions:[],metrics:[{field:'amount',agg:'NONE'},{field:'amount',agg:'SUM',alias:'lat'}]}}
+  assert.ok(errors(geo).some(i=>i.code==='shape'))
+})

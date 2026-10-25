@@ -22,7 +22,7 @@
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
-          <el-form-item v-if="supportsSeriesDimension(definition.type)" label="系列维度（可选）">
+          <el-form-item v-if="supportsSeriesDimension(definition.type)" :label="['heatmap','sunburst','sankey'].includes(definition.type)?'第二维度（必需）':'系列维度（可选）'">
             <el-select :model-value="definition.query.dimensions[1]?.field" clearable filterable @change="setSeries"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" :disabled="f.name===definition.query.dimensions[0]?.field"/></el-select>
             <small class="hint">例如按月份展示销售额，再按渠道拆分系列。缺失组合保持为空；时间补齐、同比环比请先移除系列维度。</small>
           </el-form-item>

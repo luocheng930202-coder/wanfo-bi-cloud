@@ -1,6 +1,6 @@
 <template>
   <el-dialog :model-value="visible" :title="'数据集建模 · ' + name" width="min(920px, calc(100vw - 24px))" @update:model-value="emit('update:visible', $event)" @open="load">
-    <el-tabs v-model="tab">
+    <el-tabs v-model="tab" @tab-change="tabChanged">
       <el-tab-pane label="关联表" name="join">
         <el-alert type="info" :closable="false" show-icon class="mb8" title="左表为当前数据集物理表；右表字段以 r_ 前缀写入数据集。" />
         <el-form label-width="100px">
@@ -62,6 +62,7 @@
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="计算字段" name="calc">
+        <el-alert type="info" :closable="false" title="计算步骤按表格顺序执行；后续字段可引用前面建立的计算字段。支持 TRIM、UPPER、LOWER、COALESCE、ROUND、ABS 等安全函数。" />
         <el-form :inline="true" class="mb8">
           <el-form-item label="字段名"><el-input v-model="calc.originName" placeholder="profit_rate" /></el-form-item>
           <el-form-item label="显示名"><el-input v-model="calc.showName" placeholder="利润率" /></el-form-item>
@@ -84,6 +85,11 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+      <el-tab-pane label="质量检查" name="quality">
+        <div class="quality-toolbar"><span>基于当前权限可见的最多 100 行样本</span><el-button :loading="qualityLoading" @click="loadQuality">运行检查</el-button></div>
+        <el-alert v-if="quality" type="info" :closable="false" :title="`${quality.sampledRows} 行样本 · ${quality.duplicateRows} 行重复 · ${quality.note}`" />
+        <el-table v-if="quality" :data="quality.columns" border size="small" class="mt8"><el-table-column prop="field" label="字段"/><el-table-column prop="nullCount" label="空值" width="90"/><el-table-column label="空值率" width="110"><template #default="{row}">{{ (row.nullRate*100).toFixed(1) }}%</template></el-table-column><el-table-column prop="distinctCount" label="不同值" width="100"/><el-table-column prop="duplicateValueCount" label="重复值" width="100"/></el-table>
+      </el-tab-pane>
     </el-tabs>
   </el-dialog>
 </template>
@@ -91,7 +97,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getDataset, listTables, listColumns, listModelSources, getDatasetModel, applyDatasetJoin, clearDatasetJoin, addCalculatedField, removeCalculatedField, updateDatasetField, type DatasetField, type CatalogTable, type CatalogColumn, type DatasetJoinModel } from '@/api/bi/dataset'
+import { getDataset, getDatasetQuality, listTables, listColumns, listModelSources, getDatasetModel, applyDatasetJoin, clearDatasetJoin, addCalculatedField, removeCalculatedField, updateDatasetField, type DatasetField, type CatalogTable, type CatalogColumn, type DatasetJoinModel } from '@/api/bi/dataset'
 
 const props = defineProps<{ visible: boolean; datasetId: number; name: string }>()
 const emit = defineEmits<{ (e: 'update:visible', v: boolean): void; (e: 'saved'): void }>()
@@ -109,6 +115,8 @@ const join = reactive<DatasetJoinModel>({ joinType: 'LEFT', rightTable: '', left
 const calc = reactive({ originName: '', showName: '', formula: '', dimFlag: '1' })
 const calcFields = computed(() => leftFields.value.filter(f => f.extFlag === '1'))
 const physicalFields = computed(() => leftFields.value.filter(f => f.extFlag !== '1'))
+const quality=ref<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;columns:{field:string;nullCount:number;nonNullCount:number;distinctCount:number;duplicateValueCount:number;nullRate:number}[]}>(),qualityLoading=ref(false)
+async function loadQuality(){qualityLoading.value=true;try{quality.value=(await getDatasetQuality(props.datasetId)).data}catch{ElMessage.error('质量检查失败，请确认数据集查询权限及数据源状态')}finally{qualityLoading.value=false}}
 
 async function saveFieldLabel(row: DatasetField) {
   if (!row.id || !props.datasetId) return
@@ -140,6 +148,8 @@ async function load() {
   if (saved) Object.assign(join, saved)
   if (join.rightTable) await rightTableChanged()
 }
+
+function tabChanged(name:string|number){if(name==='quality'&&!quality.value)void loadQuality()}
 
 function toggleRight(name: string, on: boolean) {
   if (on && !join.rightFields.includes(name)) join.rightFields.push(name)

@@ -141,6 +141,10 @@ export function getDataset(id: number): Promise<AjaxResult<DatasetDetail>> {
   })
 }
 
+export function getDatasetQuality(id:number):Promise<AjaxResult<{sampleLimit:number;sampledRows:number;duplicateRows:number;note:string;columns:{field:string;nullCount:number;nonNullCount:number;distinctCount:number;duplicateValueCount:number;nullRate:number}[]}>>{
+  return request({url:`/bi/dataset/${id}/quality`,method:'get'})
+}
+
 export interface TableDatasetFieldInput {
   name: string
   showName?: string

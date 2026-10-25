@@ -8,7 +8,8 @@
         <el-form-item label="API 地址"><el-input v-model="url" placeholder="https://api.example.com/data" /></el-form-item>
         <el-form-item label="请求方式"><el-select v-model="method"><el-option label="GET" value="GET"/><el-option label="POST" value="POST"/></el-select></el-form-item>
         <el-form-item v-if="method === 'POST'" label="POST JSON 参数"><el-input v-model="bodyText" type="textarea" :rows="4" placeholder="{ &quot;page&quot;: 1 }"/></el-form-item>
-        <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列；嵌套数组暂不展开。</small></el-form-item>
+        <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列。</small></el-form-item>
+        <el-form-item label="展开嵌套数组（可选）"><el-input v-model="expandArrayPath" placeholder="如 items 或 order.lines；留空不展开"/><small class="hint">相对于每条 API 数据记录填写。每个子对象生成一行，父字段会重复；空数组跳过。建议同时开启“展开嵌套对象”。</small></el-form-item>
         <el-divider content-position="left">OAuth 2.0（客户端凭据）</el-divider>
         <el-form-item label="令牌地址"><el-input v-model="oauth.tokenUrl" placeholder="https://api.example.com/oauth/token"/></el-form-item>
         <template v-if="oauth.tokenUrl">
@@ -67,7 +68,7 @@ const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
+const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false),expandArrayPath=ref('')
 const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
 const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
@@ -79,14 +80,14 @@ let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
-  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;expandArrayPath.value='';Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
   paginationMode.value='page';Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';expandArrayPath.value=result.data.expandArrayPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }
@@ -117,7 +118,7 @@ async function save(){
       }
       let body:Record<string,unknown>|undefined=undefined;if(method.value==='POST'){body=JSON.parse(bodyText.value||'{}');if(!body||Array.isArray(body)||typeof body!=='object')throw new Error('POST 参数须为 JSON 对象')}
       const auth=oauth.tokenUrl.trim()?{tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),clientSecret:oauth.clientSecret,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token'}:undefined
-      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,oauth:auth})
+      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,expandArrayPath:expandArrayPath.value.trim(),oauth:auth})
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')

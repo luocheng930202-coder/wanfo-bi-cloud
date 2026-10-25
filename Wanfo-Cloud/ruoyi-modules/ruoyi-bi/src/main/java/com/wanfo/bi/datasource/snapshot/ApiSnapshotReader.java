@@ -9,7 +9,7 @@ public final class ApiSnapshotReader {
     private ApiSnapshotReader(){}
     public static SnapshotData read(ApiSnapshotClient client,ApiSnapshotClient.Config config,ObjectMapper json)throws Exception {
         var p=config.pagination();
-        if(p==null)return SnapshotParser.json(client.fetch(config),config.dataPath(),json,false,config.flatten());
+        if(p==null)return SnapshotParser.json(client.fetch(config),config.dataPath(),json,false,config.flatten(),config.expandArrayPath());
         boolean cursorMode=p.cursorParam()!=null&&!p.cursorParam().isBlank();
         if(cursorMode){if(!p.cursorParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}")||p.sizeParam()==null||!p.sizeParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}")||p.cursorParam().equals(p.sizeParam())||p.nextCursorPath()==null||p.nextCursorPath().isBlank()||p.nextCursorPath().length()>160)throw new IllegalArgumentException("游标分页参数无效");at(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode(),p.nextCursorPath());if(p.initialCursor()!=null&&p.initialCursor().length()>2048)throw new IllegalArgumentException("初始游标过长");}
         else if(p.pageParam()==null || !p.pageParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}") || p.sizeParam()==null || !p.sizeParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}") || p.pageParam().equals(p.sizeParam()))throw new IllegalArgumentException("分页参数无效");
@@ -48,7 +48,7 @@ public final class ApiSnapshotReader {
                 return new SnapshotData(first.columns(),rows);
             }
             if(!pages.add(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(array.toString().getBytes(StandardCharsets.UTF_8)))))throw new IllegalArgumentException("API 返回重复分页，请检查页码参数");
-            var page=SnapshotParser.json(body,config.dataPath(),json,true,config.flatten());
+            var page=SnapshotParser.json(body,config.dataPath(),json,true,config.flatten(),config.expandArrayPath());
             if(first==null)first=page;else page=page.compatibleWith(first);
             rows.addAll(page.rows());
             if(rows.size()>SnapshotData.MAX_ROWS || total!=null && rows.size()>total)throw new IllegalArgumentException("分页行数超过允许范围或接口声明总数");

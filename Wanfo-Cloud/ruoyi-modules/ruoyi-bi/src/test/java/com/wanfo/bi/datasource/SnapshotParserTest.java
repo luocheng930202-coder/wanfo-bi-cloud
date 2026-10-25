@@ -32,6 +32,19 @@ class SnapshotParserTest {
         assertEquals("1250",data.rows().get(0).get(2));assertEquals("DECIMAL",data.columns().get(2).type());
         assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes("[{\"a\":1e10000}]"),"",mapper));
     }
+    @Test void expandsNestedObjectArraysIntoRows()throws Exception {
+        var mapper=new ObjectMapper();
+        var data=SnapshotParser.json(bytes("{\"data\":{\"rows\":[{\"orderId\":7,\"region\":\"北京\",\"items\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\",\"qty\":3}]},{\"orderId\":8,\"region\":\"上海\",\"items\":[{\"sku\":\"C\",\"qty\":1}]}]}}"),"data.rows",mapper,false,true,"items");
+        assertEquals(List.of("orderId","region","items.sku","items.qty"),data.columns().stream().map(SnapshotData.Column::name).toList());
+        assertEquals(List.of(List.of("7","北京","A","2"),List.of("7","北京","B","3"),List.of("8","上海","C","1")),data.rows());
+    }
+    @Test void rejectsInconsistentNestedArrayRowsAndBoundsExpansion(){
+        var mapper=new ObjectMapper();
+        assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes("[{\"id\":1,\"items\":[{\"sku\":\"A\"}]},{\"id\":2,\"items\":[{\"code\":\"B\"}]}]"),"",mapper,false,true,"items"));
+        StringBuilder input=new StringBuilder("[{\"id\":1,\"items\":[");
+        for(int i=0;i<=SnapshotData.MAX_ROWS;i++){if(i>0)input.append(',');input.append("{\"sku\":\"A\"}");}input.append("]}]");
+        assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes(input.toString()),"",mapper,false,true,"items"));
+    }
     @Test void failedRefreshRejectsChangedFieldsAndTypes()throws Exception {
         var old=SnapshotParser.csv(bytes("code,amount\n001,12.3"));
         var next=SnapshotParser.csv(bytes("code,amount\n002,13.3"));assertEquals(old.columns(),next.compatibleWith(old).columns());

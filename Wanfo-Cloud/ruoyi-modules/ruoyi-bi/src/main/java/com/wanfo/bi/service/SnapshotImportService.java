@@ -33,8 +33,8 @@ public class SnapshotImportService {
         this.sources=sources;this.snapshots=snapshots;this.registry=registry;this.cipher=cipher;this.client=client;
         this.resources=resources;this.capabilities=capabilities;this.actors=actors;this.tx=new TransactionTemplate(manager);
     }
-    public record ApiRequest(Long id,String name,String schemaName,String url,String dataPath,Map<String,String> headers,ApiSnapshotClient.Pagination pagination,Integer refreshMinutes,String method,Map<String,Object> body,boolean flatten,ApiSnapshotClient.OAuth oauth){
-        public ApiRequest(Long id,String name,String schemaName,String url,String path,Map<String,String> headers){this(id,name,schemaName,url,path,headers,null,0,"GET",null,false,null);}
+    public record ApiRequest(Long id,String name,String schemaName,String url,String dataPath,Map<String,String> headers,ApiSnapshotClient.Pagination pagination,Integer refreshMinutes,String method,Map<String,Object> body,boolean flatten,ApiSnapshotClient.OAuth oauth,String expandArrayPath){
+        public ApiRequest(Long id,String name,String schemaName,String url,String path,Map<String,String> headers){this(id,name,schemaName,url,path,headers,null,0,"GET",null,false,null,null);}
     }
     public Map<String,Object> api(ApiRequest request)throws Exception {
         var old=authorize(request.id(),"api");
@@ -42,12 +42,12 @@ public class SnapshotImportService {
         String method=request.method()==null?"GET":request.method().toUpperCase(Locale.ROOT);
         if(!Set.of("GET","POST").contains(method))throw new IllegalArgumentException("API 请求方式无效");
         ApiSnapshotClient.OAuth oauth=request.oauth();
-        if(old!=null){var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);if(oauth!=null && (oauth.clientSecret()==null||oauth.clientSecret().isBlank()))oauth=saved.oauth();if(request.headers()==null && Objects.equals(saved.url(),request.url()))request=new ApiRequest(request.id(),request.name(),request.schemaName(),request.url(),request.dataPath(),saved.headers(),request.pagination(),request.refreshMinutes(),method,request.body(),request.flatten(),oauth);}
-        ApiSnapshotClient.Config config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),request.headers(),request.pagination(),method,request.body(),request.flatten(),oauth);
+        if(old!=null){var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);if(oauth!=null && (oauth.clientSecret()==null||oauth.clientSecret().isBlank()))oauth=saved.oauth();if(request.headers()==null && Objects.equals(saved.url(),request.url()))request=new ApiRequest(request.id(),request.name(),request.schemaName(),request.url(),request.dataPath(),saved.headers(),request.pagination(),request.refreshMinutes(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());}
+        ApiSnapshotClient.Config config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),request.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());
         if(old!=null && request.headers()==null){
             var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);
             if(!Objects.equals(saved.url(),request.url()))throw new IllegalArgumentException("修改 API 地址时须重新提供请求头");
-            config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),saved.headers(),request.pagination(),method,request.body(),request.flatten(),oauth);
+            config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),saved.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());
         }
         var data=ApiSnapshotReader.read(client,config,json);
         final var finalRequest=request;String encoded=cipher.encrypt(json.writeValueAsString(config));
@@ -168,7 +168,7 @@ public class SnapshotImportService {
         result.put("kind",row.kind());result.put("rowCount",row.rowCount());result.put("version",row.version());result.put("fileName",row.fileName());result.put("refreshedAt",row.refreshedAt());
         if("api".equals(row.kind()))try{
             var config=json.readValue(cipher.decrypt(row.configCipher()),ApiSnapshotClient.Config.class);
-            result.put("url",config.url());result.put("dataPath",config.dataPath());result.put("headersSet",config.headers()!=null && !config.headers().isEmpty());result.put("pagination",config.pagination());result.put("method",config.method()==null?"GET":config.method());result.put("body",config.body());result.put("flatten",config.flatten());if(config.oauth()!=null)result.put("oauth",Map.of("tokenUrl",config.oauth().tokenUrl(),"clientId",config.oauth().clientId(),"scope",config.oauth().scope()==null?"":config.oauth().scope(),"tokenField",config.oauth().tokenField()==null?"access_token":config.oauth().tokenField(),"secretSet",config.oauth().clientSecret()!=null));if(refreshes!=null)result.put("schedule",refreshes.status(id));
+            result.put("url",config.url());result.put("dataPath",config.dataPath());result.put("headersSet",config.headers()!=null && !config.headers().isEmpty());result.put("pagination",config.pagination());result.put("method",config.method()==null?"GET":config.method());result.put("body",config.body());result.put("flatten",config.flatten());result.put("expandArrayPath",config.expandArrayPath());if(config.oauth()!=null)result.put("oauth",Map.of("tokenUrl",config.oauth().tokenUrl(),"clientId",config.oauth().clientId(),"scope",config.oauth().scope()==null?"":config.oauth().scope(),"tokenField",config.oauth().tokenField()==null?"access_token":config.oauth().tokenField(),"secretSet",config.oauth().clientSecret()!=null));if(refreshes!=null)result.put("schedule",refreshes.status(id));
         }catch(java.io.IOException e){throw new IllegalStateException("API 配置读取失败");}
         return result;
     }

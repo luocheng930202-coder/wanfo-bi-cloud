@@ -10,7 +10,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class ApiSnapshotClient {
     private final Set<String> origins;
-    public record Config(String url,String dataPath,Map<String,String> headers){}
+    public record Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath){}
+    public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination){
+        public Config(String url,String path,Map<String,String> headers){this(url,path,headers,null);}
+    }
     public ApiSnapshotClient(@Value("${bi.external-source.allowed-origins:}") String origins){
         this.origins=new HashSet<>();for(String origin:origins.split(","))if(!origin.isBlank())this.origins.add(origin(URI.create(origin.trim())));
     }
@@ -18,11 +21,14 @@ public class ApiSnapshotClient {
         if(uri.getHost()==null || uri.getUserInfo()!=null || uri.getFragment()!=null || !Set.of("http","https").contains(uri.getScheme()))throw new IllegalArgumentException("API 地址须为 HTTP(S) 且不能包含账号或片段");
         return uri.getScheme()+"://"+uri.getHost().toLowerCase(Locale.ROOT)+":"+(uri.getPort()<0?("https".equals(uri.getScheme())?443:80):uri.getPort());
     }
-    public byte[] fetch(Config config)throws IOException {
+    public byte[] fetch(Config config)throws IOException {return fetch(config,System.nanoTime()+20_000_000_000L);}
+    public byte[] fetch(Config config,long deadline)throws IOException {
+        if(System.nanoTime()>=deadline)throw new IllegalArgumentException("API 请求超过时间限制");
         URI uri=URI.create(config.url());
         if(!origins.contains(origin(uri)))throw new IllegalArgumentException("API 域名未获允许，请配置 bi.external-source.allowed-origins");
         HttpURLConnection connection=(HttpURLConnection)uri.toURL().openConnection();
-        connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(3000);connection.setReadTimeout(3000);connection.setRequestMethod("GET");
+        int wait=(int)Math.max(1,Math.min(3000,(deadline-System.nanoTime())/1_000_000));
+        connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(wait);connection.setReadTimeout(wait);connection.setRequestMethod("GET");
         connection.setRequestProperty("Accept","application/json");
         if(config.headers()!=null){
             if(config.headers().size()>20)throw new IllegalArgumentException("请求头不能超过 20 项");
@@ -33,7 +39,6 @@ public class ApiSnapshotClient {
                 connection.setRequestProperty(key,value);
             }
         }
-        long deadline=System.nanoTime()+20_000_000_000L;
         try {
             int status=connection.getResponseCode();
             if(status<200 || status>=300)throw new IllegalArgumentException("API 返回 HTTP "+status+"，不跟随重定向");

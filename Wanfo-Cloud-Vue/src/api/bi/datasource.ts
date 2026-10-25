@@ -155,7 +155,7 @@ export interface ApiPagination {pageParam:string;sizeParam:string;pageSize:numbe
 export function importApiSource(data: {id?:number;name:string;schemaName:string;url:string;dataPath:string;headers?:Record<string,string>;pagination?:ApiPagination;refreshMinutes?:number;method?:string;body?:Record<string,unknown>;flatten?:boolean;oauth?:{tokenUrl:string;clientId:string;clientSecret:string;scope:string;tokenField:string}}): Promise<AjaxResult<{id:number;rowCount:number}>> {
   return request({url:'/bi/datasource/import/api',method:'post',data,timeout:30000,headers:{repeatSubmit:false}})
 }
-export function importFileSource(data: FormData): Promise<AjaxResult<{id:number;rowCount:number}>> {
+export function importFileSource(data: FormData): Promise<AjaxResult<{id:number;rowCount:number;rejectedRows?:number;rowErrors?:{row:number;message:string}[]}>> {
   return request({url:'/bi/datasource/import/file',method:'post',data,timeout:30000,headers:{'Content-Type':'multipart/form-data',repeatSubmit:false}})
 }
 export function snapshotSourceInfo(id:number): Promise<AjaxResult<{url?:string;dataPath?:string;rowCount:number;version:number;pagination?:ApiPagination|null;method?:string;body?:Record<string,unknown>|null;flatten?:boolean;oauth?:{tokenUrl:string;clientId:string;scope:string;tokenField:string;secretSet:boolean};schedule?:{intervalMinutes:number;nextRun?:string;lastStatus?:string}|null}>> {

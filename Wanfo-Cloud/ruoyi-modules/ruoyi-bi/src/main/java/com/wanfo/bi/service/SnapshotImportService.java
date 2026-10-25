@@ -64,7 +64,8 @@ public class SnapshotImportService {
         authorize(id,filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel");var data=SnapshotParser.file(bytes,filename,sheet);
         return Map.of("columns",data.columns(),"rows",data.rows().subList(0,Math.min(10,data.rows().size())),"rowCount",data.rows().size());
     }
-    public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes)throws Exception {
+    public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes)throws Exception {return file(id,name,alias,filename,sheet,bytes,mode,columnTypes,"reject");}
+    public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes,String invalidMode)throws Exception {
         String kind=filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel";
         var old=authorize(id,kind);
         var data=SnapshotParser.file(bytes,filename,sheet);
@@ -73,17 +74,24 @@ public class SnapshotImportService {
             Map<String,String> types=json.readValue(columnTypes,json.getTypeFactory().constructMapType(Map.class,String.class,String.class));
             if(!data.columns().stream().map(SnapshotData.Column::name).toList().containsAll(types.keySet()))throw new IllegalArgumentException("字段类型配置与文件不匹配");
             data=new SnapshotData(data.columns().stream().map(c->new SnapshotData.Column(c.name(),types.getOrDefault(c.name(),c.type()))).toList(),data.rows());
-            for(var row:data.rows())for(int i=0;i<row.size();i++)data.value(i,row.get(i));
         }
         if(mode==null)mode="replace";
-        if(!Set.of("replace","append").contains(mode))throw new IllegalArgumentException("文件更新方式无效");
+        if(!Set.of("replace","append","replace-structure").contains(mode))throw new IllegalArgumentException("文件更新方式无效");
+        if(!Set.of("reject","skip").contains(invalidMode))throw new IllegalArgumentException("异常行处理方式无效");
+        List<Map<String,Object>> errors=new ArrayList<>();List<List<String>> validRows=new ArrayList<>();
+        for(int r=0;r<data.rows().size();r++){var row=data.rows().get(r);String issue=null;for(int c=0;c<row.size();c++)try{data.value(c,row.get(c));}catch(IllegalArgumentException e){issue="第 "+(r+2)+" 行，字段「"+data.columns().get(c).name()+"」："+e.getMessage();break;}if(issue==null)validRows.add(row);else if(errors.size()<100)errors.add(Map.of("row",r+2,"message",issue));}
+        int rejected=data.rows().size()-validRows.size();
+        if(rejected>0 && "reject".equals(invalidMode))throw new IllegalArgumentException("发现 "+rejected+" 行字段类型不匹配；首个问题："+errors.get(0).get("message"));
+        if(validRows.isEmpty())throw new IllegalArgumentException("没有可导入的有效数据行");
+        data=new SnapshotData(data.columns(),validRows);
         if("append".equals(mode)){
             if(old==null)throw new IllegalArgumentException("追加需要选择已有文件数据源");
             var prior=registry.decode(old);data=data.compatibleWith(prior);var rows=new ArrayList<List<String>>(prior.rows());rows.addAll(data.rows());data=new SnapshotData(prior.columns(),rows);
         }
         String safe=filename.replace('\\','/');safe=safe.substring(safe.lastIndexOf('/')+1);
         if(safe.length()>200)safe=safe.substring(safe.length()-200);
-        return publish(id,name,alias,kind,data,null,safe,old);
+        boolean structureChange="replace-structure".equals(mode);
+        Map<String,Object> result=new LinkedHashMap<>(publish(id,name,alias,kind,data,null,safe,old,structureChange));result.put("rejectedRows",rejected);result.put("rowErrors",errors);return result;
     }
     private BiSourceSnapshotMapper.Row authorize(Long id,String kind){
         capabilities.require(id==null?"bi:datasource:add":"bi:datasource:edit");
@@ -94,8 +102,11 @@ public class SnapshotImportService {
         return registry.row(id);
     }
     private Map<String,Object> publish(Long id,String name,String alias,String kind,SnapshotData data,String config,String filename,BiSourceSnapshotMapper.Row old)throws Exception {
+        return publish(id,name,alias,kind,data,config,filename,old,false);
+    }
+    private Map<String,Object> publish(Long id,String name,String alias,String kind,SnapshotData data,String config,String filename,BiSourceSnapshotMapper.Row old,boolean structureChange)throws Exception {
         if(old==null && (name==null || name.isBlank() || name.length()>100 || alias==null || !alias.matches("[a-z][a-z0-9_]{0,30}")))throw new IllegalArgumentException("名称或 Schema 别名无效");
-        if(old!=null)data=data.compatibleWith(registry.decode(old));
+        if(old!=null && !structureChange)data=data.compatibleWith(registry.decode(old));
         String columns=json.writeValueAsString(data.columns()),rows=json.writeValueAsString(data.rows());
         // Keep each DB packet bounded even when JSON escaping expands the input.
         if(columns.getBytes(java.nio.charset.StandardCharsets.UTF_8).length+rows.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>6*1024*1024)throw new IllegalArgumentException("快照序列化后过大");

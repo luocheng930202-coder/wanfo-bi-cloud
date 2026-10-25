@@ -35,7 +35,9 @@
           <input type="file" :disabled="busy" :accept="kind === 'csv' ? '.csv' : '.xls,.xlsx'" @change="selectFile" />
         </el-form-item>
         <el-form-item v-if="kind === 'excel'" label="工作表名称"><el-input v-model="sheet" placeholder="留空使用第一个工作表；请将公式转换为值" /></el-form-item>
-        <el-form-item v-if="editing" label="更新方式"><el-radio-group v-model="fileMode"><el-radio value="replace">覆盖快照</el-radio><el-radio value="append">按行追加</el-radio></el-radio-group></el-form-item>
+        <el-form-item v-if="editing" label="更新方式"><el-radio-group v-model="fileMode"><el-radio value="replace">覆盖快照</el-radio><el-radio value="append">按行追加</el-radio><el-radio value="replace-structure">覆盖并变更结构</el-radio></el-radio-group></el-form-item>
+        <el-alert v-if="fileMode==='replace-structure'" title="结构变更会替换字段列表，关联数据集和图表可能需要重新同步字段。" type="warning" :closable="false"/>
+        <el-form-item label="异常行处理"><el-radio-group v-model="invalidMode"><el-radio value="reject">发现异常则拒绝整批</el-radio><el-radio value="skip">跳过异常行并报告</el-radio></el-radio-group></el-form-item>
         <el-alert v-if="fileMode==='append'" title="追加不会自动去重；重复上传同一文件会产生重复记录。" type="warning" :closable="false" />
         <el-button :loading="busy" :disabled="!file" @click="previewFile">预览并设置字段类型</el-button>
         <template v-if="previewColumns.length">
@@ -52,13 +54,13 @@
 </template>
 <script setup lang="ts">
 import { ref,reactive,watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage,ElMessageBox } from 'element-plus'
 import { importApiSource, importFileSource, snapshotSourceInfo, previewFileSource, type BiDatasource } from '@/api/bi/datasource'
 const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
+const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
 const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
 const previewColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
@@ -68,7 +70,7 @@ let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
-  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
   Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
@@ -96,6 +98,7 @@ async function save(){
   error.value=''
   if(!name.value.trim() || !/^[a-z][a-z0-9_]{0,30}$/.test(alias.value)){error.value='请填写名称和有效的 Schema 别名';return}
   busy.value=true
+  let rejected=0
   try {
     if(kind.value==='api') {
       let parsed:Record<string,string>|undefined=undefined
@@ -109,11 +112,11 @@ async function save(){
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')
-      const data=fileData();data.append('mode',fileMode.value)
+      const data=fileData();data.append('mode',fileMode.value);data.append('invalidMode',invalidMode.value)
       if(previewColumns.value.length)data.append('columnTypes',JSON.stringify(Object.fromEntries(previewColumns.value.map(c=>[c.name,c.type]))))
-      await importFileSource(data)
+      const response=await importFileSource(data);rejected=response.data.rejectedRows||0;if(rejected){const details=(response.data.rowErrors||[]).slice(0,12).map(item=>item.message).join('\n');await ElMessageBox.alert(`共跳过 ${rejected} 行异常数据。${response.data.rowErrors?.length===100?'仅列出前 100 条问题。':''}\n\n${details}`,'导入异常行报告',{confirmButtonText:'知道了',type:'warning',customClass:'bi-import-report'})}
     }
-    ElMessage.success('数据快照已保存');visible.value=false;emit('saved')
+    visible.value=false;emit('saved');if(!rejected)ElMessage.success('数据快照已保存')
   } catch(e) {error.value=e instanceof Error?e.message:'导入失败，请检查数据后重试'}
   finally {busy.value=false}
 }

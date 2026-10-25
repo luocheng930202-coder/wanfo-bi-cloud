@@ -289,7 +289,7 @@ public class CatalogService
                     Map<String,Object> row = new LinkedHashMap<>();
                     for (int i=1;i<=compiled.columns().size();i++)
                     {
-                        Object value = rs.getObject(i);
+                        Object value = com.wanfo.bi.query.JdbcResultValues.read(rs, i);
                         if (value instanceof Long || value instanceof java.math.BigDecimal || value instanceof java.math.BigInteger)
                         { value = value.toString(); }
                         row.put(compiled.columns().get(i-1),value);

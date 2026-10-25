@@ -6,25 +6,27 @@
 | --- | --- | --- | --- |
 | MySQL / Doris / StarRocks | MySQL JDBC | 连接串指定的数据库 | 原有能力回归；本地 MySQL 验收 |
 | PostgreSQL | 随包提供 PostgreSQL 驱动 | 当前数据库内指定 schema，默认连接当前 schema，通常为 public | 驱动加载、范围隔离、元数据、兼容模式查询 |
-| SQL Server | 随包提供 Microsoft JDBC 驱动 | 当前数据库内指定 schema，通常为 dbo | 驱动加载、TOP 分页、标识符引用、兼容模式查询 |
-| Oracle | 随包提供 Oracle JDBC 驱动 | 指定 schema，默认连接用户 | 驱动加载、DUAL 检测、ROWNUM 分页、NUMBER 类型、兼容模式查询 |
+| SQL Server | 随包提供 Microsoft JDBC 驱动 | 当前数据库内指定 schema，通常为 dbo | 驱动加载、TOP 分页、标识符引用、兼容模式查询；本地 SQL Server 2022 实连与只读预览 |
+| Oracle | 随包提供 Oracle JDBC 驱动 | 指定 schema，默认连接用户 | 驱动加载、DUAL 检测、ROWNUM 分页、NUMBER 类型、兼容模式查询；本地 Oracle Free 实连及 JDBC 时间类型验收 |
 | ClickHouse | clickhouse-jdbc 0.9.8 all，默认 V2 驱动 | 连接当前数据库；驱动通过 schema 提供数据库名称 | 驱动加载、schema 范围、预览方言和字段类型适配 |
 | JSON API | HTTP(S) GET，手动创建、手动/定时刷新持久快照 | 虚拟库 snapshot 下的 data 表 | 本地 HTTP 自动化、权限、失败保留、并发版本检查、Calcite 查询 |
 | CSV | UTF-8 文件上传，支持 BOM、引号、逗号和换行 | 同上 | 解析、类型、异常输入、Calcite 聚合 |
 | Excel | XLS / XLSX，指定工作表或默认首表 | 同上 | 工作表解析、公式拒绝、持久化、查询 |
 
-PostgreSQL 与 ClickHouse 已完成基础本地实例冒烟验收；这不等于生产验收。H2 兼容模式用于检查 JDBC 建模和 Calcite 查询链路，不能替代相应服务器的版本、权限、TLS、时区及复杂 SQL 联调。当前工作不扩展业务填报的跨数据库写入能力。
+PostgreSQL、ClickHouse、SQL Server 与 Oracle 均已具备本地容器实例。基础连接、只读账号和字段/行预览结果记录如下；Oracle 的 BI 页面时间值回归已修复并通过实时 JDBC 测试，重新登录后的页面复核仍待完成。这些结果不等于生产验收。H2 兼容模式不能替代相应服务器的版本、TLS、时区及复杂 SQL 联调。当前工作不扩展业务填报的跨数据库写入能力。
 
-### 本地真实实例冒烟验收（2026-10-25）
+### 本地真实实例冒烟验收（2026-10-25 至 2026-10-26）
 
-在本机 Docker 实例上，通过 BI 数据源页面测试连接，并在未保存的数据集表单中读取表结构和预览数据：
+在本机 Docker 实例上，通过 BI 数据源页面测试连接，并读取表结构和预览数据：
 
 | 数据库 | 实例版本 | 表 | 连接测试 | 元数据与预览 |
 | --- | --- | --- | --- | --- |
 | PostgreSQL | 17.11 | `analytics.sales_demo` | 成功，约 1473 ms | 识别 8 个字段，预览 40 行，约 456 ms |
 | ClickHouse | 25.8 | `wanfo_bi.sales_demo` | 成功，约 850 ms | 识别 8 个字段，预览 40 行，约 56 ms |
+| SQL Server | 2022（16.00.4305） | `BI_TEST.sales_demo` | 成功，约 2633 ms | 识别 10 个字段，预览 40 行，约 112 ms；只读账号写入被拒绝 |
+| Oracle | Oracle AI Database 26ai Free（23.26.3.0.0） | `BI_OWNER.SALES_DEMO` | 成功，约 3588 ms | 识别 10 个字段，预览 40 行，约 202 ms；只读账号写入被拒绝 |
 
-预览表单随后取消，未保存临时数据集。本次只证明当前本地账号、驱动和基础元数据/读取链路可用；未覆盖最小权限与跨 schema 隔离、日期时区和数值边界、视图/关联、复杂图表与透视查询、慢查询取消及 TLS。SQL Server、Oracle 仍未连接真实实例验收。
+SQL Server 验收数据集已保存供本机复验；Oracle 数据源已保存，数据集页面待登录后复核时间字段。首次 Oracle 页面预览将 `EVENT_TIME` 显示为 `[object Object]`；服务端现在按 JDBC 时间类型输出 ISO 字符串，4 项定向回归测试（含真实 Oracle 连接和 JSON 序列化）均通过。SQL Server 使用加密连接但信任本地自签证书，不能代表证书校验验收。仍待验证跨 schema 拒绝、精度/时区边界、视图/关联、复杂图表与透视查询、慢查询取消及正式 TLS。
 
 ## JDBC 配置
 
@@ -40,6 +42,12 @@ PostgreSQL 与 ClickHouse 已完成基础本地实例冒烟验收；这不等于
 不关闭证书验证来规避 TLS 配置错误。创建后选择数据源 → 建数据集 → 物理表和字段 → 保存，再在图表中使用。
 
 系统库与系统 schema 被拒绝；库表接口不允许通过请求参数切到未配置的范围。字段来自 JDBC 元数据，不接受任意标识符拼接。预览限定 1～100 行并设置查询超时。Oracle 检测使用 `SELECT 1 FROM DUAL`，连接池保活同样使用相应语句。
+
+## SQL Server / Oracle 本地验收容器
+
+本地验收 Compose 文件为 `deploy/compose.database-acceptance.yml`，使用独立持久卷，SQL Server `127.0.0.1:11433`、Oracle `127.0.0.1:11521` 仅绑定回环地址。先在 Git 忽略的 `deploy/.env` 中设置 `WANFO_SQLSERVER_SA_PASSWORD`、`WANFO_ORACLE_ADMIN_PASSWORD`；运行 `docker compose -f deploy/compose.database-acceptance.yml up -d sqlserver oracle`。镜像首次下载和 Oracle 首次初始化需要等待容器健康检查通过。
+
+两种数据库的只读样例账号、schema/table 和 40 行中文/日期/小数/NULL 测试数据脚本位于 `deploy/database-acceptance/`。BI 数据源使用只读 `bi_reader` / `BI_READER` 账号，不要将本地测试密码写入仓库。停止容器使用 `docker compose -f deploy/compose.database-acceptance.yml down`；该命令保留测试数据卷，`down -v` 会删除测试数据库数据。
 
 驱动提供默认连接/读取超时；连接 URL 中显式提供的驱动选项仍按驱动自身优先级生效。服务端查询治理继续执行并发限制、超时和取消，不将网络读取超时当作完整的查询取消保证。
 
@@ -61,7 +69,7 @@ bi:
 {"data":{"rows":[{"region":"北京","amount":125.50},{"region":"上海","amount":210.00}]}}
 ```
 
-支持 GET / POST JSON、页码分页及定时刷新；POST 分页参数会写入请求体。可选 OAuth 2.0 客户端凭据模式，每次同步向同一白名单域名取新令牌，密钥加密保存且不回显；响应路径可开启嵌套对象字段展开（以点号分隔），数组需由上游先整理为列。仍不支持 OAuth 授权码/刷新令牌流程、游标分页和任意嵌套数组展开。未启用分页时，识别到常见 `total` / `totalCount` 大于数组行数会拒绝导入；其他分页协议应先在上游整理为完整数据接口，不能把单页当成全量数据。
+支持 GET / POST JSON、页码或游标分页及定时刷新；POST 分页参数会写入请求体。可选 OAuth 2.0 客户端凭据模式，每次同步向同一白名单域名取新令牌，密钥加密保存且不回显；响应路径可开启嵌套对象字段展开（以点号分隔），数组需由上游先整理为列。仍不支持 OAuth 授权码/刷新令牌流程和任意嵌套数组展开。未启用分页时，识别到常见 `total` / `totalCount` 大于数组行数会拒绝导入；其他分页协议应先在上游整理为完整数据接口，不能把单页当成全量数据。
 
 请求头配置使用现有服务端凭据加密组件保存，管理接口仅返回是否设置，不返回原文或密文。前端关闭该请求的通用重复提交缓存，避免把请求头写入 sessionStorage。编辑时请求头留空表示保留，`{}` 表示清空；修改 URL 时必须重新提供请求头。
 
@@ -82,9 +90,9 @@ Flyway `V21__bi_source_snapshots.sql` 为 `bi_datasource` 添加 `source_schema`
 
 自动化覆盖驱动加载及 URL 识别、schema 隔离、原生分页、H2 三种兼容模式、CSV / Excel / JSON、HTTP 域名与重定向、权限先于外部请求、刷新类型校验、版本冲突、迁移与 MyBatis 读写、快照建模及参数化聚合。
 
-拿到各真实实例后还需验证：最小权限账号、跨 schema 拒绝、日期/时区、小数与大整数、空值、视图、中文及保留字字段、关联、TopN、透视表、日历计算、慢查询取消、TLS 和保存后缩略图。未完成这些检查前，不将某个具体服务器版本标为“生产验收通过”。
+真实实例后续仍需验证：跨 schema 拒绝、日期/时区及小数/大整数边界、视图、关联、TopN、透视表、日历计算、慢查询取消、TLS 和保存后缩略图。完成这些检查前，不将某个具体服务器版本标为“生产验收通过”。
 
 参考驱动文档：[PostgreSQL](https://jdbc.postgresql.org/documentation/use/)、[SQL Server 超时](https://learn.microsoft.com/en-us/sql/connect/jdbc/understand-timeouts)、[ClickHouse JDBC](https://clickhouse.com/docs/integrations/language-clients/java/jdbc)。
 
 
-本批本地验收：BI 后端 427 项测试、前端 155 项测试全部通过；BI 范围类型诊断 0 条，宿主原有 268 条诊断保留；前端生产构建通过。真实本地服务完成 CSV / Excel 上传、元数据、创建数据集、图表聚合、重新上传后的取数、失败更新保留、API 默认拒绝外部请求及原地图查询回归。临时数据源和数据集已从有效列表清理。PostgreSQL 与 ClickHouse 的真实本地实例冒烟结果见上表；SQL Server 和 Oracle 仍按自动化适配级别标记，等待真实实例联调。
+前序连接器验收：BI 后端 427 项测试、前端 155 项测试全部通过；BI 范围类型诊断 0 条，前端生产构建通过。真实本地服务完成 CSV / Excel 上传、元数据、图表聚合、失败更新保留、API 默认拒绝外部请求及原地图查询回归。PostgreSQL、ClickHouse、SQL Server、Oracle 的基础真实实例连接结果见上表；Oracle JDBC 时间序列化修复通过 4 项定向测试，其中包括当前本地 Oracle 实例实连。

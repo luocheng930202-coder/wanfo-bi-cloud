@@ -189,7 +189,7 @@ public class CalciteQueryEngine
                 Map<String, Object> row = new LinkedHashMap<>();
                 for (int i = 1; i <= colCount; i++)
                 {
-                    row.put(rsmd.getColumnLabel(i), rs.getObject(i));
+                    row.put(rsmd.getColumnLabel(i), JdbcResultValues.read(rs, i));
                 }
                 rows.add(row);
             }
@@ -248,7 +248,7 @@ public class CalciteQueryEngine
                     Map<String, Object> row = new LinkedHashMap<>();
                     for (int i = 1; i <= colCount; i++)
                     {
-                        row.put(rsmd.getColumnLabel(i), rs.getObject(i));
+                        row.put(rsmd.getColumnLabel(i), JdbcResultValues.read(rs, i));
                     }
                     rows.add(row);
                 }

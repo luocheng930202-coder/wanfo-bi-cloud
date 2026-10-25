@@ -61,6 +61,8 @@
 - [x] 订阅管理、暂停/启用、删除、执行历史与最近状态
 - [x] 每次执行重新解析订阅人的当前身份并校验资源和数据权限
 - [x] 失败后延迟重试，连续 3 次失败自动暂停；审计记录不保存邮件地址或数据内容
-- [ ] 邮件投递外的通道（站内/企业微信）、自定义日历与时区、通知模板和管理员全局审计
+- [x] 站内通知、管理员配置的企业微信机器人通道
+- [x] 按日/周本地日历计划，支持 IANA 时区并按 UTC 持久化
+- [x] 通知标题/正文模板和受控变量；管理员全局执行审计（最多 200 条）
 
-当前使用 SMTP。部署时需设置 `bi.report-subscription.enabled=true`、`bi.report-subscription.allowed-domains` 域名白名单和 Spring Boot `spring.mail.*`；默认关闭，不配置邮件服务/白名单时不能新建或启用订阅。附件最大 8 MB，单次最多 10 个收件人。首次运行按设定间隔后执行，支持 15 分钟至 7 天周期。仓库不含 SMTP 凭据，也未执行真实邮件投递验收。
+邮件通道使用 SMTP。部署时需设置 `bi.report-subscription.enabled=true`、`bi.report-subscription.allowed-domains` 域名白名单和 Spring Boot `spring.mail.*`。企业微信需配置 `bi.report-subscription.wecom.webhook-url` 与 `bi.report-subscription.wecom.allowed-hosts`；只允许管理员配置的 HTTPS 主机，不跟随重定向，消息仅包含模板摘要、不发送报表附件。订阅可选择站内通知、企业微信、邮件的组合；通知模板支持 `reportName`、`status`、`rowCount`、`startedAt`。日/周计划按所选 IANA 时区计算并保存 UTC 下次运行时间，固定间隔仍支持 15 分钟至 7 天。全局审计通过 `bi:resource:admin` 保护，最多展示最近 200 次运行且不记录收件地址或报表数据。仓库不含通道凭据，也未执行真实邮件或企业微信投递验收。

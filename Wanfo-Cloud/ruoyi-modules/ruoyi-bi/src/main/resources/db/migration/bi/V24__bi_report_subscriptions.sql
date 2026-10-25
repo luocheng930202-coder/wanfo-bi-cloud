@@ -1,0 +1,40 @@
+CREATE TABLE bi_report_subscription (
+ id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ owner_principal bigint NOT NULL,
+ actor_json longtext NOT NULL,
+ source_type varchar(16) NOT NULL,
+ source_id bigint NOT NULL,
+ panel_key varchar(64) NOT NULL DEFAULT '',
+ format varchar(8) NOT NULL,
+ name varchar(200) NOT NULL,
+ recipients_json varchar(2000) NOT NULL,
+ interval_minutes int NOT NULL,
+ enabled tinyint NOT NULL DEFAULT 1,
+ next_run datetime NOT NULL,
+ run_started datetime DEFAULT NULL,
+ failure_count int NOT NULL DEFAULT 0,
+ last_run datetime DEFAULT NULL,
+ last_status varchar(16) NOT NULL DEFAULT 'waiting',
+ last_message varchar(500) NOT NULL DEFAULT '',
+ create_by varchar(64) NOT NULL,
+ create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ update_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ KEY idx_bi_subscription_due(enabled,next_run),
+ KEY idx_bi_subscription_owner(owner_principal,id)
+);
+
+CREATE TABLE bi_report_subscription_audit (
+ id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ subscription_id bigint NOT NULL,
+ owner_principal bigint NOT NULL,
+ started_at datetime NOT NULL,
+ finished_at datetime NOT NULL,
+ status varchar(16) NOT NULL,
+ attempt int NOT NULL,
+ row_count int NOT NULL DEFAULT 0,
+ recipient_count int NOT NULL DEFAULT 0,
+ message varchar(500) NOT NULL DEFAULT '',
+ CONSTRAINT fk_bi_report_subscription_audit FOREIGN KEY(subscription_id) REFERENCES bi_report_subscription(id) ON DELETE CASCADE,
+ KEY idx_bi_subscription_audit(subscription_id,id),
+ KEY idx_bi_subscription_audit_owner(owner_principal,id)
+);

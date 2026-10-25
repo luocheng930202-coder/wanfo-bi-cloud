@@ -112,6 +112,14 @@ FROM (
  UNION ALL SELECT '取消任务',3,'bi:export:cancel'
 ) p WHERE @bi_export IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.parent_id=@bi_export AND m.perms=p.permission);
 INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '报表订阅',@bi_parent,8,'subscription','bi/subscription/index','BiSubscription',1,1,'C','0','0','bi:subscription:list','message','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='subscription');
+SET @bi_subscription=(SELECT menu_id FROM sys_menu WHERE parent_id=@bi_parent AND path='subscription' AND perms='bi:subscription:list');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT p.label,@bi_subscription,p.position,'#','F','0','0',p.permission,'#','system',NOW()
+FROM (SELECT '新建订阅' label,1 position,'bi:subscription:add' permission UNION ALL SELECT '编辑与启停',2,'bi:subscription:edit' UNION ALL SELECT '删除订阅',3,'bi:subscription:remove') p
+WHERE @bi_subscription IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.parent_id=@bi_subscription AND m.perms=p.permission);
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
 SELECT '数据填报',@bi_parent,6,'form','bi/form/index','BiDataForm',1,1,'C','0','0','bi:form:list','edit','system',NOW()
 WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='form');
 SET @bi_form=(SELECT menu_id FROM sys_menu WHERE parent_id=@bi_parent AND path='form' AND perms='bi:form:list');

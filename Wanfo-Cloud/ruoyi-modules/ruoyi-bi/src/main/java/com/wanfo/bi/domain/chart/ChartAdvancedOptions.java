@@ -2,7 +2,9 @@ package com.wanfo.bi.domain.chart;
 import java.util.List;
 public class ChartAdvancedOptions {
     public record RadarAxis(String key,Double min,Double max,Double target){}
-    public record Analysis(String funnelRate,java.util.List<String> funnelStages,Boolean funnelFillZero,Boolean radarNormalize,java.util.List<RadarAxis> radarAxes,Boolean scatterQuadrants,Double scatterXSplit,Double scatterYSplit,Boolean scatterZoom,Boolean scatterLogX,Boolean scatterLogY){}
+    public record Analysis(String funnelRate,java.util.List<String> funnelStages,Boolean funnelFillZero,Boolean radarNormalize,java.util.List<RadarAxis> radarAxes,Boolean scatterQuadrants,Double scatterXSplit,Double scatterYSplit,Boolean scatterZoom,Boolean scatterLogX,Boolean scatterLogY,String trendMethod,Integer forecastPeriods,Boolean anomalyDetection,Double anomalySensitivity,String anomalyMethod){
+        public Analysis(String funnelRate,java.util.List<String> funnelStages,Boolean funnelFillZero,Boolean radarNormalize,java.util.List<RadarAxis> radarAxes,Boolean scatterQuadrants,Double scatterXSplit,Double scatterYSplit,Boolean scatterZoom,Boolean scatterLogX,Boolean scatterLogY){this(funnelRate,funnelStages,funnelFillZero,radarNormalize,radarAxes,scatterQuadrants,scatterXSplit,scatterYSplit,scatterZoom,scatterLogX,scatterLogY,null,null,null,null,null);}
+    }
     private Analysis analysis;
     public Analysis getAnalysis(){return analysis;}
     public void setAnalysis(Analysis value){analysis=value;}

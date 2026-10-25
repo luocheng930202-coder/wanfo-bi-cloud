@@ -73,6 +73,16 @@ export interface ChartVisualStyle {
   scatterBorderWidth?: number
   scatterBorderColor?: string
   scatterLabelContent?: 'category'|'coordinates'
+  heatmapLowColor?:string
+  heatmapHighColor?:string
+  heatmapShowScale?:boolean
+  treemapLeafDepth?:number
+  treemapShowBreadcrumb?:boolean
+  sankeyNodeGap?:number
+  sankeyCurveness?:number
+  boxplotHorizontal?:boolean
+  histogramBins?:number
+  waterfallShowTotal?:boolean
 
   metrics?: ChartMetricStyle[]
   referenceLines?: ChartReferenceLine[]
@@ -115,6 +125,7 @@ export interface ChartAnalysis {
   forecastPeriods?:number
   anomalyDetection?:boolean
   anomalySensitivity?:number
+  anomalyMethod?:'stddev'|'mad'
 }
 export interface ChartAdvancedOptions {
   analysis?:ChartAnalysis

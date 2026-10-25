@@ -45,6 +45,9 @@ public final class ChartStyleValidator {
         choice(s.getRadarShape(),Set.of("polygon","circle"),"雷达网格形状");range(s.getRadarSplitNumber(),2,10,"雷达网格层数");
         choice(s.getScatterSymbol(),Set.of("circle","rect","roundRect","triangle","diamond"),"散点形状");
         choice(s.getScatterLabelContent(),Set.of("category","coordinates"),"散点标签内容");
+        color(s.getHeatmapLowColor());color(s.getHeatmapHighColor());range(s.getTreemapLeafDepth(),1,2,"矩形树图初始层级");
+        range(s.getSankeyNodeGap(),0,40,"桑基图节点间距");range(s.getSankeyCurveness(),0,1,"桑基图连线弯曲度");
+        range(s.getHistogramBins(),0,50,"直方图分箱数量");
         range(s.getScatterSize(),2,60,"散点大小");range(s.getScatterOpacity(),0.05,1,"散点透明度");range(s.getScatterBorderWidth(),0,5,"散点描边宽度");color(s.getScatterBorderColor());
         if(s.getMetrics()!=null) {
             if(s.getMetrics().size()>20)throw new IllegalArgumentException("最多 20 个指标样式");

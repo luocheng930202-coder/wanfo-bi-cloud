@@ -48,6 +48,34 @@
     <el-form-item v-if="style.showLabels" label="散点标签内容"><el-select :model-value="style.scatterLabelContent || 'category'" @change="v=>style.scatterLabelContent=v"><el-option value="category" label="分类名称 / 点序号"/><el-option value="coordinates" label="格式化 X、Y 数值"/></el-select></el-form-item>
     <p class="hint">点大小为固定样式，不代表第三个指标；密集分布建议减小点尺寸和透明度。提示框保留点标识及 X、Y 原值的格式化展示。</p>
   </template>
+  <template v-if="definition.type==='heatmap'">
+    <el-form-item label="低值颜色"><el-color-picker :model-value="style.heatmapLowColor || '#E8F3FF'" @update:model-value="v=>style.heatmapLowColor=v || undefined"/></el-form-item>
+    <el-form-item label="高值颜色"><el-color-picker :model-value="style.heatmapHighColor || '#2864DC'" @update:model-value="v=>style.heatmapHighColor=v || undefined"/></el-form-item>
+    <el-form-item label="显示色阶"><el-switch :model-value="style.heatmapShowScale!==false" @update:model-value="v=>style.heatmapShowScale=!!v"/></el-form-item>
+    <p class="hint">色阶按当前查询结果中的指标最小值和最大值映射。</p>
+  </template>
+  <template v-if="definition.type==='treemap'">
+    <el-form-item label="初始层级"><el-input-number :model-value="style.treemapLeafDepth ?? 1" :min="1" :max="2" :precision="0" @update:model-value="v=>style.treemapLeafDepth=v"/></el-form-item>
+    <el-form-item label="显示层级导航"><el-switch :model-value="style.treemapShowBreadcrumb!==false" @update:model-value="v=>style.treemapShowBreadcrumb=!!v"/></el-form-item>
+    <p class="hint">需要配置两个维度才能展示父级和子级分类。</p>
+  </template>
+  <template v-if="definition.type==='sankey'">
+    <el-form-item label="节点间距"><el-input-number :model-value="style.sankeyNodeGap ?? 10" :min="0" :max="40" :precision="0" @update:model-value="v=>style.sankeyNodeGap=v"/></el-form-item>
+    <el-form-item label="连线弯曲度"><el-slider :model-value="style.sankeyCurveness ?? 0.5" :min="0" :max="1" :step="0.05" @update:model-value="v=>style.sankeyCurveness=Number(v)"/></el-form-item>
+    <p class="hint">流向由查询中的第一个维度指向第二个维度；同一来源和目标的流量会合并。</p>
+  </template>
+  <template v-if="definition.type==='boxplot'">
+    <el-form-item label="横向箱线图"><el-switch :model-value="!!style.boxplotHorizontal" @update:model-value="v=>style.boxplotHorizontal=!!v"/></el-form-item>
+    <p class="hint">箱体按样本的最小值、四分位数、中位数和最大值绘制，异常值单独标记能力暂不提供。</p>
+  </template>
+  <template v-if="definition.type==='histogram'">
+    <el-form-item label="分箱数量"><el-input-number :model-value="style.histogramBins ?? 0" :min="0" :max="50" :precision="0" @update:model-value="v=>style.histogramBins=v"/></el-form-item>
+    <p class="hint">设置为 0 时按样本数平方根自动计算，最多 20 箱；手动设置范围为 1～50。</p>
+  </template>
+  <template v-if="definition.type==='waterfall'">
+    <el-form-item label="显示累计总计"><el-switch :model-value="!!style.waterfallShowTotal" @update:model-value="v=>style.waterfallShowTotal=!!v"/></el-form-item>
+    <p class="hint">累计值按查询结果顺序计算；建议在数据页明确设置排序。</p>
+  </template>
 </template>
 <script setup lang="ts">
 import {computed} from 'vue'

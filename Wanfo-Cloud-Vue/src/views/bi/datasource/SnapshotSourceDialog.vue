@@ -5,7 +5,18 @@
       <el-form-item label="名称"><el-input v-model="name" :disabled="editing" maxlength="100" /></el-form-item>
       <el-form-item label="Schema 别名"><el-input v-model="alias" :disabled="editing" placeholder="小写字母开头，例如 sales_api" maxlength="31" /></el-form-item>
       <template v-if="kind === 'api'">
-        <el-form-item label="API 地址（GET JSON）"><el-input v-model="url" placeholder="https://api.example.com/data" /></el-form-item>
+        <el-form-item label="API 地址"><el-input v-model="url" placeholder="https://api.example.com/data" /></el-form-item>
+        <el-form-item label="请求方式"><el-select v-model="method"><el-option label="GET" value="GET"/><el-option label="POST" value="POST"/></el-select></el-form-item>
+        <el-form-item v-if="method === 'POST'" label="POST JSON 参数"><el-input v-model="bodyText" type="textarea" :rows="4" placeholder="{ &quot;page&quot;: 1 }"/></el-form-item>
+        <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列；嵌套数组暂不展开。</small></el-form-item>
+        <el-divider content-position="left">OAuth 2.0（客户端凭据）</el-divider>
+        <el-form-item label="令牌地址"><el-input v-model="oauth.tokenUrl" placeholder="https://api.example.com/oauth/token"/></el-form-item>
+        <template v-if="oauth.tokenUrl">
+          <el-form-item label="Client ID"><el-input v-model="oauth.clientId" autocomplete="off"/></el-form-item>
+          <el-form-item label="Client Secret"><el-input v-model="oauth.clientSecret" type="password" show-password autocomplete="new-password" :placeholder="oauth.secretSet ? '留空保留已保存密钥' : '请输入密钥'"/></el-form-item>
+          <el-form-item label="Scope（可选）"><el-input v-model="oauth.scope"/></el-form-item>
+          <el-form-item label="令牌字段"><el-input v-model="oauth.tokenField" placeholder="access_token"/></el-form-item>
+        </template>
         <el-form-item label="数组路径"><el-input v-model="dataPath" placeholder="data.rows；根节点为数组时留空" /></el-form-item>
         <el-form-item label="请求头 JSON"><el-input v-model="headers" type="textarea" :rows="3" :placeholder="editing ? '留空保留已保存请求头；修改地址时须重新填写，{} 表示清空' : '{ &quot;Authorization&quot;: &quot;Bearer …&quot; }'" /></el-form-item>
         <el-form-item label="页码分页"><el-switch v-model="paged" /></el-form-item>
@@ -47,7 +58,8 @@ const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace')
+const paged=ref(false),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
+const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
 const previewColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
 const columnTypes=[{value:'VARCHAR',label:'文本'},{value:'DECIMAL',label:'数值'},{value:'BOOLEAN',label:'布尔'},{value:'DATE',label:'日期'},{value:'TIMESTAMP',label:'日期时间'}]
@@ -56,14 +68,14 @@ let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
-  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
   Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination)Object.assign(pagination,result.data.pagination);refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || ''} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination)Object.assign(pagination,result.data.pagination);refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }
@@ -91,7 +103,9 @@ async function save(){
         parsed=JSON.parse(headers.value)
         if(!parsed || Array.isArray(parsed) || typeof parsed!=='object' || Object.values(parsed).some(v=>typeof v!=='string'))throw new Error('请求头须为字符串键值对象')
       }
-      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value})
+      let body:Record<string,unknown>|undefined=undefined;if(method.value==='POST'){body=JSON.parse(bodyText.value||'{}');if(!body||Array.isArray(body)||typeof body!=='object')throw new Error('POST 参数须为 JSON 对象')}
+      const auth=oauth.tokenUrl.trim()?{tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),clientSecret:oauth.clientSecret,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token'}:undefined
+      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,oauth:auth})
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')

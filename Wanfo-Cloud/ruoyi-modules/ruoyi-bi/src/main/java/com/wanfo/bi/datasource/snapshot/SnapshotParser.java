@@ -72,8 +72,9 @@ public final class SnapshotParser {
         if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("API 响应超过 5 MB");
         try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);return mapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).with(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS).readTree(parser);}
     }
-    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {return json(bytes,path,mapper,false);}
-    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated)throws IOException {
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {return json(bytes,path,mapper,false,false);}
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated)throws IOException {return json(bytes,path,mapper,paginated,false);}
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated,boolean flatten)throws IOException {
         JsonNode root=tree(bytes,mapper);
         JsonNode array=root;List<JsonNode> parents=new ArrayList<>();parents.add(root);
         if(path!=null && !path.isBlank()){
@@ -84,16 +85,19 @@ public final class SnapshotParser {
         if(array.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 超过 20000 行");
         if(!paginated)for(JsonNode parent:parents)if(parent.isObject())for(String key:List.of("total","totalCount"))if(parent.path(key).canConvertToLong() && parent.path(key).longValue()>array.size())throw new IllegalArgumentException("接口返回分页数据，请提供完整数据接口");
         JsonNode first=array.get(0);if(!first.isObject())throw new IllegalArgumentException("API 数组元素须为对象");
-        List<String> names=new ArrayList<>();first.fieldNames().forEachRemaining(names::add);
+        Map<String,JsonNode> firstFields=fields(first,flatten);List<String> names=new ArrayList<>(firstFields.keySet());
         List<List<String>> rows=new ArrayList<>();
         for(JsonNode object:array){
-            if(!object.isObject() || object.size()!=names.size())throw new IllegalArgumentException("API 各行字段不一致");
+            if(!object.isObject())throw new IllegalArgumentException("API 各行字段不一致");Map<String,JsonNode> flattened=fields(object,flatten);
+            if(!flattened.keySet().equals(firstFields.keySet()))throw new IllegalArgumentException("API 各行字段不一致");
             List<String> row=new ArrayList<>();
-            for(String name:names){JsonNode value=object.get(name);if(value==null || value.isContainerNode())throw new IllegalArgumentException("API 仅支持固定字段的扁平对象数组");row.add(value.isNull()?null:scalar(value));}
+            for(String name:names){JsonNode value=flattened.get(name);if(value==null || value.isContainerNode())throw new IllegalArgumentException("API 嵌套数组无法展开，请先在上游转换为字段");row.add(value.isNull()?null:scalar(value));}
             rows.add(row);
         }
         return SnapshotData.infer(names,rows);
     }
+    private static Map<String,JsonNode> fields(JsonNode object,boolean flatten){Map<String,JsonNode> result=new LinkedHashMap<>();if(flatten)flatten(object,"",result,0);else object.fields().forEachRemaining(e->result.put(e.getKey(),e.getValue()));if(result.size()>SnapshotData.MAX_COLUMNS)throw new IllegalArgumentException("API 字段超过 200 列");return result;}
+    private static void flatten(JsonNode node,String prefix,Map<String,JsonNode> result,int depth){if(depth>8)throw new IllegalArgumentException("API JSON 嵌套超过 8 层");node.fields().forEachRemaining(e->{String key=prefix.isEmpty()?e.getKey():prefix+"."+e.getKey();if(e.getValue().isObject())flatten(e.getValue(),key,result,depth+1);else result.put(key,e.getValue());});}
     private static String scalar(JsonNode value){
         if(!value.isNumber())return value.asText();
         java.math.BigDecimal number=value.decimalValue();

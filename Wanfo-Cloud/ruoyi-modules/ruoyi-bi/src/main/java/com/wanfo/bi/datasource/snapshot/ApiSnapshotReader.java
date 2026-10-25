@@ -9,11 +9,11 @@ public final class ApiSnapshotReader {
     private ApiSnapshotReader(){}
     public static SnapshotData read(ApiSnapshotClient client,ApiSnapshotClient.Config config,ObjectMapper json)throws Exception {
         var p=config.pagination();
-        if(p==null)return SnapshotParser.json(client.fetch(config),config.dataPath(),json);
+        if(p==null)return SnapshotParser.json(client.fetch(config),config.dataPath(),json,false,config.flatten());
         if(p.pageParam()==null || !p.pageParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}") || p.sizeParam()==null || !p.sizeParam().matches("[A-Za-z][A-Za-z0-9_]{0,31}") || p.pageParam().equals(p.sizeParam())
                 || p.pageSize()<1 || p.pageSize()>1000 || p.startPage()<0 || p.startPage()>1 || p.maxPages()<1 || p.maxPages()>100)throw new IllegalArgumentException("分页参数无效：每页 1～1000 行，最多 100 页，起始页为 0 或 1");
         URI uri=URI.create(config.url());
-        if(uri.getRawQuery()!=null)for(String pair:uri.getRawQuery().split("&")){
+        if(!"POST".equalsIgnoreCase(config.method()) && uri.getRawQuery()!=null)for(String pair:uri.getRawQuery().split("&")){
             String key=URLDecoder.decode(pair.split("=",2)[0],StandardCharsets.UTF_8);
             if(key.equals(p.pageParam()) || key.equals(p.sizeParam()))throw new IllegalArgumentException("请从 API 地址移除已配置的分页参数");
         }
@@ -21,8 +21,10 @@ public final class ApiSnapshotReader {
         SnapshotData first=null;List<List<String>> rows=new ArrayList<>();Set<String> pages=new HashSet<>();
         for(int index=0;index<p.maxPages();index++){
             if(System.nanoTime()>deadline)throw new IllegalArgumentException("API 分页读取超过 30 秒，保留原快照");
-            String url=config.url()+(config.url().contains("?")?"&":"?")+p.pageParam()+"="+(p.startPage()+index)+"&"+p.sizeParam()+"="+p.pageSize();
-            byte[] body=client.fetch(new ApiSnapshotClient.Config(url,config.dataPath(),config.headers()),deadline);bytes+=body.length;
+            String url=config.url();Map<String,Object> params=new LinkedHashMap<>(config.body()==null?Map.of():config.body());
+            if("POST".equalsIgnoreCase(config.method())){params.put(p.pageParam(),p.startPage()+index);params.put(p.sizeParam(),p.pageSize());}
+            else url=url+(url.contains("?")?"&":"?")+p.pageParam()+"="+(p.startPage()+index)+"&"+p.sizeParam()+"="+p.pageSize();
+            byte[] body=client.fetch(new ApiSnapshotClient.Config(url,config.dataPath(),config.headers(),null,config.method(),params,config.flatten(),config.oauth()),deadline);bytes+=body.length;
             if(bytes>SnapshotParser.MAX_BYTES || System.nanoTime()>deadline)throw new IllegalArgumentException("API 分页累计超过 5 MB 或 30 秒");
             JsonNode root=SnapshotParser.tree(body,json),array=at(root,config.dataPath());
             if(!array.isArray())throw new IllegalArgumentException("API 数据路径须指向对象数组");
@@ -41,7 +43,7 @@ public final class ApiSnapshotReader {
                 return new SnapshotData(first.columns(),rows);
             }
             if(!pages.add(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(array.toString().getBytes(StandardCharsets.UTF_8)))))throw new IllegalArgumentException("API 返回重复分页，请检查页码参数");
-            var page=SnapshotParser.json(body,config.dataPath(),json,true);
+            var page=SnapshotParser.json(body,config.dataPath(),json,true,config.flatten());
             if(first==null)first=page;else page=page.compatibleWith(first);
             rows.addAll(page.rows());
             if(rows.size()>SnapshotData.MAX_ROWS || total!=null && rows.size()>total)throw new IllegalArgumentException("分页行数超过允许范围或接口声明总数");

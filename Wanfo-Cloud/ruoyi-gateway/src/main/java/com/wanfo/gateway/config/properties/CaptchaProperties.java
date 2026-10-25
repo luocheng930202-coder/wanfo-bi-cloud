@@ -20,7 +20,7 @@ public class CaptchaProperties
     /**
      * 验证码类型（math 数组计算 char 字符）
      */
-    private String type = 'char';
+    private String type = "char";
 
     public Boolean getEnabled()
     {

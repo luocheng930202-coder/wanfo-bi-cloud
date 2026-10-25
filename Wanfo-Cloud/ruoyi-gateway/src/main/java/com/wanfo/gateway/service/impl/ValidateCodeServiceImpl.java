@@ -62,9 +62,9 @@ public class ValidateCodeServiceImpl implements ValidateCodeService
         BufferedImage image = null;
 
         String captchaType = captchaProperties.getType();
-        if (!'math'.equals(captchaType) && !'char'.equals(captchaType))
+        if (!"math".equals(captchaType) && !"char".equals(captchaType))
         {
-            captchaType = 'char';
+            captchaType = "char";
         }
         // 生成验证码
         if ("math".equals(captchaType))

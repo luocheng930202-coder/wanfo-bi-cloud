@@ -47,7 +47,7 @@ public class ValidateCodeServiceImpl implements ValidateCodeService
     public AjaxResult createCaptcha() throws IOException, CaptchaException
     {
         AjaxResult ajax = AjaxResult.success();
-        boolean captchaEnabled = captchaProperties.getEnabled();
+        boolean captchaEnabled = Boolean.TRUE.equals(captchaProperties.getEnabled());
         ajax.put("captchaEnabled", captchaEnabled);
         if (!captchaEnabled)
         {
@@ -62,6 +62,10 @@ public class ValidateCodeServiceImpl implements ValidateCodeService
         BufferedImage image = null;
 
         String captchaType = captchaProperties.getType();
+        if (!"math".equals(captchaType) && !"char".equals(captchaType))
+        {
+            captchaType = "char";
+        }
         // 生成验证码
         if ("math".equals(captchaType))
         {

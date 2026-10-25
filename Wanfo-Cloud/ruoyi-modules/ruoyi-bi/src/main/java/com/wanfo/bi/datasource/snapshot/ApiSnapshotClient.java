@@ -14,9 +14,10 @@ public class ApiSnapshotClient {
         public Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath){this(pageParam,sizeParam,pageSize,startPage,maxPages,totalPath,null,null,null);}
     }
     public record OAuth(String tokenUrl,String clientId,String clientSecret,String scope,String tokenField){}
-    public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth){
+    public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth,String expandArrayPath){
         public Config(String url,String path,Map<String,String> headers){this(url,path,headers,null,"GET",null,false,null);}
         public Config(String url,String path,Map<String,String> headers,Pagination pagination){this(url,path,headers,pagination,"GET",null,false,null);}
+        public Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth){this(url,dataPath,headers,pagination,method,body,flatten,oauth,null);}
     }
     public ApiSnapshotClient(@Value("${bi.external-source.allowed-origins:}") String origins){
         this.origins=new HashSet<>();for(String origin:origins.split(","))if(!origin.isBlank())this.origins.add(origin(URI.create(origin.trim())));

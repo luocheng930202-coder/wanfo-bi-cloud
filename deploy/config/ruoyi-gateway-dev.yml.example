@@ -1,3 +1,8 @@
+security:
+  captcha:
+    enabled: ${WANFO_CAPTCHA_ENABLED:true}
+    type: ${WANFO_CAPTCHA_TYPE:char}
+
 spring:
   cloud:
     gateway:

@@ -8,7 +8,8 @@
         <el-form-item label="API 地址"><el-input v-model="url" placeholder="https://api.example.com/data" /></el-form-item>
         <el-form-item label="请求方式"><el-select v-model="method"><el-option label="GET" value="GET"/><el-option label="POST" value="POST"/></el-select></el-form-item>
         <el-form-item v-if="method === 'POST'" label="POST JSON 参数"><el-input v-model="bodyText" type="textarea" :rows="4" placeholder="{ &quot;page&quot;: 1 }"/></el-form-item>
-        <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列；嵌套数组暂不展开。</small></el-form-item>
+        <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列。</small></el-form-item>
+        <el-form-item label="展开嵌套数组（可选）"><el-input v-model="expandArrayPath" placeholder="如 items 或 order.lines；留空不展开"/><small class="hint">相对于每条 API 数据记录填写。每个子对象生成一行，父字段会重复；空数组跳过。建议同时开启“展开嵌套对象”。</small></el-form-item>
         <el-divider content-position="left">OAuth 2.0（客户端凭据）</el-divider>
         <el-form-item label="令牌地址"><el-input v-model="oauth.tokenUrl" placeholder="https://api.example.com/oauth/token"/></el-form-item>
         <template v-if="oauth.tokenUrl">
@@ -47,7 +48,7 @@
         <el-alert v-if="fileMode==='append' && dedupeMode==='none'" title="当前按行追加且不去重；如重复导入，请选择全部字段或业务键去重。业务键去重保留最后出现的记录。" type="warning" :closable="false" />
         <el-button :loading="busy" :disabled="!file" @click="previewFile">预览并映射字段</el-button>
         <template v-if="previewColumns.length">
-          <p>本次文件 {{ previewCount }} 行；将源字段映射到目标字段，可改名、对齐旧字段或忽略。重名目标会被拒绝，修改类型后保存时会校验全部行。</p>
+          <p>本次文件 {{ previewCount }} 行；已自动建议 {{ suggestedMappingCount }} 个唯一字段映射（忽略大小写和分隔符差异）。请核对后保存；仍可改名、对齐旧字段或忽略，重名目标会被拒绝。</p>
           <el-table :data="previewColumns" max-height="260"><el-table-column prop="name" label="源字段" min-width="130"/><el-table-column label="目标字段" min-width="190"><template #default="{row}"><el-select v-model="row.targetName" filterable allow-create default-first-option clearable placeholder="输入或选择目标字段"><el-option label="忽略此字段" value=""/><el-option v-for="column in existingColumns" :key="column.name" :label="column.name+'（'+column.type+'）'" :value="column.name"/></el-select></template></el-table-column><el-table-column label="类型" width="150"><template #default="{row}"><el-select v-model="row.type" :disabled="editing && fileMode!=='replace-structure' && existingColumns.some(c=>c.name===row.targetName)"><el-option v-for="option in columnTypes" :key="option.value" :label="option.label" :value="option.value" /></el-select></template></el-table-column></el-table>
           <el-table :data="previewRows" max-height="230"><el-table-column v-for="(column,index) in previewColumns" :key="column.name" :label="column.name" :prop="String(index)" min-width="110" show-overflow-tooltip /></el-table>
           <el-alert v-if="editing && fileMode==='replace-structure'" :title="schemaChangeSummary" type="warning" :closable="false" class="mt8"/>
@@ -67,10 +68,10 @@ const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false)
+const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false),expandArrayPath=ref('')
 const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
-const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
+const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0),suggestedMappingCount=ref(0)
 const schemaChangeSummary=computed(()=>{const before=existingColumns.value.map(c=>c.name),after=previewColumns.value.map(c=>c.targetName).filter(Boolean),kept=after.filter(c=>before.includes(c)),added=after.filter(c=>!before.includes(c)),missing=before.filter(c=>!after.includes(c));return `结构预览：保留 ${kept.length} 个既有字段，新增 ${added.length} 个，移除 ${missing.length} 个。${added.length?` 新增：${added.join('、')}。`:''}${missing.length?` 移除：${missing.join('、')}。`:''}`})
 watch(previewColumns,()=>{const valid=new Set(previewColumns.value.map(c=>c.targetName).filter(Boolean));dedupeKeys.value=dedupeKeys.value.filter(key=>valid.has(key))},{deep:true})
 const columnTypes=[{value:'VARCHAR',label:'文本'},{value:'DECIMAL',label:'数值'},{value:'BOOLEAN',label:'布尔'},{value:'DATE',label:'日期'},{value:'TIMESTAMP',label:'日期时间'}]
@@ -79,14 +80,14 @@ let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
-  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;expandArrayPath.value='';Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
   paginationMode.value='page';Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';expandArrayPath.value=result.data.expandArrayPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }
@@ -99,7 +100,14 @@ function fileData(){
 async function previewFile(){
   if(!file.value || busy.value)return
   busy.value=true;error.value=''
-  try{const response=await previewFileSource(fileData());existingColumns.value=response.data.existingColumns||[];previewColumns.value=response.data.columns.map(c=>({ ...c,targetName:c.name }));previewRows.value=response.data.rows;previewCount.value=response.data.rowCount}
+  try{
+    const response=await previewFileSource(fileData());existingColumns.value=response.data.existingColumns||[]
+    const normalize=(value:string)=>value.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}_]+/gu,'')
+    const targets=new Map<string,string[]>();for(const column of existingColumns.value){const key=normalize(column.name);const matches=targets.get(key)||[];matches.push(column.name);targets.set(key,matches)}
+    const used=new Set<string>();suggestedMappingCount.value=0
+    previewColumns.value=response.data.columns.map(column=>{const matches=targets.get(normalize(column.name))||[];let targetName=column.name;if(matches.length===1&&!used.has(matches[0])){targetName=matches[0];used.add(targetName);suggestedMappingCount.value++}return{...column,targetName}})
+    previewRows.value=response.data.rows;previewCount.value=response.data.rowCount
+  }
   catch{error.value='文件预览失败，请检查编码、表头、工作表及文件大小'}finally{busy.value=false}
 }
 async function save(){
@@ -117,7 +125,7 @@ async function save(){
       }
       let body:Record<string,unknown>|undefined=undefined;if(method.value==='POST'){body=JSON.parse(bodyText.value||'{}');if(!body||Array.isArray(body)||typeof body!=='object')throw new Error('POST 参数须为 JSON 对象')}
       const auth=oauth.tokenUrl.trim()?{tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),clientSecret:oauth.clientSecret,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token'}:undefined
-      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,oauth:auth})
+      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,expandArrayPath:expandArrayPath.value.trim(),oauth:auth})
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')

@@ -38,7 +38,7 @@
         <el-form-item label="执行时区"><el-select v-model="form.schedule.timezone" filterable allow-create default-first-option style="width:100%" placeholder="选择或输入 IANA 时区"><el-option v-for="zone in timezoneOptions" :key="zone" :label="zone" :value="zone" /></el-select></el-form-item>
         <el-form-item label="通知标题"><el-input v-model="form.templateTitle" maxlength="200" /></el-form-item>
         <el-form-item label="通知正文"><el-input v-model="form.templateBody" type="textarea" :rows="3" maxlength="1000" show-word-limit /></el-form-item>
-        <div class="hint template-hint">模板变量：{{ '{{reportName}}' }}、{{ '{{status}}' }}、{{ '{{rowCount}}' }}、{{ '{{startedAt}}' }}</div>
+        <div class="hint template-hint">模板变量：&#123;&#123;reportName&#125;&#125;、&#123;&#123;status&#125;&#125;、&#123;&#123;rowCount&#125;&#125;、&#123;&#123;startedAt&#125;&#125;</div>
       </el-form>
       <template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">创建订阅</el-button></template>
     </el-dialog>

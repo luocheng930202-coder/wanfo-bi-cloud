@@ -79,8 +79,9 @@ class CatalogModelTest
     @Test void previewHasServerLimitTimeoutAndOnlySelectedColumns() throws Exception
     {
         metadata();
-        PreparedStatement st=mock(PreparedStatement.class); ResultSet rows=mock(ResultSet.class);
+        PreparedStatement st=mock(PreparedStatement.class); ResultSet rows=mock(ResultSet.class); ResultSetMetaData rowMetadata=mock(ResultSetMetaData.class);
         when(conn.prepareStatement(anyString())).thenReturn(st); when(st.executeQuery()).thenReturn(rows);
+        when(rows.getMetaData()).thenReturn(rowMetadata); when(rowMetadata.getColumnType(1)).thenReturn(Types.VARCHAR);
         when(rows.next()).thenReturn(true,false); when(rows.getObject(1)).thenReturn("Shanghai");
         var result=service.preview("demo","poc_a","orders_2026",List.of("city"),10);
         assertEquals(List.of("city"),result.get("columns")); assertEquals(1,result.get("rowCount"));

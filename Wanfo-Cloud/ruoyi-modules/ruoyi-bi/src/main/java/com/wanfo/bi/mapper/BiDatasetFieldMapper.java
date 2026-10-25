@@ -26,6 +26,9 @@ public interface BiDatasetFieldMapper
 
     int update(BiDatasetFieldDO row);
 
+    @org.apache.ibatis.annotations.Update("UPDATE bi_dataset_field SET order_num=#{orderNum},update_time=NOW() WHERE id=#{id} AND dataset_id=#{datasetId} AND ext_flag='1' AND del_flag='0'")
+    int updateCalculatedOrder(@Param("datasetId") Long datasetId,@Param("id") Long id,@Param("orderNum") int orderNum);
+
     int deleteByDatasetId(@Param("datasetId") Long datasetId);
 
     int deleteById(@Param("id") Long id);

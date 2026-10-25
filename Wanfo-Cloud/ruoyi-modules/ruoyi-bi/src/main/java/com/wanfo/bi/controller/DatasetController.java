@@ -236,10 +236,10 @@ public class DatasetController
         return service.preview(id, maxRows);
     }
 
-    @Operation(summary = "数据集质量检查（最多抽样 100 行）")
+    @Operation(summary = "数据集质量检查（样本或全量精确扫描）")
     @GetMapping("/{id}/quality")
     @BiPermission("bi:dataset:query")
-    public Map<String,Object> quality(@PathVariable Long id)throws Exception{return qualityRules.evaluate(id,service.qualityReport(id));}
+    public Map<String,Object> quality(@PathVariable Long id,@RequestParam(defaultValue="false") boolean fullScan)throws Exception{return qualityRules.evaluate(id,service.qualityReport(id,fullScan));}
 
     @GetMapping("/{id}/quality/rules")
     @BiPermission("bi:dataset:query")

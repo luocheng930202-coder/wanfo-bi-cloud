@@ -526,13 +526,68 @@ public class DatasetService
     }
 
     @SuppressWarnings("unchecked")
-    public Map<String,Object> qualityReport(Long id)throws Exception{
+    public Map<String,Object> qualityReport(Long id)throws Exception{return qualityReport(id,false);}
+    public Map<String,Object> qualityReport(Long id,boolean fullScan)throws Exception{
+        if(fullScan)return fullQualityReport(id);
         Map<String,Object> sample=preview(id,100);Object rawColumns=sample.get("columns"),rawRows=sample.get("rows");
         if(!(rawColumns instanceof List<?> columns)||!(rawRows instanceof List<?> rows))throw new IllegalStateException("数据质量检查结果格式无效");
         List<String> names=columns.stream().map(String::valueOf).toList();List<Map<String,Object>> records=new ArrayList<>();
         for(Object row:rows)if(row instanceof Map<?,?> map){Map<String,Object> values=new LinkedHashMap<>();map.forEach((k,v)->values.put(String.valueOf(k),v));records.add(values);}
         return DatasetQuality.summarize(names,records);
     }
+
+    private Map<String,Object> fullQualityReport(Long id)throws Exception{
+        resources.require("dataset",id,"view");resources.require("dataset",id,"query");
+        BiDatasetTableDO dataset=datasetMapper.selectById(id);if(dataset==null)throw new IllegalArgumentException("数据集不存在");
+        List<String> columns;List<String> types;String base;List<Object> params=List.of();Connection conn;
+        if("table".equals(dataset.getType())){
+            BiDatasource source=datasourceProvider.getById(dataset.getDatasourceId());if(source==null||!"0".equals(source.getStatus()))throw new BiAccessException(403,"数据源不可用");
+            List<BiDatasetFieldDO> fields=fieldMapper.selectByDatasetId(id);if(fields.isEmpty())throw new IllegalArgumentException("数据集没有可扫描字段");
+            List<String> physicalFields=fields.stream().filter(f->!"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).toList();
+            String physicalBase=dataset.getModelJson()!=null&&!dataset.getModelJson().isBlank()?dataset.getUnionSql():catalog.savedPlan(source.getSchemaName(),dataset.getSourceCatalog(),dataset.getSourceTable(),physicalFields).sql();
+            conn=engine.borrowConnection(source.getSchemaName());
+            String quote=conn.getMetaData().getIdentifierQuoteString().trim();base=DatasetQueryBaseBuilder.expand(physicalBase,fields,quote);
+            Map<String,String> fieldTypes=new LinkedHashMap<>();for(BiDatasetFieldDO field:fields)fieldTypes.put(field.getOriginName(),String.valueOf(field.getOriginType()));
+            var scope=policies.resolve(id);var access=DataPolicyCompiler.compile(new ArrayList<>(fieldTypes.keySet()),fieldTypes,quote,scope);
+            columns=access.columns();types=columns.stream().map(fieldTypes::get).toList();params=access.params();
+            base="SELECT "+access.projection()+" FROM ("+base+") AS quality_source"+(access.predicate().isBlank()?"":" WHERE "+access.predicate());
+        }else{
+            resources.requireAdministrator();BiDatasource source=datasourceProvider.getById(dataset.getDatasourceId());if(source==null||!"0".equals(source.getStatus()))throw new BiAccessException(403,"数据源不可用");
+            base="sql".equals(dataset.getType())?dataset.getSqlText():dataset.getUnionSql();if(base==null||base.isBlank())throw new IllegalArgumentException("数据集查询定义为空");
+            conn=engine.open(datasourceProvider.listEnabled());columns=fieldMapper.selectByDatasetId(id).stream().map(BiDatasetFieldDO::getOriginName).toList();types=fieldMapper.selectByDatasetId(id).stream().map(f->String.valueOf(f.getOriginType())).toList();
+        }
+        long started=System.currentTimeMillis();
+        try(conn){
+            String quote=conn.getMetaData().getIdentifierQuoteString().trim();
+            String relation="("+base+") AS full_quality";StringBuilder aggregate=new StringBuilder("SELECT COUNT(*)");
+            for(int i=0;i<columns.size();i++){
+                String field=qualityIdentifier(quote,columns.get(i));boolean text=isTextType(types.get(i));
+                String nullCheck=field+" IS NULL"+(text?" OR TRIM("+field+") = ''":"");String distinctValue=text?"NULLIF(TRIM("+field+"), '')":field;
+                aggregate.append(", COALESCE(SUM(CASE WHEN ").append(nullCheck).append(" THEN 1 ELSE 0 END), 0)");
+                aggregate.append(", COUNT(DISTINCT ").append(distinctValue).append(")");
+            }
+            aggregate.append(" FROM ").append(relation);
+            long rowCount;long[] nullCounts=new long[columns.size()],distinctCounts=new long[columns.size()];
+            try(java.sql.PreparedStatement statement=conn.prepareStatement(aggregate.toString())){
+                statement.setQueryTimeout(120);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){
+                    if(!rs.next())throw new IllegalStateException("全量质量统计没有返回结果");rowCount=rs.getLong(1);int index=2;
+                    for(int i=0;i<columns.size();i++){nullCounts[i]=rs.getLong(index++);distinctCounts[i]=rs.getLong(index++);}
+                }
+            }
+            long duplicateRows=0;
+            if(!columns.isEmpty()){
+                String groupFields=columns.stream().map(c->qualityIdentifier(quote,c)).collect(Collectors.joining(", "));
+                String duplicateSql="SELECT COALESCE(SUM(duplicate_count - 1), 0) FROM (SELECT COUNT(*) AS duplicate_count FROM "+relation+" GROUP BY "+groupFields+" HAVING COUNT(*) > 1) duplicate_groups";
+                try(java.sql.PreparedStatement statement=conn.prepareStatement(duplicateSql)){
+                    statement.setQueryTimeout(120);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){if(!rs.next())throw new IllegalStateException("重复行统计没有返回结果");duplicateRows=rs.getLong(1);}
+                }
+            }
+            return DatasetQuality.fullScan(columns,rowCount,nullCounts,distinctCounts,duplicateRows,System.currentTimeMillis()-started);
+        }
+    }
+    private static void bindQualityParams(java.sql.PreparedStatement statement,List<Object> params)throws java.sql.SQLException{for(int i=0;i<params.size();i++)statement.setObject(i+1,params.get(i));}
+    private static String qualityIdentifier(String quote,String name){String end="[".equals(quote)?"]":quote;return quote+name.replace(end,end+end)+end;}
+    private static boolean isTextType(String type){String normalized=type==null?"":type.toLowerCase(java.util.Locale.ROOT);return normalized.matches(".*(char|varchar|string|text).*");}
 
     private Map<String,Object> previewJoinedTable(BiDatasetTableDO dataset, Long id, int maxRows, BiDatasource source) throws Exception
     {

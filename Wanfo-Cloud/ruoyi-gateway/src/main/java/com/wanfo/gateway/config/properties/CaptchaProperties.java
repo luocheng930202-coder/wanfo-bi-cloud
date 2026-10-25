@@ -15,12 +15,12 @@ public class CaptchaProperties
     /**
      * 验证码开关
      */
-    private Boolean enabled;
+    private Boolean enabled = Boolean.TRUE;
 
     /**
      * 验证码类型（math 数组计算 char 字符）
      */
-    private String type;
+    private String type = 'char';
 
     public Boolean getEnabled()
     {

@@ -13,6 +13,8 @@ $values = @{
   'WANFO_DB_PASSWORD' = (New-RandomBase64 24)
   'MYSQL_ROOT_PASSWORD' = (New-RandomBase64 24)
   'WANFO_REDIS_PASSWORD' = (New-RandomBase64 24)
+  'WANFO_ACTUATOR_PASSWORD' = (New-RandomBase64 36)
+  'WANFO_GRAFANA_ADMIN_PASSWORD' = (New-RandomBase64 24)
   'WANFO_JWT_SECRET' = (New-RandomBase64 64)
 }
 $lines = Get-Content -LiteralPath (Join-Path $root 'deploy/.env.example') | ForEach-Object {

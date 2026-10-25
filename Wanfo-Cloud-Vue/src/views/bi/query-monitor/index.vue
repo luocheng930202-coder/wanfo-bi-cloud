@@ -3,6 +3,7 @@
     <el-result v-if="!authorized" icon="warning" title="无查询监控权限" sub-title="仅 BI 资源管理员可查看和停止查询"/>
     <template v-else>
       <header><div><h1>查询监控</h1><p>查看查询负载与慢查询记录，通过排查编号定位问题。</p></div><div class="actions"><el-switch v-model="autoRefresh" aria-label="每5秒自动刷新" active-text="每 5 秒刷新"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>
+      <section v-if="cacheStats"><div class="section-title"><h2>当前节点结果缓存</h2><el-button :disabled="loading" @click="clearCache">清理缓存</el-button></div><p>条目 {{ cacheStats.entries }} / {{ cacheStats.maxEntries }} · 命中 {{ cacheStats.hits }} · 未命中 {{ cacheStats.misses }} · 已用 {{ (cacheStats.bytes/1024).toFixed(1) }} KB</p><small>按用户与权限隔离；默认不启用，需在数据集设置中开启。这里显示当前节点，非集群汇总。</small></section>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon/>
       <template v-if="data">
         <div class="stats"><article><span>运行中</span><strong>{{data.active}}<small> / {{data.limits.maxActive}}</small></strong></article><article><span>排队中</span><strong>{{data.waiting}}<small> / {{data.limits.maxWaiting}}</small></strong></article><article><span>单用户并发上限</span><strong>{{data.limits.perUser}}</strong></article><article><span>单数据源并发上限</span><strong>{{data.limits.perSource}}</strong></article></div>
@@ -15,18 +16,22 @@
   </main>
 </template>
 <script setup lang="ts">
+import request from '@/utils/request'
+import type {BiResult} from '@/api/bi/response'
 import {computed,onMounted,onBeforeUnmount,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {checkPermi} from '@/utils/permission'
 import {queryMonitor,cancelMonitoredQuery,type QueryMonitor,type QueryMonitorRow} from '@/api/bi/queryMonitor'
 const authorized=computed(()=>checkPermi(['bi:resource:admin']))
+const cacheStats=ref<{entries:number;maxEntries:number;hits:number;misses:number;bytes:number}>()
 const data=ref<QueryMonitor>(),error=ref(''),loading=ref(false),autoRefresh=ref(false),onlySlow=ref(false),cancelling=ref(''),updatedAt=ref('')
 const recent=computed(()=>data.value?.recent.filter(r=>!onlySlow.value||r.slow)||[])
 let controller:AbortController|undefined,timer:ReturnType<typeof setInterval>|undefined,disposed=false
 function sourceName(value:string){return ({chart:'图表',dashboard:'看板',background:'后台任务'} as Record<string,string>)[value]||value}
 function statusName(value:string){return ({running:'运行中',cancelling:'取消处理中',completed:'已完成',failed:'执行失败',QUERY_TIMEOUT:'执行超时',QUERY_CANCELLED:'已取消',lease_expired:'节点租约已过期'} as Record<string,string>)[value]||value}
-async function load(){if(!authorized.value||loading.value||disposed)return;loading.value=true;error.value='';controller=new AbortController();try{const response=await queryMonitor(controller.signal);if(!disposed){data.value=response.data;updatedAt.value=new Date().toLocaleTimeString()}}catch(e){if(!disposed && !controller.signal.aborted)error.value=e instanceof Error?e.message:'监控数据加载失败，请重试'}finally{if(!disposed)loading.value=false}}
+async function load(){if(!authorized.value||loading.value||disposed)return;loading.value=true;error.value='';controller=new AbortController();try{const response=await queryMonitor(controller.signal);if(!disposed){data.value=response.data;const cache:BiResult<NonNullable<typeof cacheStats.value>>=await request({url:'/bi/query/cache',signal:controller.signal});if(!disposed)cacheStats.value=cache.data;updatedAt.value=new Date().toLocaleTimeString()}}catch(e){if(!disposed && !controller.signal.aborted)error.value=e instanceof Error?e.message:'监控数据加载失败，请重试'}finally{if(!disposed)loading.value=false}}
 async function stop(row:QueryMonitorRow){try{await ElMessageBox.confirm('停止此查询？数据库资源释放可能需要等待驱动响应。','停止查询',{type:'warning',confirmButtonText:'停止查询',cancelButtonText:'返回'})}catch{return}cancelling.value=row.requestId;try{const response=await cancelMonitoredQuery(row.requestId);ElMessage.info(response.data.accepted?'已请求取消查询':'查询可能已结束，请刷新确认');await load()}catch{/* request layer reports failure */}finally{cancelling.value=''}}
+async function clearCache(){try{await ElMessageBox.confirm('清理当前节点的所有结果缓存？后续查询会重新取数。','清理缓存',{type:'warning'})}catch{return}await request({url:'/bi/query/cache',method:'delete'});ElMessage.success('当前节点缓存已清理');await load()}
 onMounted(()=>{void load();timer=setInterval(()=>{if(autoRefresh.value && document.visibilityState==='visible')void load()},5000)})
 onBeforeUnmount(()=>{disposed=true;controller?.abort();if(timer)clearInterval(timer)})
 </script>

@@ -30,7 +30,7 @@
               <el-button v-if="row.type==='table' && row.resourceActions?.includes('query')" v-hasPermi="['bi:chart:add']" link type="primary" @click="router.push({path:'/bi-admin/chart',query:{datasetId:row.id}})">建图表</el-button>
               <el-button v-if="row.type==='table' && checkPermi(['bi:resource:admin'])" link type="primary" @click="Object.assign(policyDialog,{visible:true,id:row.id,name:row.name})">数据权限</el-button>
               <el-button v-if="row.resourceActions?.includes('grant')" v-hasPermi="['bi:dataset:grant']" link type="primary" @click="openGrants(row)">授权</el-button>
-              <ResourceImpactButton type="dataset" :id="row.id"/><el-button v-if="row.resourceActions?.includes('remove')" v-hasPermi="['bi:dataset:remove']" link type="danger" @click="removeDataset(row)">删除</el-button>
+              <DatasetCacheButton v-if="row.type==='table'" :id="row.id"/><ResourceImpactButton type="dataset" :id="row.id"/><el-button v-if="row.resourceActions?.includes('remove')" v-hasPermi="['bi:dataset:remove']" link type="danger" @click="removeDataset(row)">删除</el-button>
             </template></el-table-column>
             <template #empty><el-empty description="暂无有权查看的数据集" /></template>
           </el-table>
@@ -115,6 +115,7 @@
 </template>
 
 <script setup lang="ts" name="BiDataset">
+import DatasetCacheButton from '../components/DatasetCacheButton.vue'
 import ResourceImpactButton from '../components/ResourceImpactButton.vue'
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

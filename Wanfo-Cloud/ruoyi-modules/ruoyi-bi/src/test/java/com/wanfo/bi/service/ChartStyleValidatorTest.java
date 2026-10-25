@@ -120,8 +120,10 @@ class ChartStyleValidatorTest {
         s.setMapPieceColors(java.util.Arrays.asList(null,null));assertDoesNotThrow(()->ChartStyleValidator.validate(s,"map"));
     }
     @Test void specializedChartStylesRoundtripAndEnforceBounds() {
-        var s=new ChartVisualStyle();s.setHeatmapLowColor("#E8F3FF");s.setHeatmapHighColor("#2864DC");s.setHeatmapShowScale(false);s.setTreemapLeafDepth(2);s.setTreemapShowBreadcrumb(false);s.setSankeyNodeGap(20);s.setSankeyCurveness(.75);s.setBoxplotHorizontal(true);s.setHistogramBins(12);s.setWaterfallShowTotal(true);
+        var s=new ChartVisualStyle();s.setHeatmapLowColor("#E8F3FF");s.setHeatmapHighColor("#2864DC");s.setHeatmapShowScale(false);s.setTreemapLeafDepth(6);s.setTreemapShowBreadcrumb(false);s.setSankeyNodeGap(20);s.setSankeyCurveness(.75);s.setBoxplotHorizontal(true);s.setBoxplotOutliers(true);s.setBoxplotOutlierColor("#EF4444");s.setBoxplotOutlierSize(10);s.setBoxplotOutlierSymbol("diamond");s.setBoxplotOutlierIqrMultiplier(1.8);s.setMapBaseStyle("dark");s.setMapProjection("mercator");s.setHistogramBins(12);s.setWaterfallShowTotal(true);
         var mapper=new ObjectMapper();var restored=mapper.readValue(mapper.writeValueAsString(s),ChartVisualStyle.class);assertDoesNotThrow(()->ChartStyleValidator.validate(restored,"heatmap"));assertEquals(12,restored.getHistogramBins());assertTrue(restored.getBoxplotHorizontal());assertFalse(restored.getTreemapShowBreadcrumb());
+        assertEquals("mercator",restored.getMapProjection());assertEquals("dark",restored.getMapBaseStyle());assertEquals(1.8,restored.getBoxplotOutlierIqrMultiplier());
+        restored.setBoxplotOutlierIqrMultiplier(3.1);assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"boxplot"));restored.setBoxplotOutlierIqrMultiplier(1.5);restored.setMapProjection("conic");assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"map"));restored.setMapProjection("raw");
         restored.setSankeyCurveness(1.1);assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"sankey"));restored.setSankeyCurveness(.5);restored.setHistogramBins(51);assertThrows(IllegalArgumentException.class,()->ChartStyleValidator.validate(restored,"histogram"));
     }
 }

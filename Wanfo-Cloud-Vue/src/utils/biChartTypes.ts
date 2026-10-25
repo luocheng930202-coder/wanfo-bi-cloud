@@ -100,9 +100,9 @@ export function validateChartQueryShape(
   if(type==='histogram')return dimensions.length===0&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'直方图需要一个未聚合的数值字段，且不需要维度'
   if(type==='geo-map')return dimensions.length<=1&&metrics.length>=2&&metrics.length<=3&&metrics.every(m=>(m as {agg?:string}).agg==='NONE')?null:'经纬度地图需要未聚合的经度、纬度，可选一个点大小指标和一个名称维度'
   if(type==='heatmap')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'热力图需要两个分类维度和一个聚合指标'
-  if(type==='sunburst')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要父级、子级两个维度和一个聚合指标'
+  if(type==='sunburst')return dimensions.length>=2&&dimensions.length<=6&&new Set(dimensions.map(d=>d.field)).size===dimensions.length&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'旭日图需要 2～6 个不重复层级维度和一个聚合指标'
   if(type==='sankey')return dimensions.length===2&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'桑基图需要来源、目标两个维度和一个聚合流量指标'
-  if(type==='treemap')return (dimensions.length===1||(dimensions.length===2&&dimensions[0].field!==dimensions[1].field))&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'矩形树图需要一个或两个不同维度和一个聚合指标'
+  if(type==='treemap')return dimensions.length>=1&&dimensions.length<=6&&new Set(dimensions.map(d=>d.field)).size===dimensions.length&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'矩形树图需要 1～6 个不重复层级维度和一个聚合指标'
   if(type==='waterfall')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg!=='NONE'?null:'瀑布图需要一个维度和一个聚合指标'
   if(type==='boxplot')return dimensions.length===1&&metrics.length===1&&(metrics[0] as {agg?:string}).agg==='NONE'?null:'箱线图需要一个分类维度和一个未聚合数值字段'
   if (isMapLike(type)) {
@@ -130,7 +130,8 @@ export function applyTypeDefaults(
   if (mets.length > max) mets = mets.slice(0, max)
   if (type === 'gauge'||type==='histogram') dims = []
   else if (!supportsSeriesDimension(type) && type!=='table' && type!=='pivot' && type!=='geo-map') dims=dims.slice(0,1)
-  if(['heatmap','sunburst','sankey'].includes(type))dims=dims.slice(0,2)
+  if(['heatmap','sankey'].includes(type))dims=dims.slice(0,2)
+  if(['treemap','sunburst'].includes(type))dims=dims.slice(0,6)
   if(type==='geo-map')mets=mets.map(m=>({...m,agg:'NONE'})).slice(0,3)
   if(['boxplot','histogram'].includes(type))mets=mets.map(m=>({...m,agg:'NONE'}))
   return { dimensions: dims, metrics: mets }
@@ -143,11 +144,20 @@ export function chartConfigurationIssues(definition:import('@/api/bi/chart').Cha
   const issues:ChartConfigurationIssue[]=[]
   const add=(code:string,path:string,message:string,severity:'error'|'warning'='error')=>issues.push({code,path,message,severity})
   const query=definition.query, type=definition.type
+  const analysis=definition.advanced?.analysis
   if(!query.datasetId)add('dataset','datasetId','请选择数据集')
   const shape=validateChartQueryShape(type,query.dimensions,query.metrics)
   if(shape && query.metrics.length>0 && query.metrics.length<=maxMetricsForType(type))add('shape','roles',shape)
   if(!query.metrics.length && !query.dimensions.length && !['table','pivot','gauge','scatter','histogram','geo-map'].includes(type))add('dimension','dimensions','请选择分类维度')
   if(!query.metrics.length || query.metrics.length>maxMetricsForType(type))add('metrics','metrics',`请选择 1～${maxMetricsForType(type)} 个${type==='table'?'展示字段':'指标'}`)
+  if(analysis?.trendMethod==='seasonal'){
+    const dimension=query.dimensions[0]
+    if(!['line','area'].includes(type)||query.dimensions.length!==1||!dimension?.timeGrain||!['null','zero'].includes(dimension.timeFill||'')||query.metrics.length!==1||query.metrics[0]?.agg==='NONE'||query.timeComparison||query.topN)add('forecast-roles','analysis','季节性预测要求单一时间粒度、聚合指标，并明确缺失周期处理；需关闭同比环比和 TopN')
+    if(!Number.isInteger(analysis.seasonLength)||(analysis.seasonLength??0)<2||(analysis.seasonLength??0)>366)add('forecast-season','analysis.seasonLength','请将季节长度设为 2～366 个周期')
+    if(!Number.isInteger(analysis.forecastPeriods)||(analysis.forecastPeriods??0)<1||(analysis.forecastPeriods??0)>12)add('forecast-periods','analysis.forecastPeriods','预测周期须为 1～12')
+    if(!['80','90','95'].includes(analysis.forecastConfidence||''))add('forecast-confidence','analysis.forecastConfidence','请选择 80%、90% 或 95% 经验区间')
+    if((analysis.forecastMetricDefinition||'').trim().length<10)add('forecast-definition','analysis.forecastMetricDefinition','请填写至少 10 字的业务指标口径说明')
+  }
   const known=new Map(fields.map(f=>[f.name,f]))
   const numeric=(field:string)=>/(int|decimal|numeric|float|double|real|number)/i.test(known.get(field)?.type || '')
   const exists=(field:string,path:string)=>{if(!field || !known.has(field)){add('field',path,field?`字段「${field}」已失效或无权使用，请重新选择`:'请选择字段');return false}return true}

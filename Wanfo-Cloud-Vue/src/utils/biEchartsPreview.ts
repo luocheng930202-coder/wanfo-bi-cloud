@@ -23,6 +23,27 @@ function piePoint(value: number, key: string, metricStyles?: MetricStyle[]) {
   return color ? { value, itemStyle: { color } } : value
 }
 
+export function hierarchyData(rows:Record<string,unknown>[],dimensions:ChartDefinition['query']['dimensions'],key:string,value:(row:Record<string,unknown>,key:string)=>number){
+  type Node={name:string;value:number;children:Map<string,Node>}
+  const root=new Map<string,Node>()
+  for(const row of rows){let level=root;const amount=value(row,key);for(const dimension of dimensions){const field=dimension.alias||dimension.field,name=String(row[field]??'空值');let node=level.get(name);if(!node){node={name,value:0,children:new Map()};level.set(name,node)}node.value+=amount;level=node.children}}
+  const serialize=(nodes:Map<string,Node>):any[]=>[...nodes.values()].map(node=>({name:node.name,value:node.value,...(node.children.size?{children:serialize(node.children)}:{})}))
+  return serialize(root)
+}
+
+export function seasonalForecast(values:(number|null)[],seasonLength:number,periods:number,confidenceLevel:'80'|'90'|'95'){
+  if(!Number.isInteger(seasonLength)||seasonLength<2||!Number.isInteger(periods)||periods<1)throw new Error('季节长度或预测周期无效')
+  if(values.length<seasonLength*2)throw new Error(`季节性预测至少需要 ${seasonLength*2} 个连续周期`)
+  if(values.some(value=>value==null||!Number.isFinite(value)))throw new Error('时间序列存在空值，请先补齐周期或调整筛选范围')
+  const actual=values as number[],absoluteErrors:number[]=[]
+  for(let i=seasonLength;i<actual.length;i++)absoluteErrors.push(Math.abs(actual[i]-actual[i-seasonLength]))
+  if(absoluteErrors.length<8)throw new Error('季节性预测的历史回测样本不足，至少需要 8 个季节误差')
+  absoluteErrors.sort((a,b)=>a-b)
+  const quantile=Number(confidenceLevel)/100,width=absoluteErrors[Math.min(absoluteErrors.length-1,Math.max(0,Math.ceil(quantile*absoluteErrors.length)-1))]
+  const forecast=Array.from({length:periods},(_,i)=>actual[actual.length-seasonLength+(i%seasonLength)])
+  return {forecast,lower:forecast.map(value=>value-width),upper:forecast.map(value=>value+width),intervalWidth:width,residualCount:absoluteErrors.length}
+}
+
 /** Display-only axis shortening; raw categories remain available to tooltips and interactions. */
 export function chartAxisLabel(value:unknown,maxLength=14):string {
   const text=String(value??'空值')
@@ -358,13 +379,14 @@ export function buildChartPreviewOption(params: {
     axisLine: { lineStyle: { color: visualTheme.border } }
   }
 
-  const forecastPeriods=type==='line'&&analysis?.trendMethod==='linear'?Math.max(0,Math.min(12,Math.floor(analysis.forecastPeriods||0))):0
+  const seasonal=analysis?.trendMethod==='seasonal'
+  const forecastPeriods=['line','area'].includes(type)&&['linear','seasonal'].includes(analysis?.trendMethod||'')?Math.max(seasonal?1:0,Math.min(12,Math.floor(analysis?.forecastPeriods||0))):0
   const forecastLabels=Array.from({length:forecastPeriods},(_,i)=>`预测 +${i+1}`)
   if(forecastPeriods)categoryXAxis.data=[...categories,...forecastLabels]
   if(['line','area'].includes(type) && analysis?.trendMethod){
     for(const metric of metrics){
-      const key=metricResultKey(metric),points=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((point):point is {i:number;value:number}=>point.value!=null&&!filledRow(result.rows[point.i]))
-      if(points.length<2)continue
+      const key=metricResultKey(metric),points=result.rows.map((row,i)=>({i,value:normalizeValue(row[key],key)})).filter((point):point is {i:number;value:number}=>point.value!=null&&(!filledRow(result.rows[point.i])||seasonal&&result.timeFill?.mode==='zero'))
+      if(points.length<2&&!seasonal)continue
       let fitted:(number|null)[]=Array(result.rows.length).fill(null),slope=0,intercept=0
       if(analysis.trendMethod==='linear'){
         const mx=points.reduce((s,p)=>s+p.i,0)/points.length,my=points.reduce((s,p)=>s+p.value,0)/points.length,den=points.reduce((s,p)=>s+(p.i-mx)**2,0)
@@ -373,8 +395,20 @@ export function buildChartPreviewOption(params: {
       }else{
         const raw=result.rows.map(r=>normalizeValue(r[key],key));fitted=raw.map((_,i)=>{const window=raw.slice(Math.max(0,i-2),i+1).filter((v):v is number=>v!=null);return window.length===3?window.reduce((a,b)=>a+b,0)/3:null})
       }
-      cartesianSeries.push({name:`${labels[key]||key} · 趋势`,type:'line',data:fitted,lineStyle:{type:'dashed',width:2},symbol:'none',tooltip:{show:false},silent:true})
-      if(forecastPeriods){const last=points.at(-1)!,forecastData=Array(categories.length+forecastPeriods).fill(null);forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=intercept+slope*(last.i+i+1);cartesianSeries.push({name:`${labels[key]||key} · 线性预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3},symbol:'emptyCircle',showSymbol:true,connectNulls:false})}
+      if(!seasonal)cartesianSeries.push({name:`${labels[key]||key} · 趋势`,type:'line',data:fitted,lineStyle:{type:'dashed',width:2},symbol:'none',tooltip:{show:false},silent:true})
+      if(forecastPeriods){
+        const last=points.at(-1)!,forecastData=Array(categories.length+forecastPeriods).fill(null)
+        if(seasonal){
+          const values=result.rows.map(row=>normalizeValue(row[key],key)),interval=seasonalForecast(values,analysis?.seasonLength||0,forecastPeriods,analysis?.forecastConfidence||'95'),metricIndex=metrics.findIndex(item=>metricResultKey(item)===key),color=style?.metrics?.find(m=>m.key===key)?.color||palette[Math.max(0,metricIndex)%palette.length]
+          forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=interval.forecast[i]
+          const lower=Array(categories.length+forecastPeriods).fill(null),width=Array(categories.length+forecastPeriods).fill(null)
+          for(let i=0;i<forecastPeriods;i++){lower[categories.length+i]=interval.lower[i];width[categories.length+i]=interval.upper[i]-interval.lower[i]}
+          const stack=`forecast-band-${key}`
+          cartesianSeries.push({name:`${labels[key]||key} · ${analysis?.forecastConfidence||'95'}%区间下界`,type:'line',data:lower,stack,lineStyle:{opacity:0},areaStyle:{opacity:0},symbol:'none',tooltip:{show:false},silent:true})
+          cartesianSeries.push({name:`${labels[key]||key} · ${analysis?.forecastConfidence||'95'}%预测区间`,type:'line',data:width,stack,lineStyle:{opacity:0},areaStyle:{color,opacity:.14},symbol:'none',tooltip:{show:false},silent:true})
+          cartesianSeries.push({name:`${labels[key]||key} · 季节预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3,color},symbol:'emptyCircle',showSymbol:true,connectNulls:false,tooltip:{formatter:(p:any)=>{const i=p.dataIndex-categories.length;return i<0?`${p.name}<br/>实际值: ${formatValue(key,p.value)}`:`${p.name}<br/>预测值: ${formatValue(key,p.value)}<br/>区间范围: ${formatValue(key,interval.lower[i])} ～ ${formatValue(key,interval.upper[i])}`}}})
+        }else{forecastData[last.i]=last.value;for(let i=0;i<forecastPeriods;i++)forecastData[categories.length+i]=intercept+slope*(last.i+i+1);cartesianSeries.push({name:`${labels[key]||key} · 线性预测`,type:'line',data:forecastData,lineStyle:{type:'dotted',width:3},symbol:'emptyCircle',showSymbol:true,connectNulls:false})}
+      }
     }
   }
 
@@ -387,15 +421,11 @@ export function buildChartPreviewOption(params: {
       return {...base,tooltip:{...base.tooltip as object,trigger:'item',formatter:(p:any)=>`${xs[p.value[0]]} · ${ys[p.value[1]]}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[2])}`},grid:{left:55,right:25,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:{type:'category',data:xs,axisLabel:{color:textColor}},yAxis:{type:'category',data:ys,axisLabel:{color:textColor}},visualMap:{min:Math.min(...data.map((v:any)=>v[2])),max:Math.max(...data.map((v:any)=>v[2]))||1,calculable:true,show:style?.heatmapShowScale!==false,orient:'horizontal',left:'center',bottom:4,inRange:{color:[style?.heatmapLowColor||'#E8F3FF',style?.heatmapHighColor||'#2864DC']}},series:[{type:'heatmap',data,label:{show:style?.showLabels??false},emphasis:{itemStyle:{shadowBlur:8}}}]} as EChartsOption
     }
     if(type==='treemap'){
-      let data:any[]
-      if(d1){const parents=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>();for(const row of result.rows){const parentName=field(row,d0),childName=field(row,d1),v=value(row,k0);let parent=parents.get(parentName);if(!parent){parent={name:parentName,value:0,children:new Map()};parents.set(parentName,parent)}parent.value+=v;const child=parent.children.get(childName)||{name:childName,value:0};child.value+=v;parent.children.set(childName,child)}data=[...parents.values()].map(parent=>({name:parent.name,value:parent.value,children:[...parent.children.values()]}))}
-      else data=result.rows.map(r=>({name:field(r,d0),value:value(r,k0)}))
-      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data,roam:true,leafDepth:style?.treemapLeafDepth??1,visibleMin:10,upperLabel:{show:!!d1,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:style?.treemapShowBreadcrumb!==false}}]} as EChartsOption
+      const data=hierarchyData(result.rows,definition.query.dimensions,k0,value)
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'treemap',data,roam:true,leafDepth:Math.min(definition.query.dimensions.length,Math.max(1,style?.treemapLeafDepth??1)),visibleMin:10,upperLabel:{show:definition.query.dimensions.length>1,height:24},label:{show:true,formatter:'{b}',overflow:'truncate'},breadcrumb:{show:style?.treemapShowBreadcrumb!==false}}]} as EChartsOption
     }
     if(type==='sunburst'){
-      const root=new Map<string,{name:string;value:number;children:Map<string,{name:string;value:number}>}>()
-      for(const row of result.rows){const a=field(row,d0),b=field(row,d1),v=value(row,k0);let parent=root.get(a);if(!parent){parent={name:a,value:0,children:new Map()};root.set(a,parent)}parent.value+=v;const child=parent.children.get(b)||{name:b,value:0};child.value+=v;parent.children.set(b,child)}
-      const data=[...root.values()].map(p=>({name:p.name,value:p.value,children:[...p.children.values()]}))
+      const data=hierarchyData(result.rows,definition.query.dimensions,k0,value)
       return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${p.name}<br/>${labels[k0]||k0}: ${formatValue(k0,p.value)}`},series:[{type:'sunburst',data,radius:['12%','88%'],sort:null,emphasis:{focus:'ancestor'},label:{rotate:'radial'}}]} as EChartsOption
     }
     if(type==='sankey'){
@@ -413,9 +443,11 @@ export function buildChartPreviewOption(params: {
     if(type==='boxplot'){
       const groups=new Map<string,number[]>();for(const row of result.rows){const n=readNumber(row[k0]);if(n!=null){const name=field(row,d0);groups.set(name,[...(groups.get(name)||[]),n])}}
       const quantile=(a:number[],q:number)=>{const pos=(a.length-1)*q,lo=Math.floor(pos),fraction=pos-lo;return a[lo]+(a[Math.min(lo+1,a.length-1)]-a[lo])*fraction}
-      const names=[...groups.keys()],data=names.map(name=>{const a=groups.get(name)!.sort((x,y)=>x-y);return [a[0],quantile(a,.25),quantile(a,.5),quantile(a,.75),a[a.length-1]]})
+      const names=[...groups.keys()],outliers:{group:string;index:number;value:number}[]=[],multiplier=Math.min(3,Math.max(1,style?.boxplotOutlierIqrMultiplier??1.5)),data=names.map((name,index)=>{const a=groups.get(name)!.sort((x,y)=>x-y),q1=quantile(a,.25),median=quantile(a,.5),q3=quantile(a,.75),iqr=q3-q1,lower=q1-multiplier*iqr,upper=q3+multiplier*iqr,inside=a.filter(n=>n>=lower&&n<=upper);if(style?.boxplotOutliers!==false)a.filter(n=>n<lower||n>upper).forEach(value=>outliers.push({group:name,index,value}));return [inside[0]??a[0],q1,median,q3,inside.at(-1)??a.at(-1)]})
       const valueAxis=style?.boxplotHorizontal?{...categoryXAxis,type:'value' as const}:valueYAxis,categoryAxis=style?.boxplotHorizontal?{...valueYAxis,type:'category' as const,data:names}:{...categoryXAxis,data:names}
-      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>最小 / Q1 / 中位 / Q3 / 最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:style?.boxplotHorizontal?valueAxis:categoryAxis,yAxis:style?.boxplotHorizontal?categoryAxis:valueAxis,series:[{type:'boxplot',name:labels[k0]||k0,data,layout:style?.boxplotHorizontal?'horizontal':'vertical',itemStyle:{borderWidth:2}}]} as EChartsOption
+      const series:any[]=[{type:'boxplot',name:labels[k0]||k0,data,layout:style?.boxplotHorizontal?'horizontal':'vertical',itemStyle:{borderWidth:2}}]
+      if(outliers.length)series.push({type:'scatter',name:'异常值',symbol:style?.boxplotOutlierSymbol||'circle',symbolSize:Math.min(20,Math.max(4,style?.boxplotOutlierSize??8)),data:outliers.map(o=>({name:o.group,value:style?.boxplotHorizontal?[o.value,o.index]:[o.index,o.value]})),itemStyle:{color:style?.boxplotOutlierColor||'#E5484D'},tooltip:{formatter:(p:any)=>`${p.data.name} · 异常值<br/>${labels[k0]||k0}: ${formatValue(k0,p.value[style?.boxplotHorizontal?0:1])}`}})
+      return {...base,tooltip:{trigger:'item',formatter:(p:any)=>`${names[p.dataIndex]}<br/>须线最小 / Q1 / 中位 / Q3 / 须线最大<br/>${p.data.map((n:number)=>formatValue(k0,n)).join(' / ')}`},grid:{left:48,right:24,top:chartTop,bottom:chartBottom,containLabel:true},xAxis:style?.boxplotHorizontal?valueAxis:categoryAxis,yAxis:style?.boxplotHorizontal?categoryAxis:valueAxis,series} as EChartsOption
     }
     if(type==='histogram'){
       const nums=result.rows.map(r=>readNumber(r[k0])).filter((n):n is number=>n!=null);if(!nums.length)throw new Error('直方图没有可用的数值');const min=Math.min(...nums),max=Math.max(...nums),count=style?.histogramBins?Math.min(50,Math.max(1,style.histogramBins)):Math.min(20,Math.max(1,Math.ceil(Math.sqrt(nums.length)))),step=(max-min||1)/count,bins=Array.from({length:count},(_,i)=>({name:`${(min+i*step).toPrecision(4)}–${(min+(i+1)*step).toPrecision(4)}`,value:0}));for(const n of nums)bins[Math.min(count-1,Math.floor((n-min)/(step||1)))].value++

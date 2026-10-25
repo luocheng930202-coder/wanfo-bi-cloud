@@ -153,6 +153,11 @@ public class ChartVisualStyle {
     private Boolean mapShowTooltip;
     public Boolean getMapShowTooltip() { return mapShowTooltip; }
     public void setMapShowTooltip(Boolean value) { mapShowTooltip=value; }
+    private String mapBaseStyle,mapProjection;
+    public String getMapBaseStyle(){return mapBaseStyle;}
+    public void setMapBaseStyle(String value){mapBaseStyle=value;}
+    public String getMapProjection(){return mapProjection;}
+    public void setMapProjection(String value){mapProjection=value;}
     public record TableColumn(String key,Integer width,String align,String fixed,Boolean wrap,java.util.List<com.wanfo.bi.service.DashboardPresentation.Threshold> backgroundRules) {}
     private java.util.List<TableColumn> tableColumns;
     public java.util.List<TableColumn> getTableColumns() {return tableColumns;}
@@ -221,9 +226,12 @@ public class ChartVisualStyle {
     public java.util.List<String> getMapPieceColors(){return mapPieceColors;}
     public void setMapPieceColors(java.util.List<String> v){mapPieceColors=v;}
     private String heatmapLowColor,heatmapHighColor;
-    private Boolean heatmapShowScale,treemapShowBreadcrumb,boxplotHorizontal,waterfallShowTotal;
+    private Boolean heatmapShowScale,treemapShowBreadcrumb,boxplotHorizontal,boxplotOutliers,waterfallShowTotal;
     private Integer treemapLeafDepth,sankeyNodeGap,histogramBins;
     private Double sankeyCurveness;
+    private String boxplotOutlierColor,boxplotOutlierSymbol;
+    private Integer boxplotOutlierSize;
+    private Double boxplotOutlierIqrMultiplier;
     public String getHeatmapLowColor(){return heatmapLowColor;} public void setHeatmapLowColor(String v){heatmapLowColor=v;}
     public String getHeatmapHighColor(){return heatmapHighColor;} public void setHeatmapHighColor(String v){heatmapHighColor=v;}
     public Boolean getHeatmapShowScale(){return heatmapShowScale;} public void setHeatmapShowScale(Boolean v){heatmapShowScale=v;}
@@ -232,6 +240,11 @@ public class ChartVisualStyle {
     public Integer getSankeyNodeGap(){return sankeyNodeGap;} public void setSankeyNodeGap(Integer v){sankeyNodeGap=v;}
     public Double getSankeyCurveness(){return sankeyCurveness;} public void setSankeyCurveness(Double v){sankeyCurveness=v;}
     public Boolean getBoxplotHorizontal(){return boxplotHorizontal;} public void setBoxplotHorizontal(Boolean v){boxplotHorizontal=v;}
+    public Boolean getBoxplotOutliers(){return boxplotOutliers;} public void setBoxplotOutliers(Boolean v){boxplotOutliers=v;}
+    public String getBoxplotOutlierColor(){return boxplotOutlierColor;} public void setBoxplotOutlierColor(String v){boxplotOutlierColor=v;}
+    public String getBoxplotOutlierSymbol(){return boxplotOutlierSymbol;} public void setBoxplotOutlierSymbol(String v){boxplotOutlierSymbol=v;}
+    public Integer getBoxplotOutlierSize(){return boxplotOutlierSize;} public void setBoxplotOutlierSize(Integer v){boxplotOutlierSize=v;}
+    public Double getBoxplotOutlierIqrMultiplier(){return boxplotOutlierIqrMultiplier;} public void setBoxplotOutlierIqrMultiplier(Double v){boxplotOutlierIqrMultiplier=v;}
     public Integer getHistogramBins(){return histogramBins;} public void setHistogramBins(Integer v){histogramBins=v;}
     public Boolean getWaterfallShowTotal(){return waterfallShowTotal;} public void setWaterfallShowTotal(Boolean v){waterfallShowTotal=v;}
 }

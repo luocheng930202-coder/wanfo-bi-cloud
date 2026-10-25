@@ -18,11 +18,15 @@
             <el-form-item label="行维度（1～3）"><el-select v-model="pivotRows" multiple filterable collapse-tags collapse-tags-tooltip :max-collapse-tags="2" style="width:100%" @change="emit('pivot-fields')"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select></el-form-item>
             <el-form-item label="列维度（1～2）"><el-select v-model="pivotCols" multiple filterable collapse-tags style="width:100%" @change="emit('pivot-fields')"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" :disabled="pivotRows.includes(f.name)"/></el-select></el-form-item>
           </template>
-          <el-form-item v-else-if="capabilities.dimension" :label="capabilities.dimension">
+          <el-form-item v-else-if="capabilities.dimension && !hierarchyChart" :label="capabilities.dimension">
             <el-select :model-value="definition.query.dimensions[0]?.field" filterable :clearable="allowsClearDimension(definition.type)" style="width:100%" @change="v => emit('set-dimension', v || '')"><el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
             <small v-if="definition.type==='map'" class="hint">地区值须与当前地图层级一致；可在高级页绑定省市县字段，推荐使用行政区编码。</small>
           </el-form-item>
-          <el-form-item v-if="supportsSeriesDimension(definition.type)" :label="['heatmap','sunburst','sankey'].includes(definition.type)?'第二维度（必需）':definition.type==='treemap'?'子级维度（可选）':'系列维度（可选）'">
+          <el-form-item v-if="hierarchyChart" label="层级路径（最多 6 层）">
+            <el-select v-model="hierarchyDimensions" multiple filterable collapse-tags :max-collapse-tags="3" style="width:100%"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)"/></el-select>
+            <small class="hint">按选择顺序构造父子层级；旭日图至少 2 层，矩形树图至少 1 层。</small>
+          </el-form-item>
+          <el-form-item v-if="supportsSeriesDimension(definition.type) && !hierarchyChart" :label="['heatmap','sunburst','sankey'].includes(definition.type)?'第二维度（必需）':definition.type==='treemap'?'子级维度（可选）':'系列维度（可选）'">
             <el-select :model-value="definition.query.dimensions[1]?.field" clearable filterable @change="setSeries"><el-option v-for="f in dimensionFields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" :disabled="f.name===definition.query.dimensions[0]?.field"/></el-select>
             <small class="hint">例如按月份展示销售额，再按渠道拆分系列。缺失组合保持为空；时间补齐、同比环比请先移除系列维度。</small>
           </el-form-item>
@@ -149,6 +153,8 @@ const presets=computed(()=>chartStylePresets(props.definition.type))
 function applyPreset(preset:ChartStylePreset){ensureChartPresentation(props.definition);applyChartStylePreset(props.definition.style!,preset)}
 function resetShape(){ensureChartPresentation(props.definition);applyChartStylePreset(props.definition.style!)}
 const capabilities=computed(()=>CHART_CAPABILITIES[props.definition.type])
+const hierarchyChart=computed(()=>['treemap','sunburst'].includes(props.definition.type))
+const hierarchyDimensions=computed({get:()=>props.definition.query.dimensions.map(d=>d.field),set:(fields:string[])=>{const unique=[...new Set(fields)].slice(0,6);props.definition.query.dimensions=unique.map((field,index)=>({field,alias:`level${index+1}`}));props.definition.query.orderBys=[]}})
 function metricAggregations(index:number){const field=props.fields.find(f=>f.name===props.definition.query.metrics[index]?.field);return allowedAggregations(field?.type||'',props.definition.type)}
 function normalizeAggregation(index:number){const metric=props.definition.query.metrics[index];if(!metricAggregations(index).includes(metric.agg))metric.agg='COUNT'}
 const aggregations: Record<string,string> = { COUNT:'计数', COUNT_DISTINCT:'去重计数', SUM:'求和', AVG:'平均值', MIN:'最小值', MAX:'最大值', NONE:'原始值' }

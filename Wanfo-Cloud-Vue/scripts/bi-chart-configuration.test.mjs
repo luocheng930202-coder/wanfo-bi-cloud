@@ -44,3 +44,17 @@ test('specialized chart types require their own field roles and raw-value modes'
   const geo={type:'geo-map',query:{datasetId:1,dimensions:[],metrics:[{field:'amount',agg:'NONE'},{field:'amount',agg:'SUM',alias:'lat'}]}}
   assert.ok(errors(geo).some(i=>i.code==='shape'))
 })
+test('treemap and sunburst accept ordered multi-level paths with distinct dimensions',()=>{
+  const hierarchyFields=[...fields,{name:'channel',type:'VARCHAR'},{name:'product',type:'VARCHAR'}]
+  const hierarchy={type:'sunburst',query:{datasetId:1,dimensions:[{field:'region'},{field:'channel'},{field:'date'}],metrics:[{field:'amount',agg:'SUM'}]}}
+  assert.deepEqual(check(hierarchy,hierarchyFields).filter(i=>i.severity==='error'),[])
+  hierarchy.query.dimensions.push({field:'region'});assert.ok(errors(hierarchy).some(i=>i.code==='shape'||i.code==='duplicate'))
+  const tree={type:'treemap',query:{datasetId:1,dimensions:[{field:'region'},{field:'channel'},{field:'date'}],metrics:[{field:'amount',agg:'SUM'}]}}
+  assert.deepEqual(check(tree,hierarchyFields).filter(i=>i.severity==='error'),[])
+})
+test('seasonal forecast requires explicit time grain, gap policy, metric and interval settings',()=>{
+  const d=chart('line');d.query.dimensions[0].timeGrain='month';d.query.dimensions[0].timeFill='null';d.advanced={analysis:{trendMethod:'seasonal',seasonLength:12,forecastPeriods:3,forecastConfidence:'95',forecastMetricDefinition:'按自然月汇总已支付订单含税金额'}}
+  assert.deepEqual(errors(d),[])
+  d.query.dimensions[0].timeFill='none';assert.ok(errors(d).some(i=>i.code==='forecast-roles'))
+  d.query.dimensions[0].timeFill='null';d.advanced.analysis.forecastMetricDefinition='短';assert.ok(errors(d).some(i=>i.code==='forecast-definition'))
+})

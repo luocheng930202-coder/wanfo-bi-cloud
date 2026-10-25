@@ -63,6 +63,8 @@ export interface ChartVisualStyle {
   mapBreaks?: number[]
   mapShowLabels?: boolean
   mapShowTooltip?: boolean
+  mapBaseStyle?: 'light'|'dark'|'outline'
+  mapProjection?: 'raw'|'mercator'
   radarShape?: 'polygon'|'circle'
   radarSplitNumber?: number
   radarShowSplitArea?: boolean
@@ -81,6 +83,11 @@ export interface ChartVisualStyle {
   sankeyNodeGap?:number
   sankeyCurveness?:number
   boxplotHorizontal?:boolean
+  boxplotOutliers?:boolean
+  boxplotOutlierColor?:string
+  boxplotOutlierSize?:number
+  boxplotOutlierSymbol?:'circle'|'diamond'|'triangle'|'rect'
+  boxplotOutlierIqrMultiplier?:number
   histogramBins?:number
   waterfallShowTotal?:boolean
 
@@ -121,8 +128,11 @@ export interface ChartAnalysis {
   scatterZoom?:boolean
   scatterLogX?:boolean
   scatterLogY?:boolean
-  trendMethod?:'linear'|'moving-average'
+  trendMethod?:'linear'|'moving-average'|'seasonal'
   forecastPeriods?:number
+  seasonLength?:number
+  forecastConfidence?:'80'|'90'|'95'
+  forecastMetricDefinition?:string
   anomalyDetection?:boolean
   anomalySensitivity?:number
   anomalyMethod?:'stddev'|'mad'

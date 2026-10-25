@@ -26,6 +26,8 @@ public final class ChartStyleValidator {
             for(String value:s.getMapPieceColors())color(value);
         }
         choice(s.getMapColorMode(),Set.of("continuous","piecewise"),"地图色阶模式");
+        choice(s.getMapBaseStyle(),Set.of("light","dark","outline"),"地图底图主题");
+        choice(s.getMapProjection(),Set.of("raw","mercator"),"地图坐标投影");
         choice(s.getMapLabelContent(),Set.of("name","value","nameValue"),"地图标签内容");
         color(s.getMapLowColor());color(s.getMapHighColor());color(s.getMapNoDataColor());color(s.getMapBorderColor());
         if(s.getMapBreaks()!=null){
@@ -45,7 +47,9 @@ public final class ChartStyleValidator {
         choice(s.getRadarShape(),Set.of("polygon","circle"),"雷达网格形状");range(s.getRadarSplitNumber(),2,10,"雷达网格层数");
         choice(s.getScatterSymbol(),Set.of("circle","rect","roundRect","triangle","diamond"),"散点形状");
         choice(s.getScatterLabelContent(),Set.of("category","coordinates"),"散点标签内容");
-        color(s.getHeatmapLowColor());color(s.getHeatmapHighColor());range(s.getTreemapLeafDepth(),1,2,"矩形树图初始层级");
+        color(s.getHeatmapLowColor());color(s.getHeatmapHighColor());range(s.getTreemapLeafDepth(),1,6,"矩形树图初始层级");
+        color(s.getBoxplotOutlierColor());choice(s.getBoxplotOutlierSymbol(),Set.of("circle","diamond","triangle","rect"),"箱线图异常值形状");
+        range(s.getBoxplotOutlierSize(),4,20,"箱线图异常值大小");range(s.getBoxplotOutlierIqrMultiplier(),1,3,"箱线图异常值 IQR 倍数");
         range(s.getSankeyNodeGap(),0,40,"桑基图节点间距");range(s.getSankeyCurveness(),0,1,"桑基图连线弯曲度");
         range(s.getHistogramBins(),0,50,"直方图分箱数量");
         range(s.getScatterSize(),2,60,"散点大小");range(s.getScatterOpacity(),0.05,1,"散点透明度");range(s.getScatterBorderWidth(),0,5,"散点描边宽度");color(s.getScatterBorderColor());

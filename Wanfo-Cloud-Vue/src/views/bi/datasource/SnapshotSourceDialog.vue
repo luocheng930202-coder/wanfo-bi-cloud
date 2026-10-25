@@ -9,14 +9,18 @@
         <el-form-item label="请求方式"><el-select v-model="method"><el-option label="GET" value="GET"/><el-option label="POST" value="POST"/></el-select></el-form-item>
         <el-form-item v-if="method === 'POST'" label="POST JSON 参数"><el-input v-model="bodyText" type="textarea" :rows="4" placeholder="{ &quot;page&quot;: 1 }"/></el-form-item>
         <el-form-item label="展开嵌套对象"><el-switch v-model="flatten"/><small class="hint">对象字段展开为 a.b 列。</small></el-form-item>
-        <el-form-item label="展开嵌套数组（可选）"><el-input v-model="expandArrayPath" placeholder="如 items 或 order.lines；留空不展开"/><small class="hint">相对于每条 API 数据记录填写。每个子对象生成一行，父字段会重复；空数组跳过。建议同时开启“展开嵌套对象”。</small></el-form-item>
-        <el-divider content-position="left">OAuth 2.0（客户端凭据）</el-divider>
+        <el-form-item label="展开嵌套数组（可选）"><el-input v-model="expandArrayPathsText" type="textarea" :rows="3" placeholder="每行一个路径，例如：&#10;items&#10;payments.lines"/><small class="hint">最多 4 个相互独立的对象数组路径，按笛卡尔关联展开为多行；父字段重复，最多 20000 行。建议同时开启“展开嵌套对象”。</small></el-form-item>
+        <el-divider content-position="left">OAuth 2.0</el-divider>
+        <el-form-item label="授权模式"><el-radio-group v-model="oauth.grantType"><el-radio-button value="client_credentials">客户端凭据</el-radio-button><el-radio-button value="authorization_code">授权码 + PKCE</el-radio-button></el-radio-group></el-form-item>
+        <el-form-item v-if="oauth.grantType==='authorization_code'" label="授权地址"><el-input v-model="oauth.authorizationUrl" placeholder="https://login.example.com/oauth/authorize"/></el-form-item>
+        <el-form-item v-if="oauth.grantType==='authorization_code'" label="OAuth 回调地址"><el-input :model-value="oauthRedirectUri" readonly/><small class="hint">需在 OAuth 应用配置中登记，并加入 bi.external-source.oauth-redirect-uris 白名单。</small></el-form-item>
         <el-form-item label="令牌地址"><el-input v-model="oauth.tokenUrl" placeholder="https://api.example.com/oauth/token"/></el-form-item>
         <template v-if="oauth.tokenUrl">
           <el-form-item label="Client ID"><el-input v-model="oauth.clientId" autocomplete="off"/></el-form-item>
           <el-form-item label="Client Secret"><el-input v-model="oauth.clientSecret" type="password" show-password autocomplete="new-password" :placeholder="oauth.secretSet ? '留空保留已保存密钥' : '请输入密钥'"/></el-form-item>
           <el-form-item label="Scope（可选）"><el-input v-model="oauth.scope"/></el-form-item>
           <el-form-item label="令牌字段"><el-input v-model="oauth.tokenField" placeholder="access_token"/></el-form-item>
+          <el-form-item v-if="oauth.grantType==='authorization_code'" label="授权状态"><el-tag v-if="oauthGrantId||oauth.refreshTokenSet" type="success">已授权</el-tag><el-tag v-else type="info">尚未授权</el-tag><el-button class="ml8" :disabled="!oauth.authorizationUrl||!oauth.tokenUrl||!oauth.clientId||!oauth.clientSecret" @click="authorizeOAuth">授权并关联</el-button></el-form-item>
         </template>
         <el-form-item label="数组路径"><el-input v-model="dataPath" placeholder="data.rows；根节点为数组时留空" /></el-form-item>
         <el-form-item label="请求头 JSON"><el-input v-model="headers" type="textarea" :rows="3" :placeholder="editing ? '留空保留已保存请求头；修改地址时须重新填写，{} 表示清空' : '{ &quot;Authorization&quot;: &quot;Bearer …&quot; }'" /></el-form-item>
@@ -61,15 +65,20 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { ref,reactive,watch,computed } from 'vue'
+import { ref,reactive,watch,computed,onBeforeUnmount } from 'vue'
 import { ElMessage,ElMessageBox } from 'element-plus'
-import { importApiSource, importFileSource, snapshotSourceInfo, previewFileSource, type BiDatasource } from '@/api/bi/datasource'
+import { importApiSource, importFileSource, snapshotSourceInfo, previewFileSource, beginApiOAuth, exchangeApiOAuth, type BiDatasource } from '@/api/bi/datasource'
 const emit = defineEmits<{ saved: [] }>()
 const visible=ref(false), editing=ref(false), busy=ref(false), error=ref('')
 const kind=ref('api'), name=ref(''), alias=ref(''), url=ref(''), dataPath=ref(''), headers=ref(''), sheet=ref('')
 const id=ref<number>(), file=ref<File>()
-const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false),expandArrayPath=ref('')
-const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
+const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false),expandArrayPathsText=ref('')
+const oauth=reactive({grantType:'client_credentials',authorizationUrl:'',tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false,refreshTokenSet:false})
+const oauthGrantId=ref(''),oauthRedirectUri=`${window.location.origin}/bi-oauth-callback.html`
+let pendingOAuthState=''
+function onOAuthMessage(event:MessageEvent){if(event.origin!==window.location.origin||event.data?.type!=='wanfo-bi-oauth'||!pendingOAuthState)return;if(event.data.error){error.value='OAuth 授权失败：'+String(event.data.error);pendingOAuthState='';return}if(event.data.state!==pendingOAuthState||typeof event.data.code!=='string'){error.value='OAuth 回调状态无效，请重新授权';pendingOAuthState='';return}const state=pendingOAuthState;pendingOAuthState='';void exchangeApiOAuth({state,code:event.data.code,clientSecret:oauth.clientSecret}).then(result=>{oauthGrantId.value=result.data.grantId;ElMessage.success('OAuth 授权成功')}).catch(e=>{error.value=e instanceof Error?e.message:'OAuth 授权码交换失败'})}
+window.addEventListener('message',onOAuthMessage)
+onBeforeUnmount(()=>window.removeEventListener('message',onOAuthMessage))
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
 const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0),suggestedMappingCount=ref(0)
 const schemaChangeSummary=computed(()=>{const before=existingColumns.value.map(c=>c.name),after=previewColumns.value.map(c=>c.targetName).filter(Boolean),kept=after.filter(c=>before.includes(c)),added=after.filter(c=>!before.includes(c)),missing=before.filter(c=>!after.includes(c));return `结构预览：保留 ${kept.length} 个既有字段，新增 ${added.length} 个，移除 ${missing.length} 个。${added.length?` 新增：${added.join('、')}。`:''}${missing.length?` 移除：${missing.join('、')}。`:''}`})
@@ -80,19 +89,23 @@ let generation=0
 async function open(type: string, row?: BiDatasource) {
   const current=++generation
   busy.value=false
-  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;expandArrayPath.value='';Object.assign(oauth,{tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
+  paged.value=false;refreshMinutes.value=0;scheduleStatus.value='';fileMode.value='replace';invalidMode.value='reject';dedupeMode.value='none';dedupeKeys.value=[];existingColumns.value=[];method.value='GET';bodyText.value='{}';flatten.value=false;expandArrayPathsText.value='';oauthGrantId.value='';pendingOAuthState='';Object.assign(oauth,{grantType:'client_credentials',authorizationUrl:'',tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false,refreshTokenSet:false});previewColumns.value=[];previewRows.value=[];previewCount.value=0
   paginationMode.value='page';Object.assign(pagination,{pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
   kind.value=type; id.value=row?.id; editing.value=!!row; name.value=row?.name || ''; alias.value=row?.schemaName || ''
   url.value='';dataPath.value='';headers.value='';sheet.value='';file.value=undefined;error.value=''
   visible.value=true
   if(row && type==='api') {
     busy.value=true
-    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';expandArrayPath.value=result.data.expandArrayPath || '';paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{clientSecret:''})} }
+    try { const result=await snapshotSourceInfo(row.id);if(current===generation){url.value=result.data.url || '';dataPath.value=result.data.dataPath || '';expandArrayPathsText.value=(result.data.expandArrayPaths?.length?result.data.expandArrayPaths:result.data.expandArrayPath?[result.data.expandArrayPath]:[]).join('\n');paged.value=!!result.data.pagination;if(result.data.pagination){Object.assign(pagination,result.data.pagination);paginationMode.value=result.data.pagination.cursorParam?'cursor':'page'}refreshMinutes.value=result.data.schedule?.intervalMinutes || 0;scheduleStatus.value=result.data.schedule?.lastStatus || '';method.value=result.data.method || 'GET';bodyText.value=JSON.stringify(result.data.body || {},null,2);flatten.value=!!result.data.flatten;if(result.data.oauth)Object.assign(oauth,result.data.oauth,{grantType:result.data.oauth.grantType==='refresh_token'?'authorization_code':result.data.oauth.grantType,authorizationUrl:'',clientSecret:''})} }
     catch { if(current===generation)error.value='读取 API 配置失败，请关闭后重试' }
     finally {if(current===generation)busy.value=false}
   }
 }
 function selectFile(event: Event){file.value=(event.target as HTMLInputElement).files?.[0];previewColumns.value=[];existingColumns.value=[];previewRows.value=[];dedupeKeys.value=[];error.value=''}
+async function authorizeOAuth(){
+  const popup=window.open('about:blank','wanfo-bi-oauth','popup,width=680,height=760');if(!popup){error.value='浏览器阻止了授权弹窗，请允许此站点打开弹窗后重试';return}
+  try{const result=await beginApiOAuth({authorizationUrl:oauth.authorizationUrl.trim(),tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),redirectUri:oauthRedirectUri,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token'});pendingOAuthState=result.data.state;popup.location.href=result.data.authorizationUrl}catch(e){popup.close();error.value=e instanceof Error?e.message:'无法启动 OAuth 授权'}
+}
 function fileData(){
   const data=new FormData();if(file.value)data.append('file',file.value);data.append('name',name.value.trim());data.append('schemaName',alias.value);data.append('sheet',sheet.value)
   if(id.value)data.append('id',String(id.value));return data
@@ -124,8 +137,11 @@ async function save(){
         if(!parsed || Array.isArray(parsed) || typeof parsed!=='object' || Object.values(parsed).some(v=>typeof v!=='string'))throw new Error('请求头须为字符串键值对象')
       }
       let body:Record<string,unknown>|undefined=undefined;if(method.value==='POST'){body=JSON.parse(bodyText.value||'{}');if(!body||Array.isArray(body)||typeof body!=='object')throw new Error('POST 参数须为 JSON 对象')}
-      const auth=oauth.tokenUrl.trim()?{tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),clientSecret:oauth.clientSecret,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token'}:undefined
-      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,expandArrayPath:expandArrayPath.value.trim(),oauth:auth})
+      if(oauth.grantType==='authorization_code'&&!oauthGrantId.value&&!oauth.refreshTokenSet)throw new Error('请先完成 OAuth 授权码流程')
+      const auth=oauth.tokenUrl.trim()?{tokenUrl:oauth.tokenUrl.trim(),clientId:oauth.clientId.trim(),clientSecret:oauth.clientSecret,scope:oauth.scope.trim(),tokenField:oauth.tokenField.trim()||'access_token',grantType:oauth.grantType}:undefined
+      const expandArrayPaths=expandArrayPathsText.value.split(/[\n,，;；]+/).map(v=>v.trim()).filter(Boolean)
+      if(expandArrayPaths.length>4)throw new Error('最多配置 4 个数组路径')
+      await importApiSource({id:id.value,name:name.value.trim(),schemaName:alias.value,url:url.value.trim(),dataPath:dataPath.value.trim(),headers:parsed,pagination:paged.value?{...pagination}:undefined,refreshMinutes:refreshMinutes.value,method:method.value,body,flatten:flatten.value,expandArrayPaths,oauthGrantId:oauthGrantId.value||undefined,oauth:auth})
     } else {
       if(!file.value)throw new Error('请选择文件')
       if(file.value.size>5*1024*1024)throw new Error('文件不能超过 5 MB')

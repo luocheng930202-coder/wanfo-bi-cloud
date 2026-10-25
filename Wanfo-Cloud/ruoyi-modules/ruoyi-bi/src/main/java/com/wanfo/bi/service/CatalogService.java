@@ -161,6 +161,7 @@ public class CatalogService
     public record TablePlan(String catalog, String table, List<String> selected, List<Map<String,Object>> columns, String sql) { }
 
     public record JoinPlan(String catalog, String leftTable, String rightTable, String sql, List<Map<String,Object>> rightColumns) { }
+    public record JoinStepPlan(String sql, List<Map<String,Object>> rightColumns) { }
 
     public TablePlan plan(String schemaName, String catalog, String table, List<String> fields) throws Exception
     {
@@ -251,6 +252,38 @@ public class CatalogService
                     + logical(leftKey) + " = t1." + logical(rightKey);
             String sql = "SELECT " + String.join(", ", projections) + " FROM " + from;
             return new JoinPlan(cat, leftTable, rightTable, sql, pickedRight);
+        }
+    }
+
+    /** Appends one validated physical table to an already projected, identifier-safe dataset query. */
+    JoinStepPlan savedJoinStep(String schemaName, String catalog, String currentSql, String rightTable,
+                               String joinType, String rightKey, List<String> rightFields,
+                               String leftKey, String prefix, int aliasIndex) throws Exception {
+        activeSource(schemaName);
+        if (snapshot(schemaName)) throw new IllegalArgumentException("快照数据源暂不支持关联建模");
+        if (currentSql == null || currentSql.isBlank() || leftKey == null || leftKey.isBlank())
+            throw new IllegalArgumentException("关联左键无效");
+        if (rightTable == null || rightTable.isBlank() || rightKey == null || rightKey.isBlank())
+            throw new IllegalArgumentException("请选择关联表和右键");
+        if (rightFields == null || rightFields.isEmpty() || rightFields.size() > 50)
+            throw new IllegalArgumentException("每个关联最多选择 50 个右表字段");
+        if (prefix == null || !prefix.matches("r[0-9]*_")) throw new IllegalArgumentException("关联字段前缀无效");
+        String jt = joinType == null ? "LEFT" : joinType.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("INNER", "LEFT", "RIGHT").contains(jt)) throw new IllegalArgumentException("不支持的关联类型: " + joinType);
+        try (Connection conn = engine.borrowConnection(schemaName)) {
+            var scope = sourceScope(conn, schemaName, catalog);
+            List<Map<String,Object>> rightCols = columns(conn, scope, rightTable);
+            Set<String> valid = rightCols.stream().map(c -> (String)c.get("name")).collect(Collectors.toSet());
+            List<String> selected = new ArrayList<>(new LinkedHashSet<>(rightFields));
+            if (!valid.contains(rightKey) || !valid.containsAll(selected)) throw new IllegalArgumentException("右表键或字段不存在，请刷新后重试");
+            String alias = "t" + aliasIndex;
+            List<String> projection = new ArrayList<>();
+            for (String field : selected) projection.add(alias + "." + logical(field) + " AS " + logical(prefix + field));
+            List<Map<String,Object>> picked = rightCols.stream().filter(c -> selected.contains(c.get("name"))).toList();
+            String relation = logical(schemaName) + "." + logical(rightTable);
+            String sql = "SELECT bi_prev.*, " + String.join(", ", projection) + " FROM (" + currentSql + ") bi_prev "
+                    + jt + " JOIN " + relation + " " + alias + " ON bi_prev." + logical(leftKey) + " = " + alias + "." + logical(rightKey);
+            return new JoinStepPlan(sql, picked);
         }
     }
 

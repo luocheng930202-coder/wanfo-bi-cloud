@@ -16,4 +16,7 @@ public class ReportSubscriptionController {
     @PutMapping("/{id}") @BiPermission("bi:subscription:edit") public Map<String,Object> update(@PathVariable Long id,@RequestBody ReportSubscriptionService.Update request){return service.update(id,request);}
     @DeleteMapping("/{id}") @BiPermission("bi:subscription:remove") public Map<String,Object> delete(@PathVariable Long id){return service.delete(id);}
     @GetMapping("/{id}/history") @BiPermission("bi:subscription:list") public List<Map<String,Object>> history(@PathVariable Long id){return service.history(id);}
+    @GetMapping("/notifications") @BiPermission("bi:subscription:list") public List<Map<String,Object>> notifications(){return service.notifications();}
+    @PutMapping("/notifications/{id}/read") @BiPermission("bi:subscription:list") public Map<String,Object> readNotification(@PathVariable Long id){return service.markNotificationRead(id);}
+    @GetMapping("/admin/audit") @BiPermission("bi:resource:admin") public List<Map<String,Object>> globalAudit(){return service.globalAudit();}
 }

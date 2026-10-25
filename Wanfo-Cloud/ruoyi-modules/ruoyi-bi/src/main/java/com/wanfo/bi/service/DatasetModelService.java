@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -64,6 +65,8 @@ public class DatasetModelService
             try
             {
                 out.put("join", objectMapper.readValue(row.getModelJson(), DatasetJoinModel.class));
+                DatasetJoinModel saved = (DatasetJoinModel) out.get("join");
+                saved.setJoins(saved.normalizedJoins());
             }
             catch (Exception ignored)
             {
@@ -78,47 +81,75 @@ public class DatasetModelService
     {
         BiDatasetTableDO row = requireTableDataset(datasetId);
         requireModelWrite(row);
-        if (model == null || model.getRightTable() == null || model.getRightTable().isBlank())
-        { throw new IllegalArgumentException("请配置关联表"); }
+        if (model == null || model.normalizedJoins().isEmpty()) { throw new IllegalArgumentException("请至少配置一条关联"); }
         BiDatasource source = requireSource(row.getDatasourceId());
         List<BiDatasetFieldDO> existing = fieldMapper.selectByDatasetId(datasetId);
+        DatasetJoinModel previous = row.getModelJson() == null || row.getModelJson().isBlank()
+                ? new DatasetJoinModel() : objectMapper.readValue(row.getModelJson(), DatasetJoinModel.class);
+        Set<String> previousGenerated = generatedFieldNames(previous);
         List<String> leftFields = existing.stream()
                 .filter(f -> !"1".equals(f.getExtFlag()))
-                .filter(f -> !f.getOriginName().startsWith(RIGHT_PREFIX))
+                .filter(f -> !previousGenerated.contains(f.getOriginName()))
+                .filter(f -> !(previous.normalizedJoins().isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
                 .map(BiDatasetFieldDO::getOriginName)
                 .toList();
         if (leftFields.isEmpty())
         { throw new IllegalArgumentException("数据集没有可用的左表字段"); }
-        CatalogService.JoinPlan plan = catalog.planJoin(source.getSchemaName(), row.getSourceCatalog(),
-                row.getSourceTable(), leftFields, model.getJoinType(), model.getRightTable(),
-                model.getRightFields(), model.getLeftKey(), model.getRightKey());
-        removeRightFields(existing);
+        List<DatasetJoinModel.JoinStep> joins = model.normalizedJoins();
+        if (joins.size() > 8) throw new IllegalArgumentException("单个数据集最多配置 8 条关联");
+        String sql = catalog.savedPlan(source.getSchemaName(), row.getSourceCatalog(), row.getSourceTable(), leftFields).sql();
+        Set<String> available = new LinkedHashSet<>(leftFields);
+        List<Map<String,Object>> addedColumns = new ArrayList<>();
+        Set<String> newGenerated = new LinkedHashSet<>();
+        for (int i = 0; i < joins.size(); i++) {
+            DatasetJoinModel.JoinStep step = joins.get(i);
+            if (step == null || !available.contains(step.getLeftKey())) throw new IllegalArgumentException("第 " + (i + 1) + " 条关联的左键不可用");
+            String prefix = DatasetJoinModel.fieldPrefix(i + 1);
+            CatalogService.JoinStepPlan plan = catalog.savedJoinStep(source.getSchemaName(), row.getSourceCatalog(), sql,
+                    step.getRightTable(), step.getJoinType(), step.getRightKey(), step.getRightFields(), step.getLeftKey(), prefix, i + 1);
+            sql = plan.sql();
+            for (Map<String,Object> col : plan.rightColumns()) {
+                String raw = String.valueOf(col.get("name")), name = prefix + raw;
+                if (!newGenerated.add(name) || available.contains(name)) throw new IllegalArgumentException("关联字段名重复：" + name);
+                available.add(name);
+                Map<String,Object> mapped = new LinkedHashMap<>(col); mapped.put("datasetName", name); mapped.put("joinIndex", i + 1);
+                addedColumns.add(mapped);
+            }
+        }
+        if (available.size() > 200) throw new IllegalArgumentException("关联后的数据集字段不能超过 200 个");
+        model.setJoins(joins);
+        if (!joins.isEmpty()) {
+            var first = joins.get(0); model.setJoinType(first.getJoinType()); model.setRightTable(first.getRightTable());
+            model.setLeftKey(first.getLeftKey()); model.setRightKey(first.getRightKey()); model.setRightFields(first.getRightFields());
+        }
+        removeGeneratedFields(existing, previousGenerated);
         int order = existing.stream().map(BiDatasetFieldDO::getOrderNum).filter(n -> n != null).mapToInt(Integer::intValue).max().orElse(-1) + 1;
         List<BiDatasetFieldDO> added = new ArrayList<>();
-        for (Map<String, Object> col : plan.rightColumns())
+        for (Map<String, Object> col : addedColumns)
         {
-            String raw = String.valueOf(col.get("name"));
+            String raw = String.valueOf(col.get("name")), datasetName = String.valueOf(col.get("datasetName"));
             BiDatasetFieldDO f = new BiDatasetFieldDO();
             f.setDatasetId(datasetId);
-            f.setOriginName(RIGHT_PREFIX + raw);
+            f.setOriginName(datasetName);
             f.setOriginType(String.valueOf(col.get("type")));
             String show = FieldDisplayLabels.catalogShowName(col);
             if (show.equals(raw)) {
-                show = RIGHT_PREFIX + raw;
+                show = datasetName;
             }
             f.setShowName(show);
             f.setDimFlag("metric".equals(col.get("suggestAs")) ? "0" : "1");
             f.setExtFlag("0");
-            f.setGroupName("关联");
+            f.setGroupName("关联 " + col.get("joinIndex"));
             f.setOrderNum(order++);
             f.setStatus("0");
             fieldMapper.insert(f);
             added.add(f);
         }
-        datasetMapper.updateUnionAndModel(datasetId, plan.sql(), objectMapper.writeValueAsString(model), operator);
+        datasetMapper.updateUnionAndModel(datasetId, sql, objectMapper.writeValueAsString(model), operator);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("unionSql", plan.sql());
+        result.put("unionSql", sql);
         result.put("rightFieldCount", added.size());
+        result.put("joinCount", joins.size());
         return result;
     }
 
@@ -131,7 +162,8 @@ public class DatasetModelService
         { return Map.of("cleared", false); }
         BiDatasource source = requireSource(row.getDatasourceId());
         List<BiDatasetFieldDO> existing = fieldMapper.selectByDatasetId(datasetId);
-        removeRightFields(existing);
+        DatasetJoinModel previous = objectMapper.readValue(row.getModelJson(), DatasetJoinModel.class);
+        removeGeneratedFields(existing, generatedFieldNames(previous));
         List<String> leftFields = fieldMapper.selectByDatasetId(datasetId).stream()
                 .filter(f -> !"1".equals(f.getExtFlag()))
                 .map(BiDatasetFieldDO::getOriginName)
@@ -191,13 +223,40 @@ public class DatasetModelService
         return Map.of("removed", true);
     }
 
-    private void removeRightFields(List<BiDatasetFieldDO> existing)
+    @Transactional
+    public Map<String,Object> orderCalculatedFields(Long datasetId,List<Long> orderedIds,String operator) {
+        BiDatasetTableDO row=requireTableDataset(datasetId);requireModelWrite(row);
+        List<BiDatasetFieldDO> all=fieldMapper.selectByDatasetId(datasetId);
+        List<BiDatasetFieldDO> calcs=all.stream().filter(f->"1".equals(f.getExtFlag())).toList();
+        if(orderedIds==null||orderedIds.size()!=calcs.size()||orderedIds.stream().anyMatch(Objects::isNull)||new LinkedHashSet<>(orderedIds).size()!=calcs.size())throw new IllegalArgumentException("请提交完整且不重复的清洗步骤顺序");
+        Map<Long,BiDatasetFieldDO> byId=calcs.stream().collect(Collectors.toMap(BiDatasetFieldDO::getId,f->f));
+        Set<String> available=all.stream().filter(f->!"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).collect(Collectors.toCollection(LinkedHashSet::new));
+        List<BiDatasetFieldDO> ordered=new ArrayList<>();
+        for(Long id:orderedIds){BiDatasetFieldDO step=byId.get(id);if(step==null)throw new IllegalArgumentException("清洗步骤不存在");CalcFormulaCompiler.compile(step.getExtFormula(),available);available.add(step.getOriginName());ordered.add(step);}
+        int order=0;for(BiDatasetFieldDO step:ordered)fieldMapper.updateCalculatedOrder(datasetId,step.getId(),order++);
+        row.setUpdateBy(operator);datasetMapper.update(row);
+        return Map.of("orderedIds",orderedIds,"replayedOnQuery",true);
+    }
+
+    private void removeGeneratedFields(List<BiDatasetFieldDO> existing, Set<String> generated)
     {
         for (BiDatasetFieldDO f : existing)
         {
-            if (!"1".equals(f.getExtFlag()) && f.getOriginName().startsWith(RIGHT_PREFIX))
+            if (!"1".equals(f.getExtFlag()) && (generated.contains(f.getOriginName())
+                    || generated.isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
             { fieldMapper.deleteById(f.getId()); }
         }
+    }
+
+    private Set<String> generatedFieldNames(DatasetJoinModel model) {
+        Set<String> names = new LinkedHashSet<>();
+        List<DatasetJoinModel.JoinStep> joins = model == null ? List.of() : model.normalizedJoins();
+        for (int i = 0; i < joins.size(); i++) {
+            String prefix = DatasetJoinModel.fieldPrefix(i + 1);
+            List<String> fields = joins.get(i).getRightFields();
+            if (fields != null) fields.forEach(field -> names.add(prefix + field));
+        }
+        return names;
     }
 
     private void validateCalcName(String originName)

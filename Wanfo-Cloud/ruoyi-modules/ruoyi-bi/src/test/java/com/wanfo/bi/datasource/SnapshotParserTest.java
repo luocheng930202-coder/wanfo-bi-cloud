@@ -38,6 +38,13 @@ class SnapshotParserTest {
         assertEquals(List.of("orderId","region","items.sku","items.qty"),data.columns().stream().map(SnapshotData.Column::name).toList());
         assertEquals(List.of(List.of("7","北京","A","2"),List.of("7","北京","B","3"),List.of("8","上海","C","1")),data.rows());
     }
+    @Test void expandsMultipleSiblingArraysUsingBoundedCartesianAssociation()throws Exception {
+        var mapper=new ObjectMapper();String input="[{\"orderId\":9,\"items\":[{\"sku\":\"A\"},{\"sku\":\"B\"}],\"payments\":[{\"method\":\"card\"},{\"method\":\"cash\"}]}]";
+        var data=SnapshotParser.json(bytes(input),"",mapper,false,true,List.of("items","payments"));
+        assertEquals(List.of("orderId","items.sku","payments.method"),data.columns().stream().map(SnapshotData.Column::name).toList());
+        assertEquals(List.of(List.of("9","A","card"),List.of("9","A","cash"),List.of("9","B","card"),List.of("9","B","cash")),data.rows());
+        assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes(input),"",mapper,false,true,List.of("items","items.sku")));
+    }
     @Test void rejectsInconsistentNestedArrayRowsAndBoundsExpansion(){
         var mapper=new ObjectMapper();
         assertThrows(IllegalArgumentException.class,()->SnapshotParser.json(bytes("[{\"id\":1,\"items\":[{\"sku\":\"A\"}]},{\"id\":2,\"items\":[{\"code\":\"B\"}]}]"),"",mapper,false,true,"items"));

@@ -67,13 +67,8 @@ export interface DatasetDetail extends DatasetSummary {
   fields: DatasetField[]
 }
 
-export interface DatasetJoinModel {
-  joinType?: string
-  rightTable: string
-  leftKey: string
-  rightKey: string
-  rightFields: string[]
-}
+export interface DatasetJoinStep { joinType: 'LEFT' | 'INNER' | 'RIGHT'; rightTable: string; leftKey: string; rightKey: string; rightFields: string[] }
+export interface DatasetJoinModel extends Partial<DatasetJoinStep> { joins?: DatasetJoinStep[] }
 
 // ==================== 元数据目录 ====================
 
@@ -241,6 +236,8 @@ export function addCalculatedField(id: number, data: { originName: string; showN
 export function removeCalculatedField(id: number, fieldId: number): Promise<AjaxResult> {
   return request({ url: `/bi/dataset/${id}/fields/calculated/${fieldId}`, method: 'delete' })
 }
+
+export function reorderCalculatedFields(id:number,orderedIds:number[]):Promise<AjaxResult>{return request({url:`/bi/dataset/${id}/fields/calculated/order`,method:'put',data:{orderedIds}})}
 
 
 export interface ModelDatasource { id: number; name: string; schemaName: string; type: string }

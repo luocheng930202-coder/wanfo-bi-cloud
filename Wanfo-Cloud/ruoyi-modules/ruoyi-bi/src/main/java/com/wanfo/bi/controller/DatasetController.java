@@ -192,7 +192,7 @@ public class DatasetController
         return modelService.joinModel(id);
     }
 
-    @Operation(summary = "应用单表关联")
+    @Operation(summary = "应用多表关联关系")
     @PostMapping("/{id}/model/join")
     @BiPermission("bi:datasource:model")
     public Map<String, Object> applyJoin(@PathVariable Long id, @RequestBody DatasetJoinModel body) throws Exception
@@ -225,6 +225,16 @@ public class DatasetController
     public Map<String, Object> removeCalculated(@PathVariable Long id, @PathVariable Long fieldId)
     {
         return modelService.removeCalculatedField(id, fieldId, actors.currentActor().username());
+    }
+
+    public record CalculatedOrderRequest(List<Long> orderedIds) { }
+
+    @Operation(summary = "编排计算清洗步骤")
+    @PutMapping("/{id}/fields/calculated/order")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> orderCalculated(@PathVariable Long id,@RequestBody CalculatedOrderRequest body)
+    {
+        return modelService.orderCalculatedFields(id,body.orderedIds(),actors.currentActor().username());
     }
 
     @Operation(summary = "预览数据集数据")

@@ -13,11 +13,15 @@ public class ApiSnapshotClient {
     public record Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath,String cursorParam,String nextCursorPath,String initialCursor){
         public Pagination(String pageParam,String sizeParam,int pageSize,int startPage,int maxPages,String totalPath){this(pageParam,sizeParam,pageSize,startPage,maxPages,totalPath,null,null,null);}
     }
-    public record OAuth(String tokenUrl,String clientId,String clientSecret,String scope,String tokenField){}
-    public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth,String expandArrayPath){
+    public record OAuth(String tokenUrl,String clientId,String clientSecret,String scope,String tokenField,String grantType,String refreshToken,String redirectUri,String accessToken){
+        public OAuth(String tokenUrl,String clientId,String clientSecret,String scope,String tokenField){this(tokenUrl,clientId,clientSecret,scope,tokenField,"client_credentials",null,null,null);}
+    }
+    public record Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth,String expandArrayPath,List<String> expandArrayPaths){
         public Config(String url,String path,Map<String,String> headers){this(url,path,headers,null,"GET",null,false,null);}
         public Config(String url,String path,Map<String,String> headers,Pagination pagination){this(url,path,headers,pagination,"GET",null,false,null);}
-        public Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth){this(url,dataPath,headers,pagination,method,body,flatten,oauth,null);}
+        public Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth){this(url,dataPath,headers,pagination,method,body,flatten,oauth,null,null);}
+        public Config(String url,String dataPath,Map<String,String> headers,Pagination pagination,String method,Map<String,Object> body,boolean flatten,OAuth oauth,String expandArrayPath){this(url,dataPath,headers,pagination,method,body,flatten,oauth,expandArrayPath,null);}
+        public List<String> arrayPaths(){return expandArrayPaths==null||expandArrayPaths.isEmpty()?(expandArrayPath==null||expandArrayPath.isBlank()?List.of():List.of(expandArrayPath)):expandArrayPaths;}
     }
     public ApiSnapshotClient(@Value("${bi.external-source.allowed-origins:}") String origins){
         this.origins=new HashSet<>();for(String origin:origins.split(","))if(!origin.isBlank())this.origins.add(origin(URI.create(origin.trim())));
@@ -26,6 +30,7 @@ public class ApiSnapshotClient {
         if(uri.getHost()==null || uri.getUserInfo()!=null || uri.getFragment()!=null || !Set.of("http","https").contains(uri.getScheme()))throw new IllegalArgumentException("API 地址须为 HTTP(S) 且不能包含账号或片段");
         return uri.getScheme()+"://"+uri.getHost().toLowerCase(Locale.ROOT)+":"+(uri.getPort()<0?("https".equals(uri.getScheme())?443:80):uri.getPort());
     }
+    public void requireAllowedOrigin(URI uri){if(!origins.contains(origin(uri)))throw new IllegalArgumentException("API 域名未获允许，请配置 bi.external-source.allowed-origins");}
     public byte[] fetch(Config config)throws IOException {return fetch(config,System.nanoTime()+20_000_000_000L);}
     public byte[] fetch(Config config,long deadline)throws IOException {
         if(System.nanoTime()>=deadline)throw new IllegalArgumentException("API 请求超过时间限制");
@@ -66,10 +71,25 @@ public class ApiSnapshotClient {
         } finally {connection.disconnect();}
     }
     public String oauthToken(OAuth oauth,long deadline)throws IOException {
-        URI token=URI.create(oauth.tokenUrl());if(!origins.contains(origin(token)))throw new IllegalArgumentException("OAuth 地址域名未获允许");
+        if(oauth.accessToken()!=null&&!oauth.accessToken().isBlank())return oauth.accessToken();
+        URI token=URI.create(oauth.tokenUrl());requireAllowedOrigin(token);
         if(oauth.clientId()==null||oauth.clientId().isBlank()||oauth.clientSecret()==null||oauth.clientSecret().isBlank())throw new IllegalArgumentException("OAuth 客户端配置无效");
         HttpURLConnection c=(HttpURLConnection)token.toURL().openConnection();int wait=(int)Math.max(1,Math.min(3000,(deadline-System.nanoTime())/1_000_000));c.setInstanceFollowRedirects(false);c.setConnectTimeout(wait);c.setReadTimeout(wait);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
-        String form="grant_type=client_credentials&client_id="+URLEncoder.encode(oauth.clientId(),java.nio.charset.StandardCharsets.UTF_8)+"&client_secret="+URLEncoder.encode(oauth.clientSecret(),java.nio.charset.StandardCharsets.UTF_8)+(oauth.scope()==null||oauth.scope().isBlank()?"":"&scope="+URLEncoder.encode(oauth.scope(),java.nio.charset.StandardCharsets.UTF_8));
-        try{c.getOutputStream().write(form.getBytes(java.nio.charset.StandardCharsets.UTF_8));if(c.getResponseCode()!=200)throw new IllegalArgumentException("OAuth 令牌接口返回错误");byte[] bytes=c.getInputStream().readNBytes(SnapshotParser.MAX_BYTES+1);if(bytes.length>SnapshotParser.MAX_BYTES)throw new IllegalArgumentException("OAuth 响应过大");var root=SnapshotParser.tree(bytes,new com.fasterxml.jackson.databind.ObjectMapper());String value=root.path(oauth.tokenField()==null||oauth.tokenField().isBlank()?"access_token":oauth.tokenField()).asText();if(value.isBlank()||value.length()>4000)throw new IllegalArgumentException("OAuth 响应缺少有效令牌");return value;}finally{c.disconnect();}
+        String grant="refresh_token".equals(oauth.grantType())?"refresh_token":"client_credentials";
+        if("refresh_token".equals(grant)&&(oauth.refreshToken()==null||oauth.refreshToken().isBlank()))throw new IllegalArgumentException("OAuth Refresh Token 缺失，请重新授权");
+        String form="grant_type="+grant+"&client_id="+URLEncoder.encode(oauth.clientId(),java.nio.charset.StandardCharsets.UTF_8)+"&client_secret="+URLEncoder.encode(oauth.clientSecret(),java.nio.charset.StandardCharsets.UTF_8)+("refresh_token".equals(grant)?"&refresh_token="+URLEncoder.encode(oauth.refreshToken()==null?"":oauth.refreshToken(),java.nio.charset.StandardCharsets.UTF_8):"")+(oauth.scope()==null||oauth.scope().isBlank()?"":"&scope="+URLEncoder.encode(oauth.scope(),java.nio.charset.StandardCharsets.UTF_8));
+        try{c.getOutputStream().write(form.getBytes(java.nio.charset.StandardCharsets.UTF_8));return readTokenResponse(c,oauth.tokenField()).accessToken();}finally{c.disconnect();}
     }
+    public OAuth exchangeAuthorizationCode(OAuth oauth,String code,String verifier,long deadline)throws IOException{
+        URI token=URI.create(oauth.tokenUrl());requireAllowedOrigin(token);if(oauth.clientId()==null||oauth.clientId().isBlank()||oauth.clientSecret()==null||oauth.clientSecret().isBlank())throw new IllegalArgumentException("OAuth 客户端配置无效");
+        HttpURLConnection c=(HttpURLConnection)token.toURL().openConnection();int wait=(int)Math.max(1,Math.min(3000,(deadline-System.nanoTime())/1_000_000));c.setInstanceFollowRedirects(false);c.setConnectTimeout(wait);c.setReadTimeout(wait);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+        String form="grant_type=authorization_code&code="+URLEncoder.encode(code,java.nio.charset.StandardCharsets.UTF_8)+"&client_id="+URLEncoder.encode(oauth.clientId(),java.nio.charset.StandardCharsets.UTF_8)+"&client_secret="+URLEncoder.encode(oauth.clientSecret(),java.nio.charset.StandardCharsets.UTF_8)+"&redirect_uri="+URLEncoder.encode(oauth.redirectUri(),java.nio.charset.StandardCharsets.UTF_8)+"&code_verifier="+URLEncoder.encode(verifier,java.nio.charset.StandardCharsets.UTF_8);
+        try{c.getOutputStream().write(form.getBytes(java.nio.charset.StandardCharsets.UTF_8));TokenResponse response=readTokenResponse(c,oauth.tokenField());return new OAuth(oauth.tokenUrl(),oauth.clientId(),oauth.clientSecret(),oauth.scope(),oauth.tokenField(),"refresh_token",response.refreshToken(),oauth.redirectUri(),response.accessToken());}finally{c.disconnect();}
+    }
+    public OAuth refreshOAuth(OAuth oauth,long deadline)throws IOException{
+        if(!"refresh_token".equals(oauth.grantType())||oauth.accessToken()!=null&&!oauth.accessToken().isBlank())return oauth;if(oauth.refreshToken()==null||oauth.refreshToken().isBlank()||oauth.clientId()==null||oauth.clientId().isBlank()||oauth.clientSecret()==null||oauth.clientSecret().isBlank())throw new IllegalArgumentException("OAuth Refresh Token 配置无效，请重新授权");URI token=URI.create(oauth.tokenUrl());requireAllowedOrigin(token);HttpURLConnection c=(HttpURLConnection)token.toURL().openConnection();int wait=(int)Math.max(1,Math.min(3000,(deadline-System.nanoTime())/1_000_000));c.setInstanceFollowRedirects(false);c.setConnectTimeout(wait);c.setReadTimeout(wait);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Accept","application/json");c.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");String form="grant_type=refresh_token&refresh_token="+URLEncoder.encode(oauth.refreshToken(),java.nio.charset.StandardCharsets.UTF_8)+"&client_id="+URLEncoder.encode(oauth.clientId(),java.nio.charset.StandardCharsets.UTF_8)+"&client_secret="+URLEncoder.encode(oauth.clientSecret(),java.nio.charset.StandardCharsets.UTF_8)+(oauth.scope()==null||oauth.scope().isBlank()?"":"&scope="+URLEncoder.encode(oauth.scope(),java.nio.charset.StandardCharsets.UTF_8));
+        try{c.getOutputStream().write(form.getBytes(java.nio.charset.StandardCharsets.UTF_8));TokenResponse response=readTokenResponse(c,oauth.tokenField());return new OAuth(oauth.tokenUrl(),oauth.clientId(),oauth.clientSecret(),oauth.scope(),oauth.tokenField(),"refresh_token",response.refreshToken()==null?oauth.refreshToken():response.refreshToken(),oauth.redirectUri(),response.accessToken());}finally{c.disconnect();}
+    }
+    private record TokenResponse(String accessToken,String refreshToken){}
+    private TokenResponse readTokenResponse(HttpURLConnection connection,String tokenField)throws IOException{if(connection.getResponseCode()!=200)throw new IllegalArgumentException("OAuth 令牌接口返回错误");byte[] bytes=connection.getInputStream().readNBytes(SnapshotParser.MAX_BYTES+1);if(bytes.length>SnapshotParser.MAX_BYTES)throw new IllegalArgumentException("OAuth 响应过大");var root=SnapshotParser.tree(bytes,new com.fasterxml.jackson.databind.ObjectMapper());String value=root.path(tokenField==null||tokenField.isBlank()?"access_token":tokenField).asText(),refresh=root.path("refresh_token").asText(null);if(value.isBlank()||value.length()>4000)throw new IllegalArgumentException("OAuth 响应缺少有效令牌");return new TokenResponse(value,refresh);}
 }

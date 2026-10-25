@@ -48,7 +48,7 @@
         <el-alert v-if="fileMode==='append' && dedupeMode==='none'" title="当前按行追加且不去重；如重复导入，请选择全部字段或业务键去重。业务键去重保留最后出现的记录。" type="warning" :closable="false" />
         <el-button :loading="busy" :disabled="!file" @click="previewFile">预览并映射字段</el-button>
         <template v-if="previewColumns.length">
-          <p>本次文件 {{ previewCount }} 行；将源字段映射到目标字段，可改名、对齐旧字段或忽略。重名目标会被拒绝，修改类型后保存时会校验全部行。</p>
+          <p>本次文件 {{ previewCount }} 行；已自动建议 {{ suggestedMappingCount }} 个唯一字段映射（忽略大小写和分隔符差异）。请核对后保存；仍可改名、对齐旧字段或忽略，重名目标会被拒绝。</p>
           <el-table :data="previewColumns" max-height="260"><el-table-column prop="name" label="源字段" min-width="130"/><el-table-column label="目标字段" min-width="190"><template #default="{row}"><el-select v-model="row.targetName" filterable allow-create default-first-option clearable placeholder="输入或选择目标字段"><el-option label="忽略此字段" value=""/><el-option v-for="column in existingColumns" :key="column.name" :label="column.name+'（'+column.type+'）'" :value="column.name"/></el-select></template></el-table-column><el-table-column label="类型" width="150"><template #default="{row}"><el-select v-model="row.type" :disabled="editing && fileMode!=='replace-structure' && existingColumns.some(c=>c.name===row.targetName)"><el-option v-for="option in columnTypes" :key="option.value" :label="option.label" :value="option.value" /></el-select></template></el-table-column></el-table>
           <el-table :data="previewRows" max-height="230"><el-table-column v-for="(column,index) in previewColumns" :key="column.name" :label="column.name" :prop="String(index)" min-width="110" show-overflow-tooltip /></el-table>
           <el-alert v-if="editing && fileMode==='replace-structure'" :title="schemaChangeSummary" type="warning" :closable="false" class="mt8"/>
@@ -71,7 +71,7 @@ const id=ref<number>(), file=ref<File>()
 const paged=ref(false),paginationMode=ref<'page'|'cursor'>('page'),refreshMinutes=ref(0),scheduleStatus=ref(''),fileMode=ref('replace'),invalidMode=ref('reject'),dedupeMode=ref('none'),dedupeKeys=ref<string[]>([]),method=ref('GET'),bodyText=ref('{}'),flatten=ref(false),expandArrayPath=ref('')
 const oauth=reactive({tokenUrl:'',clientId:'',clientSecret:'',scope:'',tokenField:'access_token',secretSet:false})
 const pagination=reactive({pageParam:'page',sizeParam:'pageSize',pageSize:100,startPage:1,maxPages:100,totalPath:'',cursorParam:'',nextCursorPath:'',initialCursor:''})
-const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0)
+const previewColumns=ref<{name:string;type:string;targetName:string}[]>([]),existingColumns=ref<{name:string;type:string}[]>([]),previewRows=ref<(string|null)[][]>([]),previewCount=ref(0),suggestedMappingCount=ref(0)
 const schemaChangeSummary=computed(()=>{const before=existingColumns.value.map(c=>c.name),after=previewColumns.value.map(c=>c.targetName).filter(Boolean),kept=after.filter(c=>before.includes(c)),added=after.filter(c=>!before.includes(c)),missing=before.filter(c=>!after.includes(c));return `结构预览：保留 ${kept.length} 个既有字段，新增 ${added.length} 个，移除 ${missing.length} 个。${added.length?` 新增：${added.join('、')}。`:''}${missing.length?` 移除：${missing.join('、')}。`:''}`})
 watch(previewColumns,()=>{const valid=new Set(previewColumns.value.map(c=>c.targetName).filter(Boolean));dedupeKeys.value=dedupeKeys.value.filter(key=>valid.has(key))},{deep:true})
 const columnTypes=[{value:'VARCHAR',label:'文本'},{value:'DECIMAL',label:'数值'},{value:'BOOLEAN',label:'布尔'},{value:'DATE',label:'日期'},{value:'TIMESTAMP',label:'日期时间'}]
@@ -100,7 +100,14 @@ function fileData(){
 async function previewFile(){
   if(!file.value || busy.value)return
   busy.value=true;error.value=''
-  try{const response=await previewFileSource(fileData());existingColumns.value=response.data.existingColumns||[];previewColumns.value=response.data.columns.map(c=>({ ...c,targetName:c.name }));previewRows.value=response.data.rows;previewCount.value=response.data.rowCount}
+  try{
+    const response=await previewFileSource(fileData());existingColumns.value=response.data.existingColumns||[]
+    const normalize=(value:string)=>value.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}_]+/gu,'')
+    const targets=new Map<string,string[]>();for(const column of existingColumns.value){const key=normalize(column.name);const matches=targets.get(key)||[];matches.push(column.name);targets.set(key,matches)}
+    const used=new Set<string>();suggestedMappingCount.value=0
+    previewColumns.value=response.data.columns.map(column=>{const matches=targets.get(normalize(column.name))||[];let targetName=column.name;if(matches.length===1&&!used.has(matches[0])){targetName=matches[0];used.add(targetName);suggestedMappingCount.value++}return{...column,targetName}})
+    previewRows.value=response.data.rows;previewCount.value=response.data.rowCount
+  }
   catch{error.value='文件预览失败，请检查编码、表头、工作表及文件大小'}finally{busy.value=false}
 }
 async function save(){

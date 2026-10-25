@@ -12,4 +12,6 @@ public interface BiSourceSnapshotMapper {
     int insert(Row row);
     @Update("UPDATE bi_source_snapshot SET config_cipher=#{configCipher},columns_json=#{columnsJson},rows_json=#{rowsJson},row_count=#{rowCount},file_name=#{fileName},version=version+1,refreshed_at=CURRENT_TIMESTAMP WHERE datasource_id=#{datasourceId} AND version=#{version}")
     int replace(Row row);
+    @Update("UPDATE bi_source_snapshot SET config_cipher=#{configCipher} WHERE datasource_id=#{id} AND version=#{version}")
+    int updateConfigCipher(@Param("id") Long id,@Param("version") long version,@Param("configCipher") String configCipher);
 }

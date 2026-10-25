@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BI 数据源授权</title></head>
+<body><p id="message">正在返回授权结果…</p>
+<script>
+  const query = new URLSearchParams(window.location.search)
+  const result = { type: 'wanfo-bi-oauth', code: query.get('code'), state: query.get('state'), error: query.get('error') }
+  window.history.replaceState({}, document.title, window.location.pathname)
+  if (window.opener) {
+    window.opener.postMessage(result, window.location.origin)
+    document.getElementById('message').textContent = result.error ? '授权失败，请返回数据源配置窗口查看原因。' : '授权成功，可以关闭此窗口。'
+    if (!result.error) window.close()
+  } else {
+    document.getElementById('message').textContent = '未找到发起授权的配置窗口，请关闭此页并重新发起授权。'
+  }
+</script></body>
+</html>

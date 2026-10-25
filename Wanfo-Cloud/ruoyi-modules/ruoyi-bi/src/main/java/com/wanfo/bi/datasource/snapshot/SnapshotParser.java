@@ -75,9 +75,12 @@ public final class SnapshotParser {
     public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper)throws IOException {return json(bytes,path,mapper,false,false);}
     public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated)throws IOException {return json(bytes,path,mapper,paginated,false);}
     public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated,boolean flatten)throws IOException {
-        return json(bytes,path,mapper,paginated,flatten,null);
+        return json(bytes,path,mapper,paginated,flatten,List.of());
     }
     public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated,boolean flatten,String expandArrayPath)throws IOException {
+        return json(bytes,path,mapper,paginated,flatten,expandArrayPath==null||expandArrayPath.isBlank()?List.of():List.of(expandArrayPath));
+    }
+    public static SnapshotData json(byte[] bytes,String path,ObjectMapper mapper,boolean paginated,boolean flatten,List<String> expandArrayPaths)throws IOException {
         JsonNode root=tree(bytes,mapper);
         JsonNode array=root;List<JsonNode> parents=new ArrayList<>();parents.add(root);
         if(path!=null && !path.isBlank()){
@@ -87,29 +90,20 @@ public final class SnapshotParser {
         if(!array.isArray() || array.isEmpty())throw new IllegalArgumentException("API 数据路径须指向非空对象数组");
         if(array.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 超过 20000 行");
         if(!paginated)for(JsonNode parent:parents)if(parent.isObject())for(String key:List.of("total","totalCount"))if(parent.path(key).canConvertToLong() && parent.path(key).longValue()>array.size())throw new IllegalArgumentException("接口返回分页数据，请提供完整数据接口");
-        if(expandArrayPath!=null&&!expandArrayPath.isBlank()&&!expandArrayPath.matches("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"))throw new IllegalArgumentException("嵌套数组路径使用 items 或 details.rows 形式");
-        if(expandArrayPath!=null&&expandArrayPath.contains(".")&&!flatten)throw new IllegalArgumentException("多层嵌套数组路径请先开启展开嵌套对象");
+        List<String> paths=expandArrayPaths==null?List.of():expandArrayPaths.stream().filter(p->p!=null&&!p.isBlank()).map(String::trim).toList();
+        if(paths.size()>4||new HashSet<>(paths).size()!=paths.size())throw new IllegalArgumentException("最多选择 4 个不同的数组路径");
+        for(String arrayPath:paths){if(!arrayPath.matches("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"))throw new IllegalArgumentException("嵌套数组路径使用 items 或 details.rows 形式");if(arrayPath.contains(".")&&!flatten)throw new IllegalArgumentException("多层嵌套数组路径请先开启展开嵌套对象");}
+        for(int i=0;i<paths.size();i++)for(int j=i+1;j<paths.size();j++)if(paths.get(i).startsWith(paths.get(j)+".")||paths.get(j).startsWith(paths.get(i)+"."))throw new IllegalArgumentException("多数组关联仅支持同一记录下的独立数组路径");
         List<Map<String,JsonNode>> expanded=new ArrayList<>();
         for(JsonNode object:array){
             if(!object.isObject())throw new IllegalArgumentException("API 各行字段须为对象");
             Map<String,JsonNode> parentFields=fields(object,flatten);
-            if(expandArrayPath==null||expandArrayPath.isBlank())expanded.add(parentFields);
-            else {
-                JsonNode children=atPath(object,expandArrayPath);
-                if(!children.isArray())throw new IllegalArgumentException("嵌套数组路径须指向对象数组");
-                parentFields.remove(expandArrayPath);
-                for(JsonNode child:children){
-                    if(!child.isObject())throw new IllegalArgumentException("嵌套数组元素须为对象");
-                    Map<String,JsonNode> row=new LinkedHashMap<>(parentFields);
-                    for(var entry:fields(child,flatten).entrySet()){
-                        String key=expandArrayPath+"."+entry.getKey();
-                        if(row.putIfAbsent(key,entry.getValue())!=null)throw new IllegalArgumentException("展开后的字段名称重复");
-                    }
-                    if(row.size()>SnapshotData.MAX_COLUMNS)throw new IllegalArgumentException("API 展开后超过 200 列");
-                    expanded.add(row);
-                    if(expanded.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 展开后超过 20000 行");
-                }
+            List<Map<String,JsonNode>> combinations=new ArrayList<>();combinations.add(parentFields);
+            for(String arrayPath:paths){JsonNode children=atPath(object,arrayPath);if(!children.isArray())throw new IllegalArgumentException("数组路径「"+arrayPath+"」须指向对象数组");
+                for(Map<String,JsonNode> combination:combinations)combination.remove(arrayPath);
+                List<Map<String,JsonNode>> joined=new ArrayList<>();for(Map<String,JsonNode> combination:combinations)for(JsonNode child:children){if(!child.isObject())throw new IllegalArgumentException("嵌套数组元素须为对象");Map<String,JsonNode> row=new LinkedHashMap<>(combination);for(var entry:fields(child,flatten).entrySet()){String key=arrayPath+"."+entry.getKey();if(row.putIfAbsent(key,entry.getValue())!=null)throw new IllegalArgumentException("展开后的字段名称重复");}if(row.size()>SnapshotData.MAX_COLUMNS)throw new IllegalArgumentException("API 展开后超过 200 列");joined.add(row);if(joined.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 多数组关联展开后超过 20000 行");}combinations=joined;if(combinations.isEmpty())break;
             }
+            expanded.addAll(combinations);
             if(expanded.size()>SnapshotData.MAX_ROWS)throw new IllegalArgumentException("API 超过 20000 行");
         }
         if(expanded.isEmpty())throw new IllegalArgumentException("嵌套数组没有可展开的数据行");

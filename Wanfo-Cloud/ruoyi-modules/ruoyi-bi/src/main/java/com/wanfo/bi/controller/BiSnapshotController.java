@@ -11,9 +11,14 @@ import java.util.Map;
 @RequestMapping("/bi/datasource/import")
 public class BiSnapshotController {
     private final SnapshotImportService service;
-    public BiSnapshotController(SnapshotImportService service){this.service=service;}
+    private final com.wanfo.bi.service.ApiOAuthFlowService oauthFlows;
+    public BiSnapshotController(SnapshotImportService service,com.wanfo.bi.service.ApiOAuthFlowService oauthFlows){this.service=service;this.oauthFlows=oauthFlows;}
     @BiPermission(anyOf={"bi:datasource:add","bi:datasource:edit"})
     @PostMapping("/api") public Map<String,Object> api(@RequestBody SnapshotImportService.ApiRequest request)throws Exception{return service.api(request);}
+    @BiPermission(anyOf={"bi:datasource:add","bi:datasource:edit"})
+    @PostMapping("/api/oauth/authorize") public com.wanfo.bi.service.ApiOAuthFlowService.Begin oauthAuthorize(@RequestBody com.wanfo.bi.service.ApiOAuthFlowService.BeginRequest request)throws Exception{return oauthFlows.begin(request);}
+    @BiPermission(anyOf={"bi:datasource:add","bi:datasource:edit"})
+    @PostMapping("/api/oauth/exchange") public Map<String,String> oauthExchange(@RequestBody com.wanfo.bi.service.ApiOAuthFlowService.ExchangeRequest request)throws Exception{return oauthFlows.exchange(request);}
     @BiPermission("bi:datasource:edit")
     @PostMapping("/{id}/refresh") public Map<String,Object> refresh(@PathVariable Long id)throws Exception{return service.refresh(id);}
     @BiPermission("bi:datasource:edit")

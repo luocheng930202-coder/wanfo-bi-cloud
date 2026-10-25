@@ -17,6 +17,9 @@ public class SnapshotImportService {
     private SourceRefreshService refreshes;
     @org.springframework.beans.factory.annotation.Autowired
     public void configureRefreshes(SourceRefreshService refreshes){this.refreshes=refreshes;}
+    private ApiOAuthFlowService oauthFlows;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureOAuthFlows(ApiOAuthFlowService oauthFlows){this.oauthFlows=oauthFlows;}
     private final DbDataSourceProvider sources;
     private final BiSourceSnapshotMapper snapshots;
     private final SnapshotRegistry registry;
@@ -33,8 +36,8 @@ public class SnapshotImportService {
         this.sources=sources;this.snapshots=snapshots;this.registry=registry;this.cipher=cipher;this.client=client;
         this.resources=resources;this.capabilities=capabilities;this.actors=actors;this.tx=new TransactionTemplate(manager);
     }
-    public record ApiRequest(Long id,String name,String schemaName,String url,String dataPath,Map<String,String> headers,ApiSnapshotClient.Pagination pagination,Integer refreshMinutes,String method,Map<String,Object> body,boolean flatten,ApiSnapshotClient.OAuth oauth,String expandArrayPath){
-        public ApiRequest(Long id,String name,String schemaName,String url,String path,Map<String,String> headers){this(id,name,schemaName,url,path,headers,null,0,"GET",null,false,null,null);}
+    public record ApiRequest(Long id,String name,String schemaName,String url,String dataPath,Map<String,String> headers,ApiSnapshotClient.Pagination pagination,Integer refreshMinutes,String method,Map<String,Object> body,boolean flatten,ApiSnapshotClient.OAuth oauth,String expandArrayPath,List<String> expandArrayPaths,String oauthGrantId){
+        public ApiRequest(Long id,String name,String schemaName,String url,String path,Map<String,String> headers){this(id,name,schemaName,url,path,headers,null,0,"GET",null,false,null,null,null,null);}
     }
     public Map<String,Object> api(ApiRequest request)throws Exception {
         var old=authorize(request.id(),"api");
@@ -42,23 +45,30 @@ public class SnapshotImportService {
         String method=request.method()==null?"GET":request.method().toUpperCase(Locale.ROOT);
         if(!Set.of("GET","POST").contains(method))throw new IllegalArgumentException("API 请求方式无效");
         ApiSnapshotClient.OAuth oauth=request.oauth();
-        if(old!=null){var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);if(oauth!=null && (oauth.clientSecret()==null||oauth.clientSecret().isBlank()))oauth=saved.oauth();if(request.headers()==null && Objects.equals(saved.url(),request.url()))request=new ApiRequest(request.id(),request.name(),request.schemaName(),request.url(),request.dataPath(),saved.headers(),request.pagination(),request.refreshMinutes(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());}
-        ApiSnapshotClient.Config config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),request.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());
+        if(old!=null){var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);if(oauth!=null && (oauth.clientSecret()==null||oauth.clientSecret().isBlank()))oauth=saved.oauth();if(request.headers()==null && Objects.equals(saved.url(),request.url()))request=new ApiRequest(request.id(),request.name(),request.schemaName(),request.url(),request.dataPath(),saved.headers(),request.pagination(),request.refreshMinutes(),method,request.body(),request.flatten(),oauth,request.expandArrayPath(),request.expandArrayPaths(),request.oauthGrantId());}
+        if(request.oauthGrantId()!=null&&!request.oauthGrantId().isBlank()){if(oauthFlows==null)throw new IllegalStateException("OAuth 授权流程未启用");oauth=oauthFlows.consumeGrant(actors.currentActor().userId(),request.oauthGrantId());}
+        if(old!=null&&(request.oauthGrantId()==null||request.oauthGrantId().isBlank())&&oauth!=null&&"refresh_token".equals(oauth.grantType())&&(oauth.accessToken()==null||oauth.accessToken().isBlank())){var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);oauth=client.refreshOAuth(oauth,System.nanoTime()+20_000_000_000L);String rotated=cipher.encrypt(json.writeValueAsString(withOAuth(saved,withoutAccessTokenOAuth(oauth))));if(snapshots.updateConfigCipher(old.datasourceId(),old.version(),rotated)!=1)throw new IllegalStateException("数据源配置已被其他操作更新，请刷新后重试");old=new BiSourceSnapshotMapper.Row(old.datasourceId(),old.kind(),rotated,old.columnsJson(),old.rowsJson(),old.rowCount(),old.version(),old.fileName(),old.refreshedAt());}
+        if(oauth!=null&&"refresh_token".equals(oauth.grantType()))oauth=client.refreshOAuth(oauth,System.nanoTime()+20_000_000_000L);
+        ApiSnapshotClient.Config config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),request.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath(),request.expandArrayPaths());
         if(old!=null && request.headers()==null){
             var saved=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);
             if(!Objects.equals(saved.url(),request.url()))throw new IllegalArgumentException("修改 API 地址时须重新提供请求头");
-            config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),saved.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath());
+            config=new ApiSnapshotClient.Config(request.url(),request.dataPath(),saved.headers(),request.pagination(),method,request.body(),request.flatten(),oauth,request.expandArrayPath(),request.expandArrayPaths());
         }
         var data=ApiSnapshotReader.read(client,config,json);
-        final var finalRequest=request;String encoded=cipher.encrypt(json.writeValueAsString(config));
-        return tx.execute(status->{try{var result=publish(finalRequest.id(),finalRequest.name(),finalRequest.schemaName(),"api",data,encoded,null,old);if(refreshes!=null)refreshes.configure(((Number)result.get("id")).longValue(),interval,actors.currentActor().username());return result;}catch(RuntimeException e){throw e;}catch(Exception e){throw new IllegalStateException("API 快照保存失败",e);}});
+        ApiSnapshotClient.Config stored=withoutAccessToken(config);final var finalRequest=request;final var finalOld=old;String encoded=cipher.encrypt(json.writeValueAsString(stored));
+        return tx.execute(status->{try{var result=publish(finalRequest.id(),finalRequest.name(),finalRequest.schemaName(),"api",data,encoded,null,finalOld);if(refreshes!=null)refreshes.configure(((Number)result.get("id")).longValue(),interval,actors.currentActor().username());return result;}catch(RuntimeException e){throw e;}catch(Exception e){throw new IllegalStateException("API 快照保存失败",e);}});
     }
     public Map<String,Object> refresh(Long id)throws Exception {
         var old=authorize(id,"api");
         var config=json.readValue(cipher.decrypt(old.configCipher()),ApiSnapshotClient.Config.class);
+        if(config.oauth()!=null&&"refresh_token".equals(config.oauth().grantType())){config=new ApiSnapshotClient.Config(config.url(),config.dataPath(),config.headers(),config.pagination(),config.method(),config.body(),config.flatten(),client.refreshOAuth(config.oauth(),System.nanoTime()+20_000_000_000L),config.expandArrayPath(),config.expandArrayPaths());String rotated=cipher.encrypt(json.writeValueAsString(withoutAccessToken(config)));if(snapshots.updateConfigCipher(id,old.version(),rotated)!=1)throw new IllegalStateException("数据源配置已被其他操作更新，请刷新后重试");old=new BiSourceSnapshotMapper.Row(old.datasourceId(),old.kind(),rotated,old.columnsJson(),old.rowsJson(),old.rowCount(),old.version(),old.fileName(),old.refreshedAt());}
         var data=ApiSnapshotReader.read(client,config,json);
-        return publish(id,null,null,"api",data,old.configCipher(),null,old);
+        return publish(id,null,null,"api",data,cipher.encrypt(json.writeValueAsString(withoutAccessToken(config))),null,old);
     }
+    private static ApiSnapshotClient.Config withoutAccessToken(ApiSnapshotClient.Config config){if(config.oauth()==null||config.oauth().accessToken()==null)return config;var oauth=config.oauth();var stored=new ApiSnapshotClient.OAuth(oauth.tokenUrl(),oauth.clientId(),oauth.clientSecret(),oauth.scope(),oauth.tokenField(),oauth.grantType(),oauth.refreshToken(),oauth.redirectUri(),null);return new ApiSnapshotClient.Config(config.url(),config.dataPath(),config.headers(),config.pagination(),config.method(),config.body(),config.flatten(),stored,config.expandArrayPath(),config.expandArrayPaths());}
+    private static ApiSnapshotClient.Config withOAuth(ApiSnapshotClient.Config config,ApiSnapshotClient.OAuth oauth){return new ApiSnapshotClient.Config(config.url(),config.dataPath(),config.headers(),config.pagination(),config.method(),config.body(),config.flatten(),oauth,config.expandArrayPath(),config.expandArrayPaths());}
+    private static ApiSnapshotClient.OAuth withoutAccessTokenOAuth(ApiSnapshotClient.OAuth oauth){return oauth==null?null:new ApiSnapshotClient.OAuth(oauth.tokenUrl(),oauth.clientId(),oauth.clientSecret(),oauth.scope(),oauth.tokenField(),oauth.grantType(),oauth.refreshToken(),oauth.redirectUri(),null);}
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes)throws Exception {return file(id,name,alias,filename,sheet,bytes,"replace",null);}
     public Map<String,Object> previewFile(Long id,String filename,String sheet,byte[] bytes)throws Exception {
         var old=authorize(id,filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel");var data=SnapshotParser.file(bytes,filename,sheet);
@@ -168,7 +178,7 @@ public class SnapshotImportService {
         result.put("kind",row.kind());result.put("rowCount",row.rowCount());result.put("version",row.version());result.put("fileName",row.fileName());result.put("refreshedAt",row.refreshedAt());
         if("api".equals(row.kind()))try{
             var config=json.readValue(cipher.decrypt(row.configCipher()),ApiSnapshotClient.Config.class);
-            result.put("url",config.url());result.put("dataPath",config.dataPath());result.put("headersSet",config.headers()!=null && !config.headers().isEmpty());result.put("pagination",config.pagination());result.put("method",config.method()==null?"GET":config.method());result.put("body",config.body());result.put("flatten",config.flatten());result.put("expandArrayPath",config.expandArrayPath());if(config.oauth()!=null)result.put("oauth",Map.of("tokenUrl",config.oauth().tokenUrl(),"clientId",config.oauth().clientId(),"scope",config.oauth().scope()==null?"":config.oauth().scope(),"tokenField",config.oauth().tokenField()==null?"access_token":config.oauth().tokenField(),"secretSet",config.oauth().clientSecret()!=null));if(refreshes!=null)result.put("schedule",refreshes.status(id));
+            result.put("url",config.url());result.put("dataPath",config.dataPath());result.put("headersSet",config.headers()!=null && !config.headers().isEmpty());result.put("pagination",config.pagination());result.put("method",config.method()==null?"GET":config.method());result.put("body",config.body());result.put("flatten",config.flatten());result.put("expandArrayPath",config.expandArrayPath());result.put("expandArrayPaths",config.arrayPaths());if(config.oauth()!=null)result.put("oauth",Map.of("tokenUrl",config.oauth().tokenUrl(),"clientId",config.oauth().clientId(),"scope",config.oauth().scope()==null?"":config.oauth().scope(),"tokenField",config.oauth().tokenField()==null?"access_token":config.oauth().tokenField(),"secretSet",config.oauth().clientSecret()!=null,"grantType",config.oauth().grantType()==null?"client_credentials":config.oauth().grantType(),"refreshTokenSet",config.oauth().refreshToken()!=null));if(refreshes!=null)result.put("schedule",refreshes.status(id));
         }catch(java.io.IOException e){throw new IllegalStateException("API 配置读取失败");}
         return result;
     }

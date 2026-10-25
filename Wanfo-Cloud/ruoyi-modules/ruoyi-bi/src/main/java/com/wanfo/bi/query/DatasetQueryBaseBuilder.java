@@ -12,15 +12,15 @@ public final class DatasetQueryBaseBuilder {
     }
     public static String expand(String unionSql, List<BiDatasetFieldDO> fields,String quote) {
         List<BiDatasetFieldDO> physical = fields.stream().filter(f -> !"1".equals(f.getExtFlag())).toList();
-        Set<String> allowed = physical.stream().map(BiDatasetFieldDO::getOriginName).collect(Collectors.toSet());
+        Set<String> allowed = physical.stream().map(BiDatasetFieldDO::getOriginName).collect(Collectors.toCollection(java.util.LinkedHashSet::new));
         List<BiDatasetFieldDO> calcs = fields.stream().filter(f -> "1".equals(f.getExtFlag())).toList();
         if (calcs.isEmpty()) return unionSql;
-        StringBuilder sb = new StringBuilder("SELECT bi_inner.*");
+        String currentSql=unionSql;
         for (BiDatasetFieldDO c : calcs) {
-            sb.append(", (").append(CalcFormulaCompiler.compile(c.getExtFormula(), allowed,quote)).append(") AS ")
-                    .append(quote).append(c.getOriginName().replace(quote,quote+quote)).append(quote);
+            String expression=CalcFormulaCompiler.compile(c.getExtFormula(),allowed,quote);
+            currentSql="SELECT bi_inner.*, ("+expression+") AS "+quote+c.getOriginName().replace(quote,quote+quote)+quote+" FROM ("+currentSql+") AS bi_inner";
+            allowed.add(c.getOriginName());
         }
-        sb.append(" FROM (").append(unionSql).append(") AS bi_inner");
-        return sb.toString();
+        return currentSql;
     }
 }

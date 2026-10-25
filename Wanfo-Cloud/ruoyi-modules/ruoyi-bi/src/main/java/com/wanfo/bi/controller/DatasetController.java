@@ -234,6 +234,11 @@ public class DatasetController
         return service.preview(id, maxRows);
     }
 
+    @Operation(summary = "数据集质量检查（最多抽样 100 行）")
+    @GetMapping("/{id}/quality")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> quality(@PathVariable Long id)throws Exception{return service.qualityReport(id);}
+
     @Operation(summary = "删除数据集（级联删除字段）")
     @DeleteMapping("/{id}")
     @BiPermission("bi:dataset:remove")

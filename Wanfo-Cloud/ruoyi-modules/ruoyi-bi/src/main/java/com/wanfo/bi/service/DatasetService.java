@@ -525,6 +525,15 @@ public class DatasetService
         return previewSql(id,maxRows);
     }
 
+    @SuppressWarnings("unchecked")
+    public Map<String,Object> qualityReport(Long id)throws Exception{
+        Map<String,Object> sample=preview(id,100);Object rawColumns=sample.get("columns"),rawRows=sample.get("rows");
+        if(!(rawColumns instanceof List<?> columns)||!(rawRows instanceof List<?> rows))throw new IllegalStateException("数据质量检查结果格式无效");
+        List<String> names=columns.stream().map(String::valueOf).toList();List<Map<String,Object>> records=new ArrayList<>();
+        for(Object row:rows)if(row instanceof Map<?,?> map){Map<String,Object> values=new LinkedHashMap<>();map.forEach((k,v)->values.put(String.valueOf(k),v));records.add(values);}
+        return DatasetQuality.summarize(names,records);
+    }
+
     private Map<String,Object> previewJoinedTable(BiDatasetTableDO dataset, Long id, int maxRows, BiDatasource source) throws Exception
     {
         List<BiDatasetFieldDO> fields = fieldMapper.selectByDatasetId(id);

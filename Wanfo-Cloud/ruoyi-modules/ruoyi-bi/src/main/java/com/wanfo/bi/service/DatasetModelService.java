@@ -153,7 +153,6 @@ public class DatasetModelService
         if (fields.stream().anyMatch(f -> f.getOriginName().equalsIgnoreCase(originName)))
         { throw new IllegalArgumentException("字段名已存在: " + originName); }
         Set<String> physical = fields.stream()
-                .filter(f -> !"1".equals(f.getExtFlag()))
                 .map(BiDatasetFieldDO::getOriginName)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         CalcFormulaCompiler.compile(formula, physical);
@@ -184,6 +183,8 @@ public class DatasetModelService
         BiDatasetFieldDO field = fieldMapper.selectById(fieldId);
         if (field == null || !datasetId.equals(field.getDatasetId()) || !"1".equals(field.getExtFlag()))
         { throw new IllegalArgumentException("计算字段不存在"); }
+        List<BiDatasetFieldDO> allFields=fieldMapper.selectByDatasetId(datasetId);Set<String> allowed=allFields.stream().map(BiDatasetFieldDO::getOriginName).collect(Collectors.toSet());
+        for(BiDatasetFieldDO dependent:allFields)if("1".equals(dependent.getExtFlag())&&!dependent.getId().equals(fieldId)&&CalcFormulaCompiler.references(dependent.getExtFormula(),allowed).contains(field.getOriginName()))throw new IllegalArgumentException("该字段被后续计算步骤引用，请先移除依赖步骤");
         fieldMapper.deleteById(fieldId);
         row.setUpdateBy(operator);
         datasetMapper.update(row);

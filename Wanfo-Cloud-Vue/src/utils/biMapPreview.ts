@@ -138,7 +138,12 @@ export function buildMapPreviewOption(params: {
       type: 'map',
       map: mapName,
       geoIndex:0,
+      roam:true,
+      zoom:1,
+      scaleLimit:{min:0.5,max:8},
       itemStyle:{areaColor:noDataColor,borderColor},
+      label:{show:!!style?.mapShowLabels,formatter:labelFormatter,color:darkBase?'#e6edf7':textColor,fontSize:11},
+      emphasis:{label:{show:true,formatter:labelFormatter}},
       labelLayout:{hideOverlap:true},
       data
     }]

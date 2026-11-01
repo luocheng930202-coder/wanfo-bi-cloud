@@ -9,28 +9,32 @@ import com.wanfo.bi.mapper.BiDatasetTableMapper;
 import com.wanfo.bi.mapper.BiMetricMapper;
 import com.wanfo.bi.mapper.GlossaryTermMapper;
 import com.wanfo.bi.mapper.MetricPublishRequestMapper;
+import com.wanfo.bi.query.MetricQueryCompiler;
 import com.wanfo.bi.security.*;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Independent metric resource: hand-filled code, publish freeze, usage blocks unpublish. */
+/** Standard metrics: atomic / derived / composite. Definition is separate from runtime query. */
 @Service
 public class MetricDefinitionService {
     public static final String RESOURCE = "metric";
-    private static final Set<String> KINDS = Set.of("scalar", "table", "composite");
-    public record Definition(Integer schemaVersion, String name, String code, String kind, QueryModel query,
-            String businessDefinition, String businessDimensions, String grain, String unit, String timeZone, String owner,
-            List<String> componentMetricCodes, String compositeExpression)
-    {
-        public Definition(Integer schemaVersion,String name,String code,String kind,QueryModel query)
-        { this(schemaVersion,name,code,kind,query,null,null,null,null,null,null,null,null); }
-        public Definition(Integer schemaVersion,String name,String code,String kind,QueryModel query,
-                String businessDefinition,String businessDimensions,String grain,String unit,String timeZone,String owner)
-        { this(schemaVersion,name,code,kind,query,businessDefinition,businessDimensions,grain,unit,timeZone,owner,null,null); }
-    }
+    private static final Set<String> KINDS = Set.of("atomic", "derived", "composite");
+    private static final Set<String> AGGS = Set.of("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX");
+
+    public record MeasureSpec(String field, String agg) { }
+    public record ComponentRef(String code, String alias) { }
+    public record MetricQueryRequest(List<QueryModel.Dimension> dimensions, List<QueryModel.Filter> filters,
+            Integer limit, Integer timeoutSeconds) { }
+    public record Definition(Integer schemaVersion, String name, String code, String kind, Long datasetId,
+            MeasureSpec measure, List<QueryModel.Filter> fixedFilters, List<String> allowedDimensions,
+            List<ComponentRef> components, String expression,
+            List<String> componentMetricCodes, String compositeExpression,
+            String businessDefinition, String grain, String unit, String timeZone, String owner) { }
     public record SaveRequest(Integer version, Definition definition) { }
     public record UsageRequest(String refType, String refId, String remark) { }
+    public record PreviewRequest(Definition definition, MetricQueryRequest query) { }
+
     private final BiMetricMapper mapper;
     private final BiDatasetTableMapper datasets;
     private final ChartQueryService queries;
@@ -60,24 +64,33 @@ public class MetricDefinitionService {
         return result;
     }
 
-    /** Finds metrics backed by the same dataset measure but documented with different business semantics. */
-    public List<Map<String,Object>> conflicts() {
+    public List<Map<String, Object>> conflicts() {
         caps.require("bi:metric:list");
-        List<BiMetricDO> visible=mapper.list().stream().filter(row->resources.allowed(RESOURCE,row.getId(),"view")&&dataAllowed(row.getDatasetId())).toList();
-        List<Map<String,Object>> result=new ArrayList<>();
-        for(int i=0;i<visible.size();i++) for(int j=i+1;j<visible.size();j++) {
-            BiMetricDO left=visible.get(i),right=visible.get(j); if(!Objects.equals(left.getDatasetId(),right.getDatasetId()))continue;
-            Definition a=decode(left),b=decode(right); if(a.query().getMetrics()==null||b.query().getMetrics()==null)continue;
-            for(var ma:a.query().getMetrics()) for(var mb:b.query().getMetrics()) {
-                if(!Objects.equals(ma.getField(),mb.getField())||!Objects.equals(norm(ma.getAgg()),norm(mb.getAgg())))continue;
-                List<String> differences=new ArrayList<>();
-                if(!Objects.equals(norm(a.businessDimensions()),norm(b.businessDimensions())))differences.add("业务维度");
-                if(!Objects.equals(norm(a.grain()),norm(b.grain())))differences.add("统计粒度");
-                if(!Objects.equals(norm(a.unit()),norm(b.unit())))differences.add("单位");
-                if(!Objects.equals(norm(a.timeZone()),norm(b.timeZone())))differences.add("时区");
-                if(!Objects.equals(norm(a.businessDefinition()),norm(b.businessDefinition())))differences.add("业务定义");
-                if(!differences.isEmpty())result.add(Map.of("leftId",left.getId(),"leftCode",left.getCode(),"leftName",left.getName(),"rightId",right.getId(),"rightCode",right.getCode(),"rightName",right.getName(),"datasetId",left.getDatasetId(),"field",ma.getField(),"aggregation",ma.getAgg()==null?"":ma.getAgg(),"differences",differences));
-            }
+        List<BiMetricDO> visible = mapper.list().stream()
+                .filter(row -> resources.allowed(RESOURCE, row.getId(), "view") && dataAllowed(row.getDatasetId()))
+                .toList();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int i = 0; i < visible.size(); i++) for (int j = i + 1; j < visible.size(); j++) {
+            BiMetricDO left = visible.get(i), right = visible.get(j);
+            if (!Objects.equals(left.getDatasetId(), right.getDatasetId())) continue;
+            if (!"atomic".equals(left.getKind()) || !"atomic".equals(right.getKind())) continue;
+            Definition a = decode(left), b = decode(right);
+            if (a.measure() == null || b.measure() == null) continue;
+            if (!Objects.equals(a.measure().field(), b.measure().field())
+                    || !Objects.equals(norm(a.measure().agg()), norm(b.measure().agg()))) continue;
+            List<String> differences = new ArrayList<>();
+            if (!Objects.equals(norm(joinDims(a.allowedDimensions())), norm(joinDims(b.allowedDimensions()))))
+                differences.add("允许维度");
+            if (!Objects.equals(norm(a.grain()), norm(b.grain()))) differences.add("统计粒度");
+            if (!Objects.equals(norm(a.unit()), norm(b.unit()))) differences.add("单位");
+            if (!Objects.equals(norm(a.timeZone()), norm(b.timeZone()))) differences.add("时区");
+            if (!Objects.equals(norm(a.businessDefinition()), norm(b.businessDefinition()))) differences.add("业务定义");
+            if (!differences.isEmpty()) result.add(Map.of(
+                    "leftId", left.getId(), "leftCode", left.getCode(), "leftName", left.getName(),
+                    "rightId", right.getId(), "rightCode", right.getCode(), "rightName", right.getName(),
+                    "datasetId", left.getDatasetId(), "field", a.measure().field(),
+                    "aggregation", a.measure().agg() == null ? "" : a.measure().agg(),
+                    "differences", differences));
         }
         return result;
     }
@@ -92,7 +105,6 @@ public class MetricDefinitionService {
         return result;
     }
 
-    /** Consumption-side definition: frozen governance fields, glossary chain, and published-version pin. */
     public Map<String, Object> consumerContext(Long id) {
         caps.require("bi:metric:list");
         var row = require(id, "view");
@@ -109,7 +121,8 @@ public class MetricDefinitionService {
         Definition source = "published".equals(row.getPublishStatus()) && row.getPublishedJson() != null
                 ? decodePublished(row) : decode(row);
         out.put("businessDefinition", source.businessDefinition());
-        out.put("businessDimensions", source.businessDimensions());
+        out.put("businessDimensions", joinDims(source.allowedDimensions()));
+        out.put("allowedDimensions", source.allowedDimensions() == null ? List.of() : source.allowedDimensions());
         out.put("grain", source.grain());
         out.put("unit", source.unit());
         out.put("timeZone", source.timeZone());
@@ -136,7 +149,8 @@ public class MetricDefinitionService {
         var current = require(id, "edit");
         if ("published".equals(current.getPublishStatus())) throw new IllegalArgumentException("已发布指标须先取消发布后才能修改");
         if (inUse(current)) throw new IllegalArgumentException("指标已被引用，不能修改");
-        if (request == null || request.version() == null || request.version() < 0) throw new IllegalArgumentException("缺少指标版本，请刷新后重试");
+        if (request == null || request.version() == null || request.version() < 0)
+            throw new IllegalArgumentException("缺少指标版本，请刷新后重试");
         var incoming = request.definition();
         if (incoming == null || incoming.code() == null || !incoming.code().equals(current.getCode()))
             throw new IllegalArgumentException("指标编码创建后不可修改");
@@ -148,41 +162,69 @@ public class MetricDefinitionService {
     }
 
     public Map<String, Object> preview(Definition definition) throws Exception {
-        if (definition == null || definition.kind() == null || definition.query() == null)
-            throw new IllegalArgumentException("请选择指标类型并配置查询");
-        validateKindAndQuery(definition);
-        if ("composite".equals(definition.kind())) return evaluateComposite(definition);
-        return queries.query(definition.query());
+        return preview(definition, null);
+    }
+
+    public Map<String, Object> preview(Definition definition, MetricQueryRequest query) throws Exception {
+        if (definition == null || definition.kind() == null) throw new IllegalArgumentException("请选择指标类型");
+        validateKind(definition);
+        return executeDefinition(definition, query);
+    }
+
+    public Map<String, Object> preview(PreviewRequest request) throws Exception {
+        if (request == null) throw new IllegalArgumentException("预览请求不能为空");
+        return preview(request.definition(), request.query());
     }
 
     public Map<String, Object> data(Long id) throws Exception {
+        return data(id, null);
+    }
+
+    public Map<String, Object> data(Long id, MetricQueryRequest query) throws Exception {
         caps.require("bi:metric:query");
         var row = require(id, "query");
         var source = "published".equals(row.getPublishStatus()) ? decodePublished(row) : decode(row);
-        if ("composite".equals(source.kind())) return evaluateComposite(source);
-        return queries.query(copy(source.query()));
+        return executeDefinition(source, query);
     }
 
-    /** Executes a frozen, published metric as a bounded keyset-independent page. */
-    public Map<String,Object> dataPage(Long id,int page,int pageSize,int serviceMaxPageSize,int timeoutSeconds)throws Exception {
+    public Map<String, Object> dataPage(Long id, int page, int pageSize, int serviceMaxPageSize, int timeoutSeconds)
+            throws Exception {
+        return dataPage(id, page, pageSize, serviceMaxPageSize, timeoutSeconds, null);
+    }
+
+    public Map<String, Object> dataPage(Long id, int page, int pageSize, int serviceMaxPageSize, int timeoutSeconds,
+            MetricQueryRequest query) throws Exception {
         caps.require("bi:metric:query");
-        if(page<1||page>100_000)throw new IllegalArgumentException("page 须在 1～100000 之间");
-        if(pageSize<1||pageSize>serviceMaxPageSize||pageSize>1000)throw new IllegalArgumentException("pageSize 超出服务限制");
-        BiMetricDO row=require(id,"query");
-        if(!"published".equals(row.getPublishStatus())||row.getPublishedJson()==null)throw new IllegalArgumentException("指标未发布，不能通过受控数据 API 查询");
-        Definition published=decodePublished(row);
-        if("composite".equals(published.kind())){
-            if(page!=1)throw new IllegalArgumentException("复合指标仅支持单页标量结果");
+        if (page < 1 || page > 100_000) throw new IllegalArgumentException("page 须在 1～100000 之间");
+        if (pageSize < 1 || pageSize > serviceMaxPageSize || pageSize > 1000)
+            throw new IllegalArgumentException("pageSize 超出服务限制");
+        BiMetricDO row = require(id, "query");
+        if (!"published".equals(row.getPublishStatus()) || row.getPublishedJson() == null)
+            throw new IllegalArgumentException("指标未发布，不能通过受控数据 API 查询");
+        Definition published = decodePublished(row);
+        if ("composite".equals(published.kind())) {
+            if (page != 1) throw new IllegalArgumentException("复合指标仅支持单页标量结果");
+            if (hasDims(query)) throw new IllegalArgumentException("复合指标不支持运行时维度");
             return evaluateComposite(published);
         }
-        QueryModel query=copy(published.query());
-        long offset=(long)(page-1)*pageSize;if(offset>1_000_000)throw new IllegalArgumentException("翻页偏移超过服务限制");
-        query.setLimit(pageSize);query.setOffset((int)offset);
-        query.setTimeoutSeconds(Math.max(1,Math.min(timeoutSeconds,120)));
-        return queries.query(query);
+        MetricQueryRequest req = MetricQueryCompiler.normalize(query);
+        long offset = (long) (page - 1) * pageSize;
+        if (offset > 1_000_000) throw new IllegalArgumentException("翻页偏移超过服务限制");
+        MetricQueryRequest paged = new MetricQueryRequest(req.dimensions(), req.filters(), pageSize,
+                Math.max(1, Math.min(timeoutSeconds, 120)));
+        QueryModel compiled = compileForExecution(published, paged);
+        compiled.setOffset((int) offset);
+        compiled.setLimit(pageSize);
+        compiled.setTimeoutSeconds(Math.max(1, Math.min(timeoutSeconds, 120)));
+        if ("derived".equals(published.kind())) return executeDerived(published, compiled);
+        return queries.query(compiled);
     }
 
     public Map<String, Object> dataByCode(String code) throws Exception {
+        return dataByCode(code, null);
+    }
+
+    public Map<String, Object> dataByCode(String code, MetricQueryRequest query) throws Exception {
         caps.require("bi:metric:query");
         var row = mapper.findByCode(code == null ? "" : code.trim());
         if (row == null) throw new IllegalArgumentException("指标不存在");
@@ -193,30 +235,115 @@ public class MetricDefinitionService {
         resources.require("dataset", row.getDatasetId(), "query");
         if (!"published".equals(row.getPublishStatus()) || row.getPublishedJson() == null)
             throw new IllegalArgumentException("指标未发布，不能按编码取数");
-        Definition published = decodePublished(row);
-        if ("composite".equals(published.kind())) {
-            Map<String, Object> result = evaluateComposite(published);
-            result.remove("executedSql");
-            result.remove("params");
-            return result;
-        }
-        var result = queries.query(copy(published.query()));
+        Map<String, Object> result = executeDefinition(decodePublished(row), query);
         result.remove("executedSql");
         result.remove("params");
         return result;
     }
 
-    /** Evaluates a composite metric by querying published scalar components and applying the arithmetic expression. */
+    private Map<String, Object> executeDefinition(Definition definition, MetricQueryRequest query) throws Exception {
+        if ("composite".equals(definition.kind())) {
+            if (hasDims(query)) throw new IllegalArgumentException("复合指标不支持运行时维度");
+            return evaluateComposite(definition);
+        }
+        QueryModel compiled = compileForExecution(definition, query);
+        if ("derived".equals(definition.kind())) return executeDerived(definition, compiled);
+        return queries.query(compiled);
+    }
+
+    private QueryModel compileForExecution(Definition definition, MetricQueryRequest query) {
+        if ("atomic".equals(definition.kind())) {
+            QueryModel q = MetricQueryCompiler.compileAtomic(definition, query, definition.measure(),
+                    definition.code() == null ? "value" : definition.code());
+            queries.compileOnly(q);
+            return q;
+        }
+        if ("derived".equals(definition.kind())) {
+            Map<String, MeasureSpec> measures = resolveDerivedMeasures(definition);
+            List<QueryModel.Filter> mergedFixed = new ArrayList<>(
+                    definition.fixedFilters() == null ? List.of() : definition.fixedFilters());
+            for (ComponentRef component : definition.components()) {
+                Definition atomic = decodePublished(requirePublishedAtomic(component.code()));
+                if (atomic.fixedFilters() != null) mergedFixed.addAll(atomic.fixedFilters());
+            }
+            Definition withFilters = new Definition(definition.schemaVersion(), definition.name(), definition.code(),
+                    definition.kind(), definition.datasetId(), definition.measure(), List.copyOf(mergedFixed),
+                    definition.allowedDimensions(), definition.components(), definition.expression(),
+                    definition.componentMetricCodes(), definition.compositeExpression(),
+                    definition.businessDefinition(), definition.grain(), definition.unit(), definition.timeZone(),
+                    definition.owner());
+            QueryModel q = MetricQueryCompiler.compileDerivedShell(withFilters, query, measures);
+            queries.compileOnly(q);
+            return q;
+        }
+        throw new IllegalArgumentException("不支持的指标类型: " + definition.kind());
+    }
+
+    private Map<String, MeasureSpec> resolveDerivedMeasures(Definition definition) {
+        Map<String, MeasureSpec> out = new LinkedHashMap<>();
+        for (ComponentRef component : definition.components()) {
+            BiMetricDO row = requirePublishedAtomic(component.code());
+            Definition atomic = decodePublished(row);
+            out.put(component.alias(), atomic.measure());
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> executeDerived(Definition definition, QueryModel compiled) throws Exception {
+        Map<String, Object> raw = queries.query(compiled);
+        String expression = definition.expression().trim();
+        List<String> aliases = definition.components().stream().map(ComponentRef::alias).toList();
+        List<String> ordered = new ArrayList<>(aliases);
+        ordered.sort((a, b) -> Integer.compare(b.length(), a.length()));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Object rowsObj = raw.get("rows");
+        if (rowsObj instanceof List<?> list) {
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> row)) continue;
+                Map<String, Object> src = (Map<String, Object>) row;
+                Map<String, Double> values = new LinkedHashMap<>();
+                for (String alias : aliases) values.put(alias, numberFrom(src.get(alias)));
+                String rewritten = expression;
+                for (String alias : ordered) rewritten = rewritten.replace(alias, "(" + values.get(alias) + ")");
+                double value = evalArithmetic(rewritten);
+                Map<String, Object> out = new LinkedHashMap<>();
+                for (QueryModel.Dimension d : compiled.getDimensions()) {
+                    String key = d.getAlias() == null || d.getAlias().isBlank() ? d.getField() : d.getAlias();
+                    out.put(key, src.get(key));
+                }
+                out.put("value", value);
+                rows.add(out);
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<String> columns = new ArrayList<>();
+        for (QueryModel.Dimension d : compiled.getDimensions()) {
+            columns.add(d.getAlias() == null || d.getAlias().isBlank() ? d.getField() : d.getAlias());
+        }
+        columns.add("value");
+        result.put("columns", columns);
+        result.put("columnLabels", Map.of("value", definition.name() == null ? "value" : definition.name()));
+        result.put("rows", rows);
+        result.put("rowCount", rows.size());
+        result.put("derived", Map.of("expression", expression));
+        if (raw.containsKey("costMs")) result.put("costMs", raw.get("costMs"));
+        return result;
+    }
+
     private Map<String, Object> evaluateComposite(Definition definition) throws Exception {
         List<String> components = definition.componentMetricCodes();
         Map<String, Double> values = new LinkedHashMap<>();
         for (String code : components) {
-            BiMetricDO component = mapper.list().stream().filter(m -> code.equals(m.getCode())).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("复合组件不存在: " + code));
+            BiMetricDO component = mapper.findByCode(code);
+            if (component == null) throw new IllegalArgumentException("复合组件不存在: " + code);
             resources.require(RESOURCE, component.getId(), "query");
-            if (!"published".equals(component.getPublishStatus()) || !"scalar".equals(component.getKind()))
-                throw new IllegalArgumentException("复合组件须为已发布标量指标: " + code);
-            Map<String, Object> raw = queries.query(copy(decodePublished(component).query()));
+            if (!"published".equals(component.getPublishStatus()))
+                throw new IllegalArgumentException("复合组件须已发布: " + code);
+            String kind = component.getKind();
+            if (!"atomic".equals(kind) && !"derived".equals(kind))
+                throw new IllegalArgumentException("复合组件须为已发布原子或派生指标: " + code);
+            Map<String, Object> raw = executeDefinition(decodePublished(component), null);
             values.put(code, scalarValue(raw));
         }
         String expression = definition.compositeExpression().trim();
@@ -238,25 +365,36 @@ public class MetricDefinitionService {
     private static double scalarValue(Map<String, Object> queryResult) {
         Object rowsObj = queryResult.get("rows");
         if (!(rowsObj instanceof List<?> rows) || rows.isEmpty() || !(rows.get(0) instanceof Map<?, ?> row))
-            throw new IllegalArgumentException("复合组件未返回标量行");
-        for (Object value : ((Map<String, Object>) row).values()) {
-            if (value instanceof Number number) return number.doubleValue();
-            if (value != null) {
-                try { return Double.parseDouble(String.valueOf(value)); }
-                catch (NumberFormatException ignored) { }
-            }
+            throw new IllegalArgumentException("组件未返回标量行");
+        Map<String, Object> map = (Map<String, Object>) row;
+        if (map.containsKey("value")) return numberFrom(map.get("value"));
+        for (Object value : map.values()) {
+            try { return numberFrom(value); }
+            catch (IllegalArgumentException ignored) { }
         }
-        throw new IllegalArgumentException("复合组件结果无法解析为数值");
+        throw new IllegalArgumentException("组件结果无法解析为数值");
     }
 
-    /** Safe + - * / () evaluator for rewritten numeric expressions. */
+    private static double numberFrom(Object value) {
+        if (value instanceof Number number) return number.doubleValue();
+        if (value != null) {
+            try { return Double.parseDouble(String.valueOf(value)); }
+            catch (NumberFormatException ignored) { }
+        }
+        throw new IllegalArgumentException("无法解析数值");
+    }
+
     private static double evalArithmetic(String expression) {
         String cleaned = expression.replaceAll("\\s+", "");
         if (cleaned.isEmpty() || !cleaned.matches("[0-9.+\\-*/()Ee]+"))
-            throw new IllegalArgumentException("复合表达式求值失败");
+            throw new IllegalArgumentException("表达式求值失败");
         return new Object() {
             int pos = 0;
-            double parse() { double v = parseExpression(); if (pos < cleaned.length()) throw new IllegalArgumentException("复合表达式求值失败"); return v; }
+            double parse() {
+                double v = parseExpression();
+                if (pos < cleaned.length()) throw new IllegalArgumentException("表达式求值失败");
+                return v;
+            }
             double parseExpression() {
                 double v = parseTerm();
                 while (pos < cleaned.length()) {
@@ -272,27 +410,34 @@ public class MetricDefinitionService {
                 while (pos < cleaned.length()) {
                     char c = cleaned.charAt(pos);
                     if (c == '*') { pos++; v *= parseFactor(); }
-                    else if (c == '/') { pos++; double d = parseFactor(); if (d == 0) throw new IllegalArgumentException("复合表达式除零"); v /= d; }
-                    else break;
+                    else if (c == '/') {
+                        pos++;
+                        double d = parseFactor();
+                        if (d == 0) throw new IllegalArgumentException("表达式除零");
+                        v /= d;
+                    } else break;
                 }
                 return v;
             }
             double parseFactor() {
                 if (pos < cleaned.length() && cleaned.charAt(pos) == '(') {
-                    pos++; double v = parseExpression();
-                    if (pos >= cleaned.length() || cleaned.charAt(pos) != ')') throw new IllegalArgumentException("复合表达式括号不匹配");
-                    pos++; return v;
+                    pos++;
+                    double v = parseExpression();
+                    if (pos >= cleaned.length() || cleaned.charAt(pos) != ')')
+                        throw new IllegalArgumentException("表达式括号不匹配");
+                    pos++;
+                    return v;
                 }
                 int start = pos;
                 if (pos < cleaned.length() && (cleaned.charAt(pos) == '+' || cleaned.charAt(pos) == '-')) pos++;
-                while (pos < cleaned.length() && (Character.isDigit(cleaned.charAt(pos)) || cleaned.charAt(pos) == '.' || cleaned.charAt(pos) == 'e' || cleaned.charAt(pos) == 'E')) pos++;
-                if (start == pos) throw new IllegalArgumentException("复合表达式求值失败");
+                while (pos < cleaned.length() && (Character.isDigit(cleaned.charAt(pos))
+                        || cleaned.charAt(pos) == '.' || cleaned.charAt(pos) == 'e' || cleaned.charAt(pos) == 'E')) pos++;
+                if (start == pos) throw new IllegalArgumentException("表达式求值失败");
                 return Double.parseDouble(cleaned.substring(start, pos));
             }
         }.parse();
     }
 
-    /** Submits a draft for steward approval; does not freeze until approvePublish. */
     @Transactional
     public Map<String, Object> submitPublish(Long id, Integer expected, String note) {
         caps.require("bi:metric:publish");
@@ -355,16 +500,16 @@ public class MetricDefinitionService {
         return published;
     }
 
-    /** Freezes the draft into a published snapshot (called after approval or by tests). */
     @Transactional
     public Map<String, Object> publish(Long id, Integer expected) {
         caps.require("bi:metric:publish");
         var row = require(id, "publish");
         if ("published".equals(row.getPublishStatus())) throw new IllegalArgumentException("指标已发布");
         version(expected);
-        Definition definition=decode(row);
+        Definition definition = decode(row);
         validateGovernance(definition);
-        if (mapper.publish(id, expected, actor()) != 1) throw new BiAccessException(409, "指标已被其他人修改，请重新打开后再发布");
+        if (mapper.publish(id, expected, actor()) != 1)
+            throw new BiAccessException(409, "指标已被其他人修改，请重新打开后再发布");
         var fresh = mapper.get(id);
         var history = new BiMetricHistoryDO();
         history.setMetricId(id);
@@ -394,7 +539,8 @@ public class MetricDefinitionService {
         if (!"published".equals(row.getPublishStatus())) throw new IllegalArgumentException("指标未发布");
         if (inUse(row)) throw new IllegalArgumentException("指标已被引用，不能取消发布");
         version(expected);
-        if (mapper.unpublish(id, expected, actor()) != 1) throw new BiAccessException(409, "指标已被其他人修改或仍被引用");
+        if (mapper.unpublish(id, expected, actor()) != 1)
+            throw new BiAccessException(409, "指标已被其他人修改或仍被引用");
         return Map.of("version", expected + 1);
     }
 
@@ -423,10 +569,16 @@ public class MetricDefinitionService {
             item.put("publishBy", row.getPublishBy());
             item.put("publishTime", row.getPublishTime());
             try {
-                Definition frozen=json.readValue(row.getDefinitionJson(),Definition.class);
-                item.put("businessDefinition",frozen.businessDefinition()); item.put("businessDimensions",frozen.businessDimensions());
-                item.put("grain",frozen.grain()); item.put("unit",frozen.unit()); item.put("timeZone",frozen.timeZone()); item.put("owner",frozen.owner());
-            } catch(RuntimeException invalid) { item.put("businessDefinition",""); }
+                Definition frozen = json.readValue(row.getDefinitionJson(), Definition.class);
+                item.put("businessDefinition", frozen.businessDefinition());
+                item.put("businessDimensions", joinDims(frozen.allowedDimensions()));
+                item.put("grain", frozen.grain());
+                item.put("unit", frozen.unit());
+                item.put("timeZone", frozen.timeZone());
+                item.put("owner", frozen.owner());
+            } catch (RuntimeException invalid) {
+                item.put("businessDefinition", "");
+            }
             result.add(item);
         }
         return result;
@@ -505,7 +657,8 @@ public class MetricDefinitionService {
     }
 
     private boolean dataAllowed(Long id) {
-        return caps.has("bi:dataset:query") && resources.allowed("dataset", id, "view") && resources.allowed("dataset", id, "query");
+        return caps.has("bi:dataset:query") && resources.allowed("dataset", id, "view")
+                && resources.allowed("dataset", id, "query");
     }
 
     private boolean inUse(BiMetricDO row) {
@@ -527,7 +680,7 @@ public class MetricDefinitionService {
         Definition d;
         try { d = json.readValue(row.getDefinitionJson(), Definition.class); }
         catch (RuntimeException e) { throw new IllegalArgumentException("指标定义损坏，请联系管理员"); }
-        if (d == null || d.query() == null || !Objects.equals(row.getDatasetId(), d.query().getDatasetId())
+        if (d == null || d.datasetId() == null || !Objects.equals(row.getDatasetId(), d.datasetId())
                 || !Objects.equals(row.getCode(), d.code()))
             throw new IllegalArgumentException("指标编码或数据集绑定不一致");
         validate(d, false);
@@ -539,80 +692,148 @@ public class MetricDefinitionService {
         catch (RuntimeException e) { throw new IllegalArgumentException("已发布指标定义损坏，请联系管理员"); }
     }
 
-    private QueryModel copy(QueryModel query) {
-        return json.readValue(json.writeValueAsString(query), QueryModel.class);
-    }
-
     private void validate(Definition d, boolean creating) {
-        if (d == null || !Objects.equals(d.schemaVersion(), 1) || d.name() == null || d.name().isBlank()
-                || d.name().trim().length() > 200 || d.kind() == null || !KINDS.contains(d.kind()) || d.query() == null)
-            throw new IllegalArgumentException("请选择指标类型并填写有效名称，定义版本须为 1");
+        if (d == null || !Objects.equals(d.schemaVersion(), 2) || d.name() == null || d.name().isBlank()
+                || d.name().trim().length() > 200 || d.kind() == null || !KINDS.contains(d.kind())
+                || d.datasetId() == null)
+            throw new IllegalArgumentException("请选择指标类型并填写有效名称，定义版本须为 2");
         if (creating) {
             if (d.code() == null || !d.code().matches("^[A-Za-z][A-Za-z0-9_]{1,63}$"))
                 throw new IllegalArgumentException("指标编码须为 2～64 位字母开头的字母、数字或下划线");
         }
-        validateKindAndQuery(d);
+        validateKind(d);
     }
 
-    private void validateKindAndQuery(Definition d) {
-        if (d.kind() == null || !KINDS.contains(d.kind()) || d.query() == null)
-            throw new IllegalArgumentException("请选择指标类型并配置查询");
-        if ("composite".equals(d.kind())) {
-            List<String> components = d.componentMetricCodes() == null ? List.of() : d.componentMetricCodes();
-            if (components.size() < 2 || components.size() > 8)
-                throw new IllegalArgumentException("复合指标须引用 2～8 个已发布标量指标编码");
-            String expression = d.compositeExpression() == null ? "" : d.compositeExpression().trim();
-            if (expression.isBlank() || expression.length() > 500)
-                throw new IllegalArgumentException("复合表达式须为 1～500 字（仅允许编码占位与 + - * / ()）");
-            if (!expression.matches("[A-Za-z0-9_+\\-*/().\\s]+"))
-                throw new IllegalArgumentException("复合表达式含非法字符");
-            for (String code : components) {
-                if (code == null || !code.matches("^[A-Za-z][A-Za-z0-9_]{1,63}$"))
-                    throw new IllegalArgumentException("组件指标编码无效: " + code);
-                if (!expression.contains(code))
-                    throw new IllegalArgumentException("复合表达式须包含组件编码: " + code);
-                BiMetricDO component = mapper.list().stream().filter(m -> code.equals(m.getCode())).findFirst().orElse(null);
-                if (component == null || !"published".equals(component.getPublishStatus()) || !"scalar".equals(component.getKind()))
-                    throw new IllegalArgumentException("复合指标组件须为已发布标量指标: " + code);
-                resources.require(RESOURCE, component.getId(), "view");
+    private void validateKind(Definition d) {
+        if (d.kind() == null || !KINDS.contains(d.kind())) throw new IllegalArgumentException("请选择指标类型");
+        var dataset = datasets.selectById(d.datasetId());
+        if (dataset == null || !"table".equals(dataset.getType()))
+            throw new IllegalArgumentException("本期指标仅支持表数据集");
+        List<String> allowed = d.allowedDimensions() == null ? List.of() : d.allowedDimensions();
+        for (String dim : allowed) {
+            if (dim == null || dim.isBlank() || dim.length() > 128)
+                throw new IllegalArgumentException("允许维度无效");
+        }
+        if (d.fixedFilters() != null) {
+            for (QueryModel.Filter f : d.fixedFilters()) {
+                if (f == null || f.getField() == null || f.getField().isBlank() || f.getOp() == null)
+                    throw new IllegalArgumentException("固定过滤无效");
+                if (!QueryModel.OP_WHITELIST.contains(f.getOp().toUpperCase(Locale.ROOT)))
+                    throw new IllegalArgumentException("固定过滤操作符不支持");
             }
-            // 复合指标仍挂接首个组件的数据集以便目录与权限贯通；运行时按表达式组合标量结果（首期预览仅校验定义）。
-            var dataset = datasets.selectById(d.query().getDatasetId());
-            if (dataset == null) throw new IllegalArgumentException("复合指标须绑定锚点数据集");
+        }
+        if ("atomic".equals(d.kind())) {
+            if (d.measure() == null || blank(d.measure().field()) || blank(d.measure().agg()))
+                throw new IllegalArgumentException("原子指标须配置度量字段与聚合");
+            String agg = d.measure().agg().trim().toUpperCase(Locale.ROOT);
+            if (!AGGS.contains(agg)) throw new IllegalArgumentException("聚合函数不支持: " + agg);
+            QueryModel probe = MetricQueryCompiler.compileAtomic(
+                    normalizeDefinition(d, agg), null,
+                    new MeasureSpec(d.measure().field().trim(), agg), "value");
+            queries.compileOnly(probe);
             return;
         }
-        var q = d.query();
-        if (q.getDimensions() == null || q.getMetrics() == null || q.getFilters() == null || q.getOrderBys() == null)
-            throw new IllegalArgumentException("查询列表不能为 null");
-        if ("scalar".equals(d.kind())) {
-            if (!q.getDimensions().isEmpty()) throw new IllegalArgumentException("标量指标不能包含维度");
-            if (q.getMetrics().size() != 1) throw new IllegalArgumentException("标量指标须恰好一个聚合度量");
-            String agg = q.getMetrics().get(0).getAgg();
-            if (agg == null || "NONE".equalsIgnoreCase(agg)) throw new IllegalArgumentException("标量指标须使用聚合函数");
-            if (q.getLimit() == null || q.getLimit() != 1) throw new IllegalArgumentException("标量指标行数须为 1");
-        } else {
-            if (q.getDimensions().isEmpty() && q.getMetrics().isEmpty())
-                throw new IllegalArgumentException("表格指标至少包含一个维度或度量");
-            if (q.getLimit() != null && q.getLimit() > 1000) throw new IllegalArgumentException("表格指标最多查询 1000 行");
+        if ("derived".equals(d.kind())) {
+            List<ComponentRef> components = d.components() == null ? List.of() : d.components();
+            if (components.size() != 2) throw new IllegalArgumentException("派生指标须引用恰好 2 个已发布原子指标");
+            String expression = d.expression() == null ? "" : d.expression().trim();
+            if (expression.isBlank() || expression.length() > 500)
+                throw new IllegalArgumentException("派生表达式须为 1～500 字");
+            if (!expression.matches("[A-Za-z0-9_+\\-*/().\\s]+"))
+                throw new IllegalArgumentException("派生表达式含非法字符");
+            Set<String> aliases = new HashSet<>();
+            for (ComponentRef component : components) {
+                if (component == null || blank(component.code()) || blank(component.alias()))
+                    throw new IllegalArgumentException("派生组件编码与别名必填");
+                if (!component.alias().matches("^[A-Za-z][A-Za-z0-9_]{0,31}$"))
+                    throw new IllegalArgumentException("派生别名无效: " + component.alias());
+                if (!aliases.add(component.alias())) throw new IllegalArgumentException("派生别名重复");
+                if (!expression.contains(component.alias()))
+                    throw new IllegalArgumentException("派生表达式须包含别名: " + component.alias());
+                BiMetricDO atomic = requirePublishedAtomic(component.code());
+                if (!Objects.equals(atomic.getDatasetId(), d.datasetId()))
+                    throw new IllegalArgumentException("派生组件须与指标同属一个数据集: " + component.code());
+            }
+            return;
         }
-        queries.compileOnly(q);
-        var dataset = datasets.selectById(q.getDatasetId());
-        if (dataset == null || !"table".equals(dataset.getType())) throw new IllegalArgumentException("本期指标仅支持表数据集");
+        // composite
+        List<String> components = d.componentMetricCodes() == null ? List.of() : d.componentMetricCodes();
+        if (components.size() < 2 || components.size() > 8)
+            throw new IllegalArgumentException("复合指标须引用 2～8 个已发布原子或派生指标编码");
+        String expression = d.compositeExpression() == null ? "" : d.compositeExpression().trim();
+        if (expression.isBlank() || expression.length() > 500)
+            throw new IllegalArgumentException("复合表达式须为 1～500 字（仅允许编码占位与 + - * / ()）");
+        if (!expression.matches("[A-Za-z0-9_+\\-*/().\\s]+"))
+            throw new IllegalArgumentException("复合表达式含非法字符");
+        for (String code : components) {
+            if (code == null || !code.matches("^[A-Za-z][A-Za-z0-9_]{1,63}$"))
+                throw new IllegalArgumentException("组件指标编码无效: " + code);
+            if (!expression.contains(code))
+                throw new IllegalArgumentException("复合表达式须包含组件编码: " + code);
+            BiMetricDO component = mapper.findByCode(code);
+            if (component == null || !"published".equals(component.getPublishStatus())
+                    || (!"atomic".equals(component.getKind()) && !"derived".equals(component.getKind())))
+                throw new IllegalArgumentException("复合指标组件须为已发布原子或派生指标: " + code);
+            resources.require(RESOURCE, component.getId(), "view");
+        }
+    }
+
+    private Definition normalizeDefinition(Definition d, String agg) {
+        return new Definition(d.schemaVersion(), d.name(), d.code(), d.kind(), d.datasetId(),
+                new MeasureSpec(d.measure().field().trim(), agg),
+                d.fixedFilters() == null ? List.of() : List.copyOf(d.fixedFilters()),
+                d.allowedDimensions() == null ? List.of() : List.copyOf(d.allowedDimensions()),
+                d.components(), d.expression(), d.componentMetricCodes(), d.compositeExpression(),
+                d.businessDefinition(), d.grain(), d.unit(), d.timeZone(), d.owner());
+    }
+
+    private BiMetricDO requirePublishedAtomic(String code) {
+        BiMetricDO row = mapper.findByCode(code);
+        if (row == null || !"published".equals(row.getPublishStatus()) || !"atomic".equals(row.getKind()))
+            throw new IllegalArgumentException("须引用已发布原子指标: " + code);
+        resources.require(RESOURCE, row.getId(), "view");
+        return row;
     }
 
     private BiMetricDO row(Definition d, boolean creating) {
         validate(d, creating);
-        String encoded = json.writeValueAsString(new Definition(1, d.name().trim(), creating ? d.code().trim() : d.code(), d.kind(), d.query(),clean(d.businessDefinition()),clean(d.businessDimensions()),clean(d.grain()),clean(d.unit()),clean(d.timeZone()),clean(d.owner()),
-                d.componentMetricCodes()==null?null:List.copyOf(d.componentMetricCodes()), clean(d.compositeExpression())));
+        Definition normalized = canonicalize(d, creating);
+        String encoded = json.writeValueAsString(normalized);
         if (encoded.length() > 131072) throw new IllegalArgumentException("指标定义不能超过 128K 字符");
         var row = new BiMetricDO();
-        row.setCode(creating ? d.code().trim() : d.code());
-        row.setName(d.name().trim());
-        row.setKind(d.kind());
-        row.setDatasetId(d.query().getDatasetId());
+        row.setCode(normalized.code());
+        row.setName(normalized.name());
+        row.setKind(normalized.kind());
+        row.setDatasetId(normalized.datasetId());
         row.setDefinitionJson(encoded);
         row.setUpdateBy(actor());
         return row;
+    }
+
+    private Definition canonicalize(Definition d, boolean creating) {
+        String code = creating ? d.code().trim() : d.code();
+        MeasureSpec measure = null;
+        if ("atomic".equals(d.kind())) {
+            measure = new MeasureSpec(d.measure().field().trim(), d.measure().agg().trim().toUpperCase(Locale.ROOT));
+        }
+        List<QueryModel.Filter> fixed = d.fixedFilters() == null ? List.of() : List.copyOf(d.fixedFilters());
+        List<String> allowed = d.allowedDimensions() == null ? List.of() : List.copyOf(d.allowedDimensions());
+        if ("derived".equals(d.kind()) && allowed.isEmpty()) {
+            Set<String> intersection = null;
+            for (ComponentRef component : d.components()) {
+                Definition atomic = decodePublished(requirePublishedAtomic(component.code()));
+                Set<String> dims = new LinkedHashSet<>(
+                        atomic.allowedDimensions() == null ? List.of() : atomic.allowedDimensions());
+                if (intersection == null) intersection = dims;
+                else intersection.retainAll(dims);
+            }
+            allowed = intersection == null ? List.of() : List.copyOf(intersection);
+        }
+        return new Definition(2, d.name().trim(), code, d.kind(), d.datasetId(), measure, fixed, allowed,
+                d.components() == null ? null : List.copyOf(d.components()), clean(d.expression()),
+                d.componentMetricCodes() == null ? null : List.copyOf(d.componentMetricCodes()),
+                clean(d.compositeExpression()),
+                clean(d.businessDefinition()), clean(d.grain()), clean(d.unit()), clean(d.timeZone()), clean(d.owner()));
     }
 
     private void version(Integer expected) {
@@ -620,15 +841,30 @@ public class MetricDefinitionService {
     }
 
     private void validateGovernance(Definition d) {
-        if(blank(d.businessDefinition())||blank(d.grain())||blank(d.unit())||blank(d.timeZone())||blank(d.owner()))throw new IllegalArgumentException("发布前请补充业务定义、统计粒度、单位、时区和负责人");
-        if(d.businessDefinition().trim().length()>2000||d.businessDimensions()!=null&&d.businessDimensions().length()>1000||d.grain().trim().length()>100||d.unit().trim().length()>64||d.owner().trim().length()>128)throw new IllegalArgumentException("指标口径字段超出长度限制");
-        String zoneId=d.timeZone().trim();
-        if(!java.time.ZoneId.getAvailableZoneIds().contains(zoneId))throw new IllegalArgumentException("请填写 IANA 时区名称，例如 Asia/Shanghai 或 UTC；不接受固定偏移量");
+        if (blank(d.businessDefinition()) || blank(d.grain()) || blank(d.unit()) || blank(d.timeZone()) || blank(d.owner()))
+            throw new IllegalArgumentException("发布前请补充业务定义、统计粒度、单位、时区和负责人");
+        if (d.businessDefinition().trim().length() > 2000 || d.grain().trim().length() > 100
+                || d.unit().trim().length() > 64 || d.owner().trim().length() > 128)
+            throw new IllegalArgumentException("指标口径字段超出长度限制");
+        String zoneId = d.timeZone().trim();
+        if (!java.time.ZoneId.getAvailableZoneIds().contains(zoneId))
+            throw new IllegalArgumentException("请填写 IANA 时区名称，例如 Asia/Shanghai 或 UTC；不接受固定偏移量");
     }
 
-    private boolean blank(String value){return value==null||value.isBlank();}
-    private String clean(String value){return value==null?null:value.trim();}
-    private String norm(String value){return value==null?"":value.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+"," ");}
+    private static boolean hasDims(MetricQueryRequest query) {
+        return query != null && query.dimensions() != null && !query.dimensions().isEmpty();
+    }
+
+    private static String joinDims(List<String> dims) {
+        if (dims == null || dims.isEmpty()) return "";
+        return String.join(",", dims);
+    }
+
+    private boolean blank(String value) { return value == null || value.isBlank(); }
+    private String clean(String value) { return value == null ? null : value.trim(); }
+    private String norm(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+    }
 
     private String token(String value, String label) {
         if (value == null || !value.matches("^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"))

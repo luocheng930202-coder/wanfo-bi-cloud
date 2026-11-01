@@ -1,26 +1,48 @@
 import request from '@/utils/request'
 import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
-import type { Field, QueryModel, ChartResult } from './chart'
+import type { Field, ChartResult } from './chart'
 
-export type MetricKind = 'scalar' | 'table' | 'composite'
+export type MetricKind = 'atomic' | 'derived' | 'composite'
 export type MetricPublishStatus = 'draft' | 'published'
+
+export interface MeasureSpec { field: string; agg: string }
+export interface ComponentRef { code: string; alias: string }
+export interface MetricFilter { field: string; op: string; value?: unknown }
+export interface MetricDimension { field: string; alias?: string; timeGrain?: string }
+export interface MetricQueryRequest {
+  dimensions?: MetricDimension[]
+  filters?: MetricFilter[]
+  limit?: number
+  timeoutSeconds?: number
+}
+
 export interface MetricDefinition {
-  schemaVersion: 1
+  schemaVersion: 2
   name: string
   code: string
   kind: MetricKind
-  query: QueryModel
+  datasetId: number
+  measure?: MeasureSpec
+  fixedFilters?: MetricFilter[]
+  allowedDimensions?: string[]
+  components?: ComponentRef[]
+  expression?: string
+  componentMetricCodes?: string[]
+  compositeExpression?: string
   businessDefinition?: string
-  businessDimensions?: string
   grain?: string
   unit?: string
   timeZone?: string
   owner?: string
-  componentMetricCodes?: string[]
-  compositeExpression?: string
 }
-export interface MetricConflict { leftId: number; leftCode: string; leftName: string; rightId: number; rightCode: string; rightName: string; datasetId: number; field: string; aggregation: string; differences: string[] }
+
+export interface MetricConflict {
+  leftId: number; leftCode: string; leftName: string
+  rightId: number; rightCode: string; rightName: string
+  datasetId: number; field: string; aggregation: string; differences: string[]
+}
+
 export interface MetricSummary {
   id: number
   code: string
@@ -45,6 +67,7 @@ export interface MetricConsumerContext {
   pinNote: string
   businessDefinition?: string
   businessDimensions?: string
+  allowedDimensions?: string[]
   grain?: string
   unit?: string
   timeZone?: string
@@ -62,10 +85,12 @@ export interface MetricPublishRequest {
   requestedAt?: string
   metricVersion: number
 }
+
 export interface MetricDetail extends MetricSummary {
   definition: MetricDefinition
   published: MetricDefinition | null
 }
+
 export interface MetricHistory {
   id: number
   publishedVersion: number
@@ -82,6 +107,7 @@ export interface MetricHistory {
   timeZone?: string
   owner?: string
 }
+
 export interface MetricUsage {
   id: number
   refType: string
@@ -97,12 +123,12 @@ export const getMetric = (id: number): Promise<AjaxResult<MetricDetail>> => requ
 export const saveMetric = (definition: MetricDefinition, id?: number, version?: number): Promise<AjaxResult<{ id: number; version: number }>> =>
   request({ url: id ? `/bi/metric/${id}` : '/bi/metric', method: id ? 'put' : 'post', data: { definition, version } })
 export const deleteMetric = (id: number): Promise<AjaxResult> => request({ url: `/bi/metric/${id}`, method: 'delete' })
-export const previewMetric = (definition: MetricDefinition): Promise<AjaxResult<ChartResult>> =>
-  request({ url: '/bi/metric/preview', method: 'post', data: definition, timeout: 60000 })
-export const savedMetricData = (id: number): Promise<AjaxResult<ChartResult>> =>
-  request({ url: `/bi/metric/${id}/data`, method: 'post', timeout: 60000 })
-export const metricDataByCode = (code: string): Promise<AjaxResult<ChartResult>> =>
-  request({ url: `/bi/metric/code/${encodeURIComponent(code)}/data`, method: 'post', timeout: 60000 })
+export const previewMetric = (definition: MetricDefinition, query?: MetricQueryRequest): Promise<AjaxResult<ChartResult>> =>
+  request({ url: '/bi/metric/preview', method: 'post', data: { definition, query }, timeout: 60000 })
+export const savedMetricData = (id: number, query?: MetricQueryRequest): Promise<AjaxResult<ChartResult>> =>
+  request({ url: `/bi/metric/${id}/data`, method: 'post', data: query || {}, timeout: 60000 })
+export const metricDataByCode = (code: string, query?: MetricQueryRequest): Promise<AjaxResult<ChartResult>> =>
+  request({ url: `/bi/metric/code/${encodeURIComponent(code)}/data`, method: 'post', data: query || {}, timeout: 60000 })
 export const publishMetric = (id: number, version: number, note?: string): Promise<AjaxResult<{ publishRequestId: number; publishRequestStatus: string }>> =>
   request({ url: `/bi/metric/${id}/publish`, method: 'post', data: { version, note } })
 export const listPendingMetricPublishRequests = (): Promise<AjaxResult<MetricPublishRequest[]>> =>
@@ -123,3 +149,5 @@ export const grantMetric = (id: number, principalId: number, action: string): Pr
   request({ url: `/bi/metric/${id}/grants`, method: 'post', data: { principalId, action } })
 export const revokeMetricGrant = (id: number, principalId: number, action: string): Promise<AjaxResult> =>
   request({ url: `/bi/metric/${id}/grants/${principalId}/${action}`, method: 'delete' })
+
+export type { Field }

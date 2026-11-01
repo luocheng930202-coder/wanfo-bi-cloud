@@ -56,19 +56,25 @@ public class MetricController {
     @DeleteMapping("/{id}") @BiPermission("bi:metric:remove")
     public Map<String, Object> delete(@PathVariable Long id) { return metrics.delete(id); }
 
-    @Operation(summary = "草稿预览取数")
+    @Operation(summary = "草稿预览取数（定义 + 可选运行时维度/过滤）")
     @PostMapping("/preview") @BiPermission("bi:dataset:query")
-    public Map<String, Object> preview(@RequestBody MetricDefinitionService.Definition definition) throws Exception {
-        return metrics.preview(definition);
+    public Map<String, Object> preview(@RequestBody MetricDefinitionService.PreviewRequest request) throws Exception {
+        return metrics.preview(request);
     }
 
-    @Operation(summary = "已保存指标取数（已发布用冻结快照）")
+    @Operation(summary = "已保存指标取数（已发布用冻结快照；可带运行时维度/过滤）")
     @PostMapping("/{id}/data") @BiPermission("bi:metric:query")
-    public Map<String, Object> data(@PathVariable Long id) throws Exception { return metrics.data(id); }
+    public Map<String, Object> data(@PathVariable Long id,
+            @RequestBody(required = false) MetricDefinitionService.MetricQueryRequest query) throws Exception {
+        return metrics.data(id, query);
+    }
 
-    @Operation(summary = "按编码取已发布指标，不允许再带条件")
+    @Operation(summary = "按编码取已发布指标（可带运行时维度/过滤，须 ⊆ 允许维度）")
     @PostMapping("/code/{code}/data") @BiPermission("bi:metric:query")
-    public Map<String, Object> dataByCode(@PathVariable String code) throws Exception { return metrics.dataByCode(code); }
+    public Map<String, Object> dataByCode(@PathVariable String code,
+            @RequestBody(required = false) MetricDefinitionService.MetricQueryRequest query) throws Exception {
+        return metrics.dataByCode(code, query);
+    }
 
     public record VersionRequest(Integer version) { }
     public record PublishSubmitRequest(Integer version, String note) { }

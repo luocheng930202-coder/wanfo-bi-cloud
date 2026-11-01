@@ -669,16 +669,16 @@ flowchart TB
 
 ## 10. 指标 / 术语 / 字段标准
 
-**章首摘要**：指标在 BI 表发布供图表与 Data API；术语与字段标准挂目录/绑定；指标集与发布申请走 `dp_*`。
+**章首摘要**：标准指标三件套（原子 / 派生 / 复合），**定义与查询分离**；发布冻结供 Data API；术语与字段标准挂目录/绑定；指标集与发布申请走 `dp_*`。
 
 ### 10.1 定位与边界
 
-- **是**：口径定义、弱绑定术语、落标检查与 enforce 门禁  
-- **不是**：独立指标中台产品线 / Collibra 级政策引擎  
+- **是**：口径定义（业务定义 / 粒度 / 单位 / 时区 / 负责人）、允许维度白名单、弱绑定术语、落标检查与 enforce 门禁  
+- **不是**：独立指标中台 / Collibra 级政策引擎；不是「冻结整份 QueryModel 结果表」  
 
 ### 10.2 业务主路径
 
-1. 定义指标 → 发布 → 图表/API 引用  
+1. 定义原子/派生/复合指标 → 发布冻结 → 运行时带维度取数 / Data API 引用  
 2. 术语认证；字段标准 CRUD 与 COLUMN/TABLE 绑定  
 3. 合规只读 / 样本校验 / 在线 JDBC 抽样 / 管道发布门禁  
 
@@ -686,7 +686,11 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  Metric[(bi_metric)] --> Chart[图表]
+  Atomic[原子指标] --> Derived[派生]
+  Atomic --> Composite[复合]
+  Derived --> Composite
+  Metric[(bi_metric schema v2)] --> Query[MetricQuery 运行时维过滤]
+  Query --> ChartQS[ChartQueryService]
   Metric --> DataAPI[Data API]
   Gloss[(dp_glossary_term)] --> Bind[弱绑定]
   Std[(dp_field_standard)] --> Bind2[(dp_field_standard_binding)]
@@ -697,7 +701,7 @@ flowchart LR
 
 | 表 | 用途 |
 |---|---|
-| `bi_metric` / `bi_metric_history` / `bi_metric_usage` | 指标定义、史、引用 |
+| `bi_metric` / `bi_metric_history` / `bi_metric_usage` | 指标定义（`kind`: atomic\|derived\|composite）、史、引用 |
 | `dp_metric_set` / `_member` / `dp_metric_publish_request` | 指标集与发布申请（V52） |
 | `dp_glossary_term` | 术语 |
 | `dp_field_standard` / `_binding` | 标准与绑定；`enforce_gate` |
@@ -706,15 +710,20 @@ flowchart LR
 
 | API | 前端 |
 |---|---|
-| `/bi/metric`、`/bi/metric-sets`、`/bi/glossary/terms`、`/bi/field-standards` | `/bi-admin/metric`、`metric-set`、`glossary`、`field-standard` |
+| `/bi/metric`（preview/data 可带 `MetricQueryRequest`）、`/bi/metric-sets`、`/bi/glossary/terms`、`/bi/field-standards` | `/bi-admin/metric`、`metric-set`、`glossary`、`field-standard` |
+
+编译：`MetricQueryCompiler` 将定义 + 请求编译为 `QueryModel`。派生在同库一次查询两度量后按行求表达式；复合仅标量。
 
 ### 10.6 门禁与失败语义
 
-- 发布指标需权限；enforce 标准不满足则管道发布失败  
+- 发布指标需权限与口径字段；enforce 标准不满足则管道发布失败  
+- 运行时维度必须 ⊆ `allowedDimensions`；复合禁止运行时维度  
 - 在线抽样标识符白名单，防注入  
+- V64 **干净切换**：清空旧 scalar/table 指标及 Data API 绑定，不自动迁移  
 
 ### 10.7 已知边界
 
+- 跨数据集带维度的派生/复合、独立 Measure/Dimension 实体层、图表强制绑指标：backlog  
 - 跨域标准分层、批量绑定审批 backlog  
 
 ---
@@ -1017,6 +1026,7 @@ flowchart LR
 | 2026-10-31 | W7/V63：S3 加深收口（公平泳道、标准域/绑批、加权金丝雀、变更单、CLOUD_KMS_DEV、仓探测、对象流式入口、管道 UPSERT） |
 | 2026-10-31 | 前端壳：分析/数据中心双域 + 分组导航；工作台今日待办；编辑器全屏 |
 | 2026-10-31 | 前端：三套可切换 UI 主题（令牌 + 工作台外观设置；List 骨架分批） |
+| 2026-11-01 | 指标：原子/派生/复合标准定义（schema v2）；定义与查询分离；V64 干净切换 |
 
 ---
 

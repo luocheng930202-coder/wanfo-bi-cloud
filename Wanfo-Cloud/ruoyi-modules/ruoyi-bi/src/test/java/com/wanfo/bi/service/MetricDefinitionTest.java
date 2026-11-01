@@ -31,22 +31,11 @@ class MetricDefinitionTest {
         when(glossary.listByMetric(any())).thenReturn(List.of());
     }
 
-    MetricDefinitionService.Definition scalar() {
-        var q = new QueryModel();
-        q.setDatasetId(9L);
-        q.addMetric("amount", "SUM", "gmv");
-        q.setLimit(1);
-        return new MetricDefinitionService.Definition(1, "成交额", "gmv_total", "scalar", q,
-                "成交金额合计", "区域", "订单日", "元", "Asia/Shanghai", "alice");
-    }
-
-    MetricDefinitionService.Definition table() {
-        var q = new QueryModel();
-        q.setDatasetId(9L);
-        q.addDimension("city", "city");
-        q.addMetric("amount", "SUM", "gmv");
-        q.setLimit(100);
-        return new MetricDefinitionService.Definition(1, "分城市成交额", "gmv_by_city", "table", q);
+    MetricDefinitionService.Definition atomic() {
+        return new MetricDefinitionService.Definition(2, "成交额", "gmv_total", "atomic", 9L,
+                new MetricDefinitionService.MeasureSpec("amount", "SUM"),
+                List.of(), List.of("city"), null, null, null, null,
+                "成交金额合计", "订单日", "元", "Asia/Shanghai", "alice");
     }
 
     BiMetricDO stored(MetricDefinitionService.Definition definition) {
@@ -68,22 +57,26 @@ class MetricDefinitionTest {
     @Test
     void creationValidatesAndRegistersResource() {
         doAnswer(c -> { ((BiMetricDO) c.getArgument(0)).setId(7L); return 1; }).when(mapper).insert(any());
-        var r = service.create(new MetricDefinitionService.SaveRequest(null, scalar()));
+        var r = service.create(new MetricDefinitionService.SaveRequest(null, atomic()));
         assertEquals(7L, r.get("id"));
         verify(resources).register("metric", 7L);
         verify(queries).compileOnly(any());
         var capture = org.mockito.ArgumentCaptor.forClass(BiMetricDO.class);
         verify(mapper).insert(capture.capture());
         assertEquals("gmv_total", capture.getValue().getCode());
+        assertEquals("atomic", capture.getValue().getKind());
         assertEquals("alice", capture.getValue().getCreateBy());
     }
 
     @Test
     void duplicateOrInvalidCodeRejected() {
         assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null,
-                new MetricDefinitionService.Definition(1, "成交额", "1bad", "scalar", scalar().query()))));
+                new MetricDefinitionService.Definition(2, "成交额", "1bad", "atomic", 9L,
+                        new MetricDefinitionService.MeasureSpec("amount", "SUM"),
+                        List.of(), List.of(), null, null, null, null,
+                        null, null, null, null, null))));
         when(mapper.findByCode("gmv_total")).thenReturn(new BiMetricDO());
-        assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null, scalar())));
+        assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null, atomic())));
         verify(mapper, never()).insert(any());
     }
 
@@ -92,38 +85,35 @@ class MetricDefinitionTest {
         var sql = new BiDatasetTableDO();
         sql.setType("sql");
         when(datasets.selectById(8L)).thenReturn(sql);
-        var q = scalar().query();
-        q.setDatasetId(8L);
-        assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null,
-                new MetricDefinitionService.Definition(1, "成交额", "gmv_sql", "scalar", q))));
+        var bad = new MetricDefinitionService.Definition(2, "成交额", "gmv_sql", "atomic", 8L,
+                new MetricDefinitionService.MeasureSpec("amount", "SUM"),
+                List.of(), List.of(), null, null, null, null, null, null, null, null, null);
+        assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null, bad)));
         verify(mapper, never()).insert(any());
     }
 
     @Test
-    void scalarRejectsDimensionsAndRawMetrics() {
-        var withDim = scalar();
-        withDim.query().addDimension("city", "city");
-        assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null, withDim)));
-        var raw = scalar();
-        raw.query().getMetrics().clear();
-        raw.query().addMetric("amount", "NONE", "raw");
+    void atomicRejectsRawAggregation() {
+        var raw = new MetricDefinitionService.Definition(2, "成交额", "gmv_raw", "atomic", 9L,
+                new MetricDefinitionService.MeasureSpec("amount", "NONE"),
+                List.of(), List.of(), null, null, null, null, null, null, null, null, null);
         assertThrows(IllegalArgumentException.class, () -> service.create(new MetricDefinitionService.SaveRequest(null, raw)));
         verify(mapper, never()).insert(any());
     }
 
     @Test
     void publishedMetricCannotBeUpdatedUntilUnpublished() {
-        var row = stored(scalar());
+        var row = stored(atomic());
         row.setPublishStatus("published");
         var e = assertThrows(IllegalArgumentException.class,
-                () -> service.update(7L, new MetricDefinitionService.SaveRequest(2, scalar())));
+                () -> service.update(7L, new MetricDefinitionService.SaveRequest(2, atomic())));
         assertTrue(e.getMessage().contains("取消发布"));
         verify(mapper, never()).update(any());
     }
 
     @Test
     void referencedMetricCannotUnpublishOrDelete() {
-        var row = stored(scalar());
+        var row = stored(atomic());
         row.setPublishStatus("published");
         row.setUsageCount(1);
         assertThrows(IllegalArgumentException.class, () -> service.unpublish(7L, 2));
@@ -135,32 +125,47 @@ class MetricDefinitionTest {
 
     @Test
     void unpublishedConsumeByCodeRejected() throws Exception {
-        stored(scalar());
+        stored(atomic());
         assertThrows(IllegalArgumentException.class, () -> service.dataByCode("gmv_total"));
         verify(queries, never()).query(any());
     }
 
     @Test
     void consumeByCodeUsesFrozenPublishedModel() throws Exception {
-        var draft = scalar();
-        var published = scalar();
-        published.query().getMetrics().get(0).setAlias("published_gmv");
+        var draft = atomic();
+        var published = new MetricDefinitionService.Definition(2, "成交额", "gmv_total", "atomic", 9L,
+                new MetricDefinitionService.MeasureSpec("amount", "SUM"),
+                List.of(), List.of("city"), null, null, null, null,
+                "成交金额合计", "订单日", "元", "Asia/Shanghai", "alice");
         var row = stored(draft);
         row.setPublishStatus("published");
         row.setPublishedJson(json.writeValueAsString(published));
         when(queries.query(any())).thenReturn(new LinkedHashMap<>(Map.of("rows", List.of(), "executedSql", "SELECT 1", "params", List.of())));
-        var data = service.dataByCode("gmv_total");
+        var dim = new QueryModel.Dimension("city", "city");
+        var data = service.dataByCode("gmv_total", new MetricDefinitionService.MetricQueryRequest(List.of(dim), List.of(), 100, null));
         assertFalse(data.containsKey("executedSql"));
         assertFalse(data.containsKey("params"));
         var capture = org.mockito.ArgumentCaptor.forClass(QueryModel.class);
         verify(queries).query(capture.capture());
-        assertEquals("published_gmv", capture.getValue().getMetrics().get(0).getAlias());
         assertEquals(9L, capture.getValue().getDatasetId());
+        assertEquals(1, capture.getValue().getDimensions().size());
+        assertEquals("city", capture.getValue().getDimensions().get(0).getField());
+    }
+
+    @Test
+    void runtimeDimensionOutsideAllowlistRejected() throws Exception {
+        var row = stored(atomic());
+        row.setPublishStatus("published");
+        row.setPublishedJson(row.getDefinitionJson());
+        var dim = new QueryModel.Dimension("region", "region");
+        assertThrows(IllegalArgumentException.class, () -> service.dataByCode("gmv_total",
+                new MetricDefinitionService.MetricQueryRequest(List.of(dim), List.of(), null, null)));
+        verify(queries, never()).query(any());
     }
 
     @Test
     void metricGrantDoesNotImplyDatasetQueryAccess() throws Exception {
-        stored(scalar());
+        stored(atomic());
         doThrow(new BiAccessException(403, "denied")).when(resources).require("dataset", 9L, "query");
         assertThrows(BiAccessException.class, () -> service.detail(7L));
         verify(queries, never()).query(any());
@@ -168,23 +173,26 @@ class MetricDefinitionTest {
 
     @Test
     void staleUpdateFailsWithoutOverwriting() {
-        stored(scalar());
+        stored(atomic());
         when(mapper.update(any())).thenReturn(0);
-        var e = assertThrows(BiAccessException.class, () -> service.update(7L, new MetricDefinitionService.SaveRequest(2, scalar())));
+        var e = assertThrows(BiAccessException.class, () -> service.update(7L, new MetricDefinitionService.SaveRequest(2, atomic())));
         assertEquals(409, e.getCode());
     }
 
     @Test
     void codeCannotChangeAfterCreate() {
-        stored(scalar());
-        var renamed = new MetricDefinitionService.Definition(1, "成交额", "other_code", "scalar", scalar().query());
+        stored(atomic());
+        var renamed = new MetricDefinitionService.Definition(2, "成交额", "other_code", "atomic", 9L,
+                new MetricDefinitionService.MeasureSpec("amount", "SUM"),
+                List.of(), List.of("city"), null, null, null, null,
+                "成交金额合计", "订单日", "元", "Asia/Shanghai", "alice");
         assertThrows(IllegalArgumentException.class, () -> service.update(7L, new MetricDefinitionService.SaveRequest(2, renamed)));
         verify(mapper, never()).update(any());
     }
 
     @Test
     void listRequiresMetricAndDatasetPermissions() {
-        var row = stored(scalar());
+        var row = stored(atomic());
         when(mapper.list()).thenReturn(List.of(row));
         when(resources.allowed("metric", 7L, "view")).thenReturn(true);
         assertTrue(service.list().isEmpty());
@@ -196,7 +204,7 @@ class MetricDefinitionTest {
 
     @Test
     void bindRequiresPublishedMetric() {
-        stored(scalar());
+        stored(atomic());
         assertThrows(IllegalArgumentException.class,
                 () -> service.bind(7L, new MetricDefinitionService.UsageRequest("screen", "board-1", null)));
         verify(mapper, never()).bind(any());
@@ -204,7 +212,7 @@ class MetricDefinitionTest {
 
     @Test
     void publishWritesHistoryFromCurrentDraft() {
-        var draft = stored(scalar());
+        var draft = stored(atomic());
         when(mapper.publish(7L, 2, "alice")).thenReturn(1);
         var fresh = new BiMetricDO();
         fresh.setId(7L);

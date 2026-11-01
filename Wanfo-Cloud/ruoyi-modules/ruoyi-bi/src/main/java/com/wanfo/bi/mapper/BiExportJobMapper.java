@@ -2,6 +2,8 @@ package com.wanfo.bi.mapper;
 import java.util.*;
 import org.apache.ibatis.annotations.*;
 public interface BiExportJobMapper {
+ @Select("SELECT id,name,source_type AS sourceType,source_id AS sourceId,panel_key AS panelKey,format,status,message,row_count AS rowCount,file_name AS fileName,expire_time AS expireTime,create_time AS createTime FROM bi_export_job WHERE owner_principal=#{owner} ORDER BY id DESC LIMIT 100")
+ List<Map<String,Object>> recent(@Param("owner") Long owner);
  @Select("SELECT id,name,source_type AS sourceType,source_id AS sourceId,panel_key AS panelKey,format,status,message,row_count AS rowCount,file_name AS fileName,expire_time AS expireTime,create_time AS createTime FROM bi_export_job WHERE owner_principal=#{owner} AND expire_time>NOW() ORDER BY id DESC LIMIT 50")
  List<Map<String,Object>> list(@Param("owner") Long owner);
  @Select("SELECT id,name,source_type AS sourceType,source_id AS sourceId,panel_key AS panelKey,format,status,request_json AS requestJson,message,row_count AS rowCount,file_name AS fileName,content_type AS contentType,owner_principal AS ownerPrincipal,expire_time AS expireTime,create_by AS createBy FROM bi_export_job WHERE id=#{id}")

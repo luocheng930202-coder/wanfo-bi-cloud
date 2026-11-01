@@ -7,7 +7,7 @@ import java.nio.*;
 import java.nio.charset.*;
 import java.util.*;
 
-/** Strict CSV, scalar JSON objects, and Excel cells. No formulas are evaluated. */
+/** Strict CSV, Parquet (flat), scalar JSON objects, and Excel cells. No formulas are evaluated. */
 public final class SnapshotParser {
     public static final int MAX_BYTES=5*1024*1024;
     static { org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(20L*1024*1024);org.apache.poi.openxml4j.util.ZipSecureFile.setMaxTextSize(10L*1024*1024); }
@@ -16,7 +16,8 @@ public final class SnapshotParser {
         if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("文件不能超过 5 MB");
         String lower=filename.toLowerCase(Locale.ROOT);
         if(lower.endsWith(".csv"))return csv(bytes);
-        if(!lower.endsWith(".xlsx") && !lower.endsWith(".xls"))throw new IllegalArgumentException("仅支持 CSV、XLS、XLSX");
+        if(lower.endsWith(".parquet"))return parquet(bytes);
+        if(!lower.endsWith(".xlsx") && !lower.endsWith(".xls"))throw new IllegalArgumentException("仅支持 CSV、Parquet、XLS、XLSX");
         try(Workbook workbook=WorkbookFactory.create(new ByteArrayInputStream(bytes))){
             Sheet selected=sheet==null || sheet.isBlank()?workbook.getSheetAt(0):workbook.getSheet(sheet);
             if(selected==null)throw new IllegalArgumentException("工作表不存在");
@@ -68,6 +69,105 @@ public final class SnapshotParser {
         if(rows.size()<2)throw new IllegalArgumentException("CSV 须包含表头和数据");
         return SnapshotData.infer(rows.get(0),rows.subList(1,rows.size()));
     }
+
+    /**
+     * Parquet ingest: primitives as columns; RECORD flattened to {@code parent.child};
+     * ARRAY/MAP/FIXED serialized as JSON/text (bounded). Depth ≤ 3; total columns ≤ 200.
+     */
+    public static SnapshotData parquet(byte[] bytes) throws IOException {
+        if (bytes == null || bytes.length == 0) throw new IllegalArgumentException("Parquet 内容为空");
+        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Parquet 超过 5 MB");
+        org.apache.hadoop.conf.Configuration conf = new org.apache.hadoop.conf.Configuration(false);
+        try (org.apache.parquet.hadoop.ParquetReader<org.apache.avro.generic.GenericRecord> reader =
+                     org.apache.parquet.avro.AvroParquetReader
+                             .<org.apache.avro.generic.GenericRecord>builder(new ByteArrayInputFile(bytes))
+                             .withConf(conf)
+                             .build()) {
+            org.apache.avro.generic.GenericRecord first = reader.read();
+            if (first == null) throw new IllegalArgumentException("Parquet 没有数据行");
+            List<String> names = new ArrayList<>();
+            List<String> firstRow = new ArrayList<>();
+            flattenParquetValue("", first, first.getSchema(), names, firstRow, 0);
+            if (names.isEmpty() || names.size() > SnapshotData.MAX_COLUMNS)
+                throw new IllegalArgumentException("Parquet 展平后须为 1～200 列");
+            List<List<String>> rows = new ArrayList<>();
+            rows.add(firstRow);
+            org.apache.avro.generic.GenericRecord next;
+            while ((next = reader.read()) != null) {
+                if (rows.size() >= SnapshotData.MAX_ROWS)
+                    throw new IllegalArgumentException("Parquet 超过 20000 行");
+                List<String> rowNames = new ArrayList<>();
+                List<String> row = new ArrayList<>();
+                flattenParquetValue("", next, next.getSchema(), rowNames, row, 0);
+                if (rowNames.size() != names.size())
+                    throw new IllegalArgumentException("Parquet 行结构不一致（嵌套字段缺失）");
+                for (int i = 0; i < names.size(); i++) {
+                    if (!names.get(i).equals(rowNames.get(i)))
+                        throw new IllegalArgumentException("Parquet 行列名不一致");
+                }
+                rows.add(row);
+            }
+            return SnapshotData.infer(names, rows);
+        }
+    }
+
+    private static void flattenParquetValue(String prefix, Object value, org.apache.avro.Schema schema,
+            List<String> names, List<String> row, int depth) {
+        org.apache.avro.Schema type = unwrapUnion(schema);
+        org.apache.avro.Schema.Type t = type.getType();
+        if (t == org.apache.avro.Schema.Type.RECORD) {
+            if (depth >= 3) {
+                emitParquetCell(prefix.isBlank() ? "_record" : prefix, value == null ? null : value.toString(), names, row);
+                return;
+            }
+            org.apache.avro.generic.GenericRecord record = value instanceof org.apache.avro.generic.GenericRecord r ? r : null;
+            for (org.apache.avro.Schema.Field field : type.getFields()) {
+                String child = prefix.isBlank() ? field.name() : prefix + "." + field.name();
+                Object childVal = record == null ? null : record.get(field.pos());
+                flattenParquetValue(child, childVal, field.schema(), names, row, depth + 1);
+            }
+            return;
+        }
+        if (t == org.apache.avro.Schema.Type.ARRAY || t == org.apache.avro.Schema.Type.MAP
+                || t == org.apache.avro.Schema.Type.FIXED) {
+            String text = value == null ? null : value.toString();
+            emitParquetCell(prefix.isBlank() ? "_complex" : prefix, text, names, row);
+            return;
+        }
+        String text = null;
+        if (value != null) {
+            if (value instanceof org.apache.avro.util.Utf8 utf8) text = utf8.toString();
+            else if (value instanceof java.nio.ByteBuffer buffer) {
+                byte[] bytes = new byte[buffer.remaining()];
+                buffer.duplicate().get(bytes);
+                text = new String(bytes, StandardCharsets.UTF_8);
+            } else if (value instanceof Number || value instanceof Boolean) text = String.valueOf(value);
+            else text = value.toString();
+        }
+        emitParquetCell(prefix.isBlank() ? "_value" : prefix, text, names, row);
+    }
+
+    private static void emitParquetCell(String name, String text, List<String> names, List<String> row) {
+        if (names.size() >= SnapshotData.MAX_COLUMNS)
+            throw new IllegalArgumentException("Parquet 展平后超过 200 列");
+        if (text != null && text.length() > SnapshotData.MAX_CELL)
+            throw new IllegalArgumentException("Parquet 单元格超过 2000 字符: " + name);
+        names.add(name);
+        row.add(text);
+    }
+
+    private static org.apache.avro.Schema unwrapUnion(org.apache.avro.Schema schema) {
+        if (schema.getType() != org.apache.avro.Schema.Type.UNION) return schema;
+        org.apache.avro.Schema nonNull = null;
+        for (org.apache.avro.Schema branch : schema.getTypes()) {
+            if (branch.getType() == org.apache.avro.Schema.Type.NULL) continue;
+            if (nonNull != null) throw new IllegalArgumentException("暂不支持多类型 UNION Parquet 字段");
+            nonNull = branch;
+        }
+        if (nonNull == null) throw new IllegalArgumentException("Parquet UNION 字段无效");
+        return nonNull;
+    }
+
     public static JsonNode tree(byte[] bytes,ObjectMapper mapper)throws IOException {
         if(bytes.length>MAX_BYTES)throw new IllegalArgumentException("API 响应超过 5 MB");
         try(var parser=mapper.getFactory().createParser(bytes)){parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);return mapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).with(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS).readTree(parser);}

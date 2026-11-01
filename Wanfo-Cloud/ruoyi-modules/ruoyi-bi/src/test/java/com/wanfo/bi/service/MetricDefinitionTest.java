@@ -16,14 +16,19 @@ class MetricDefinitionTest {
     ChartQueryService queries = mock(ChartQueryService.class);
     BiResourceAuthorizer resources = mock(BiResourceAuthorizer.class);
     CapabilityProvider caps = mock(CapabilityProvider.class);
+    MetricPublishRequestMapper publishRequests = mock(MetricPublishRequestMapper.class);
+    GlossaryTermMapper glossary = mock(GlossaryTermMapper.class);
+    CatalogAuditService audit = mock(CatalogAuditService.class);
     JsonMapper json = JsonMapper.builder().build();
     MetricDefinitionService service = new MetricDefinitionService(mapper, datasets, queries, resources, caps,
-            () -> new BiActor("test", 1L, "alice", null, Set.of()), json);
+            () -> new BiActor("test", 1L, "alice", null, Set.of()), json, publishRequests, glossary, audit);
 
     MetricDefinitionTest() {
         var ds = new BiDatasetTableDO();
         ds.setType("table");
         when(datasets.selectById(9L)).thenReturn(ds);
+        when(publishRequests.countPending(any())).thenReturn(0);
+        when(glossary.listByMetric(any())).thenReturn(List.of());
     }
 
     MetricDefinitionService.Definition scalar() {
@@ -31,7 +36,8 @@ class MetricDefinitionTest {
         q.setDatasetId(9L);
         q.addMetric("amount", "SUM", "gmv");
         q.setLimit(1);
-        return new MetricDefinitionService.Definition(1, "成交额", "gmv_total", "scalar", q);
+        return new MetricDefinitionService.Definition(1, "成交额", "gmv_total", "scalar", q,
+                "成交金额合计", "区域", "订单日", "元", "Asia/Shanghai", "alice");
     }
 
     MetricDefinitionService.Definition table() {

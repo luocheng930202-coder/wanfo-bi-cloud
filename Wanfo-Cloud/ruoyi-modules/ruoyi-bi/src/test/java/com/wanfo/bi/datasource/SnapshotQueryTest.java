@@ -19,7 +19,7 @@ class SnapshotQueryTest {
         var registry=new SnapshotRegistry(mapper);var engine=new CalciteQueryEngine();engine.configureSnapshots(registry);
         var ds=new BiDatasource();ds.setId(7L);ds.setSchemaName("sales");ds.setType("csv");ds.setStatus("0");
         var provider=mock(DataSourceProvider.class);when(provider.getBySchemaName("sales")).thenReturn(ds);
-        var service=new CatalogService(engine,provider,mock(BiResourceAuthorizer.class),mock(CapabilityProvider.class));service.configureSnapshots(registry);
+        var service=new CatalogService(engine,provider,mock(BiResourceAuthorizer.class),mock(CapabilityProvider.class),mock(com.wanfo.bi.service.ClassificationService.class),mock(com.wanfo.bi.service.CatalogAuditService.class));service.configureSnapshots(registry);
         assertEquals(List.of("snapshot"),service.listCatalogs("sales"));assertEquals("data",service.listTables("sales","snapshot").get(0).get("name"));
         assertEquals(3,service.listColumns("sales","snapshot","data").size());
         assertThrows(IllegalArgumentException.class,()->service.plan("sales","snapshot","secret",List.of("amount")));

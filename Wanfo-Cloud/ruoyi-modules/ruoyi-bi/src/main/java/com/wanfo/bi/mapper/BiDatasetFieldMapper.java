@@ -19,12 +19,25 @@ public interface BiDatasetFieldMapper
 
     BiDatasetFieldDO selectById(Long id);
 
+    BiDatasetFieldDO selectByIdIncludingDeleted(@Param("id") Long id);
+
     int insert(BiDatasetFieldDO row);
 
     /** 批量插入（创建数据集时一次性写入全部字段） */
     int insertBatch(@Param("list") List<BiDatasetFieldDO> list);
 
     int update(BiDatasetFieldDO row);
+
+    @org.apache.ibatis.annotations.Update("UPDATE bi_dataset_field SET source_name=#{sourceName},origin_type=#{originType},update_time=NOW() WHERE id=#{fieldId} AND dataset_id=#{datasetId} AND origin_name=#{sourceField} AND ext_flag='0' AND del_flag='0'")
+    int applySourceMapping(@Param("datasetId") Long datasetId,@Param("fieldId") Long fieldId,
+            @Param("sourceField") String sourceField,@Param("sourceName") String sourceName,@Param("originType") String originType);
+
+    @org.apache.ibatis.annotations.Update("UPDATE bi_dataset_field SET del_flag='2',update_time=NOW() WHERE id=#{fieldId} AND dataset_id=#{datasetId} AND origin_name=#{sourceField} AND ext_flag='0' AND del_flag='0'")
+    int applySourceDrop(@Param("datasetId") Long datasetId,@Param("fieldId") Long fieldId,@Param("sourceField") String sourceField);
+
+    @org.apache.ibatis.annotations.Update("UPDATE bi_dataset_field SET source_name=#{sourceName},origin_type=#{originType},del_flag=#{delFlag},update_time=NOW() WHERE id=#{fieldId} AND dataset_id=#{datasetId}")
+    int restoreMigrationField(@Param("datasetId") Long datasetId,@Param("fieldId") Long fieldId,
+            @Param("sourceName") String sourceName,@Param("originType") String originType,@Param("delFlag") String delFlag);
 
     @org.apache.ibatis.annotations.Update("UPDATE bi_dataset_field SET order_num=#{orderNum},update_time=NOW() WHERE id=#{id} AND dataset_id=#{datasetId} AND ext_flag='1' AND del_flag='0'")
     int updateCalculatedOrder(@Param("datasetId") Long datasetId,@Param("id") Long id,@Param("orderNum") int orderNum);

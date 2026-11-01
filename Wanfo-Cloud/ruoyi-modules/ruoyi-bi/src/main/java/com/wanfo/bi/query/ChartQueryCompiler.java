@@ -73,6 +73,7 @@ public class ChartQueryCompiler {
         }
         if(!order.isEmpty()) sql.append(" ORDER BY ").append(String.join(", ",order));
         sql.append(" LIMIT ").append(model.getLimit()==null?DEFAULT_LIMIT:model.getLimit());
+        if(model.getOffset()!=null&&model.getOffset()>0)sql.append(" OFFSET ").append(model.getOffset());
         Compiled compiled=new Compiled();compiled.sql=sql.toString();compiled.params=predicate.params();return compiled;
     }
     private void validate(QueryModel m,Map<String,String> types) {
@@ -81,6 +82,7 @@ public class ChartQueryCompiler {
         if(m.getDimensions()==null || m.getMetrics()==null || m.getFilters()==null || m.getOrderBys()==null) throw invalid("查询列表不能为 null");
         if(m.getDimensions().size()+m.getMetrics().size()<1 || m.getDimensions().size()+m.getMetrics().size()>200 || m.getOrderBys().size()>200) throw invalid("查询须包含 1～200 个输出字段，排序不超过 200 项");
         if(m.getLimit()!=null && (m.getLimit()<1 || m.getLimit()>MAX_LIMIT)) throw invalid("查询行数须在 1～10000 之间");
+        if(m.getOffset()!=null&&(m.getOffset()<0||m.getOffset()>1_000_000))throw invalid("查询偏移须在 0～1000000 之间");
         for(var d:m.getDimensions()) {if(d==null)throw invalid("维度不能为空");field(d.getField(),types);TimeGrain.expression(d,types.get(d.getField()));}
         for(var metric:m.getMetrics()) {
             if(metric==null)throw invalid("度量不能为空");field(metric.getField(),types);

@@ -31,6 +31,20 @@ public final class DataPolicyCompiler {
             }
             conditions.add(field+" "+op+" ?");params.add(value);
         }
+        for(var entry:scope.allowedValues().entrySet()) {
+            String fieldName=entry.getKey();
+            if(!types.containsKey(fieldName))throw new BiAccessException(403,"数仓权限字段已失效，请联系管理员");
+            List<String> values=entry.getValue();
+            if(values.isEmpty()){conditions.add("1=0");continue;}
+            String field=identifier(quote,fieldName);
+            conditions.add(field+" IN ("+String.join(",",Collections.nCopies(values.size(),"?"))+")");
+            String type=types.get(fieldName).toLowerCase(Locale.ROOT);
+            for(String raw:values){
+                if(type.matches(".*(int|decimal|numeric|float|double|real).*")){
+                    try{params.add(new BigDecimal(raw));}catch(NumberFormatException ex){throw new BiAccessException(403,"数仓权限数值无效，请联系管理员");}
+                }else params.add(raw);
+            }
+        }
         return new Compiled(String.join(", ",projection),String.join(" AND ",conditions),List.copyOf(params),List.copyOf(columns));
     }
 }

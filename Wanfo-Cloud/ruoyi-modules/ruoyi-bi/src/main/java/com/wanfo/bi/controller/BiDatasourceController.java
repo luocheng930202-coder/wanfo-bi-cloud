@@ -1,6 +1,7 @@
 package com.wanfo.bi.controller;
 
 import com.wanfo.bi.datasource.BiDatasource;
+import com.wanfo.bi.datasource.ConnectorRegistry;
 import com.wanfo.bi.security.BiPermission;
 import com.wanfo.bi.security.BiResourceAuthorizer;
 import com.wanfo.bi.security.PrincipalCatalog;
@@ -10,6 +11,7 @@ import com.wanfo.bi.datasource.DataSourceProvider;
 import com.wanfo.bi.query.CalciteQueryEngine;
 import com.wanfo.bi.domain.BiDatasourceDO;
 import com.wanfo.bi.service.BiDataSourceService;
+import com.wanfo.bi.service.CredentialKeyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,17 +43,20 @@ public class BiDatasourceController
     private final DataSourceProvider provider;
     private final CalciteQueryEngine engine;
     private final BiDataSourceService service;
+    private final CredentialKeyService credentialKeys;
     private final CurrentActorProvider actors;
     private final BiResourceAuthorizer resources;
     private final PrincipalCatalog catalog;
 
     public BiDatasourceController(DataSourceProvider provider,
                                   CalciteQueryEngine engine,
-                                  BiDataSourceService service, CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog)
+                                  BiDataSourceService service, CredentialKeyService credentialKeys,
+                                  CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog)
     {
         this.provider = provider;
         this.engine = engine;
         this.service = service;
+        this.credentialKeys = credentialKeys;
         this.actors = actors;
         this.resources = resources;
         this.catalog = catalog;
@@ -132,6 +137,8 @@ public class BiDatasourceController
             m.put("name", ds.getName());
             m.put("type", ds.getType());
             m.put("schemaName", ds.getSchemaName());
+            // Physical database/schema is required by the catalog's warehouse target selector.
+            m.put("sourceSchema", ds.getSourceSchema());
             m.put("jdbcUrl", ds.getJdbcUrl());
             m.put("driverClass", ds.getDriverClass());
             m.put("username", ds.getUsername());
@@ -170,6 +177,41 @@ public class BiDatasourceController
     {
         return engine.probeAll(provider.listEnabled().stream()
                 .filter(ds -> resources.allowed("datasource", ds.getId(), "test")).toList());
+    }
+
+    @Operation(summary = "数据源连接器目录与能力")
+    @GetMapping("/connectors")
+    @BiPermission("bi:datasource:list")
+    public ConnectorRegistry.Catalog connectors()
+    {
+        return ConnectorRegistry.catalog();
+    }
+
+    @Operation(summary = "将历史 ECB/未版本化 GCM 凭据批量重加密为当前激活版本的 encgv")
+    @PostMapping("/credentials/rewrap-gcm")
+    @BiPermission("bi:resource:admin")
+    public Map<String, Object> rewrapCredentials()
+    {
+        return service.rewrapCredentialsToGcm(actors.currentActor().username());
+    }
+
+    @Operation(summary = "凭据密钥状态：版本指纹、信封分布、轮换审计")
+    @GetMapping("/credentials/key-status")
+    @BiPermission("bi:resource:admin")
+    public Map<String, Object> credentialKeyStatus()
+    {
+        return credentialKeys.status();
+    }
+
+    public record RotateCredentialsRequest(Integer targetVersion, String reason) { }
+
+    @Operation(summary = "将数据源凭据轮换重加密到当前激活密钥版本并写审计")
+    @PostMapping("/credentials/rotate")
+    @BiPermission("bi:resource:admin")
+    public Map<String, Object> rotateCredentials(@RequestBody(required = false) RotateCredentialsRequest request)
+    {
+        return credentialKeys.rotate(request == null ? null : request.targetVersion(),
+                request == null ? null : request.reason());
     }
     private void requireResource(Long id, String action)
     {

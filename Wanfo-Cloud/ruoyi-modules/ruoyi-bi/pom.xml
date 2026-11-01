@@ -59,6 +59,56 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
+        </dependency>
+        <!-- S3-07: bounded Parquet object ingest (flat primitives only) -->
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-avro</artifactId>
+            <version>${parquet.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion><groupId>org.slf4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.logging.log4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>log4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>javax.servlet</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.eclipse.jetty</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.httpcomponents</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>com.sun.jersey</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.codehaus.jackson</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>com.google.code.gson</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.zookeeper</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.curator</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.kerby</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.hadoop.thirdparty</groupId><artifactId>hadoop-shaded-protobuf_3_7</artifactId></exclusion>
+                <exclusion><groupId>org.apache.commons</groupId><artifactId>commons-compress</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-mapreduce-client-core</artifactId>
+            <version>${hadoop.version}</version>
+            <exclusions>
+                <exclusion><groupId>org.slf4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.logging.log4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>log4j</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>javax.servlet</groupId><artifactId>*</artifactId></exclusion>
+                <exclusion><groupId>org.apache.commons</groupId><artifactId>commons-compress</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Pin for POI 5.5.x; Hadoop otherwise pulls 1.21 and breaks Excel write/read in tests -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.26.2</version>
+        </dependency>
 
         <!-- ==================== BI 查询引擎 ==================== -->
         <!-- 数据库迁移：BI 元数据表版本化管理（若依原工程未启用 Flyway，靠 ddl-auto 不可控）

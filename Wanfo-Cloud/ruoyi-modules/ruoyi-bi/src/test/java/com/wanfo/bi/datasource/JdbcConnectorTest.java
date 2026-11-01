@@ -47,7 +47,7 @@ class JdbcConnectorTest {
                 st.execute("CREATE SCHEMA PRIVATE_DATA");st.execute("CREATE TABLE PRIVATE_DATA.SECRET(ID INT)");
             }
             var provider=mock(DataSourceProvider.class);when(provider.getBySchemaName("source")).thenReturn(ds);
-            var engine=new CalciteQueryEngine();var service=new CatalogService(engine,provider,mock(BiResourceAuthorizer.class),mock(CapabilityProvider.class));
+            var engine=new CalciteQueryEngine();var service=new CatalogService(engine,provider,mock(BiResourceAuthorizer.class),mock(CapabilityProvider.class),mock(com.wanfo.bi.service.ClassificationService.class),mock(com.wanfo.bi.service.CatalogAuditService.class));
             try {
                 assertEquals(List.of("SALES"),service.listCatalogs("source"));
                 assertEquals(1,service.listTables("source","SALES").size());

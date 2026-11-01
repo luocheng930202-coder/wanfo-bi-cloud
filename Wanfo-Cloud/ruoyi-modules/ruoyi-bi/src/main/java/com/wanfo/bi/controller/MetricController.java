@@ -27,6 +27,21 @@ public class MetricController {
     @GetMapping @BiPermission("bi:metric:list")
     public List<Map<String, Object>> list() { return metrics.list(); }
 
+    @GetMapping("/conflicts") @BiPermission("bi:metric:list")
+    public List<Map<String,Object>> conflicts() { return metrics.conflicts(); }
+
+    @Operation(summary = "待审批发布队列")
+    @GetMapping("/publish-requests/pending") @BiPermission("bi:metric:publish")
+    public List<Map<String, Object>> pendingPublish() {
+        return metrics.pendingPublishRequests();
+    }
+
+    @GetMapping("/principals") @BiPermission("bi:metric:grant")
+    public List<Map<String, Object>> principals(@RequestParam(defaultValue = "") String query) { return principals.search(query); }
+
+    @GetMapping("/dataset/{datasetId}/fields") @BiPermission("bi:dataset:query")
+    public List<Map<String, Object>> datasetFields(@PathVariable Long datasetId) { return queries.datasetFields(datasetId); }
+
     @GetMapping("/{id}") @BiPermission("bi:metric:list")
     public Map<String, Object> detail(@PathVariable Long id) { return metrics.detail(id); }
 
@@ -56,10 +71,26 @@ public class MetricController {
     public Map<String, Object> dataByCode(@PathVariable String code) throws Exception { return metrics.dataByCode(code); }
 
     public record VersionRequest(Integer version) { }
+    public record PublishSubmitRequest(Integer version, String note) { }
+    public record PublishDecideRequest(boolean approve, String note) { }
 
+    @Operation(summary = "提交发布审批（草稿→待审）")
     @PostMapping("/{id}/publish") @BiPermission("bi:metric:publish")
-    public Map<String, Object> publish(@PathVariable Long id, @RequestBody VersionRequest request) {
-        return metrics.publish(id, request.version());
+    public Map<String, Object> publish(@PathVariable Long id, @RequestBody PublishSubmitRequest request) {
+        return metrics.submitPublish(id, request == null ? null : request.version(),
+                request == null ? null : request.note());
+    }
+
+    @Operation(summary = "审批指标发布（通过后冻结口径）")
+    @PostMapping("/publish-requests/{requestId}/decide") @BiPermission("bi:metric:publish")
+    public Map<String, Object> decidePublish(@PathVariable Long requestId, @RequestBody PublishDecideRequest request) {
+        return metrics.decidePublish(requestId, request != null && request.approve(),
+                request == null ? null : request.note());
+    }
+
+    @GetMapping("/{id}/consumer-context") @BiPermission("bi:metric:list")
+    public Map<String, Object> consumerContext(@PathVariable Long id) {
+        return metrics.consumerContext(id);
     }
 
     @PostMapping("/{id}/unpublish") @BiPermission("bi:metric:publish")
@@ -82,12 +113,6 @@ public class MetricController {
     public Map<String, Object> unbind(@PathVariable Long id, @PathVariable String refType, @PathVariable String refId) {
         return metrics.unbind(id, refType, refId);
     }
-
-    @GetMapping("/dataset/{datasetId}/fields") @BiPermission("bi:dataset:query")
-    public List<Map<String, Object>> datasetFields(@PathVariable Long datasetId) { return queries.datasetFields(datasetId); }
-
-    @GetMapping("/principals") @BiPermission("bi:metric:grant")
-    public List<Map<String, Object>> principals(@RequestParam(defaultValue = "") String query) { return principals.search(query); }
 
     @GetMapping("/{id}/grants") @BiPermission("bi:metric:grant")
     public List<Map<String, Object>> grants(@PathVariable Long id) { return metrics.grants(id); }

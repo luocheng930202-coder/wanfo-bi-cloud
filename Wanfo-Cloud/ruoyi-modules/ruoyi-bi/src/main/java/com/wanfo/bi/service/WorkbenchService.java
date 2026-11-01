@@ -110,7 +110,7 @@ public class WorkbenchService {
     private void requireAnyList() {
         if (!caps.has("bi:datasource:list") && !caps.has("bi:dataset:list") && !caps.has("bi:chart:list")
                 && !caps.has("bi:dashboard:list") && !caps.has("bi:form:list") && !caps.has("bi:export:list")
-                && !caps.has("bi:template:list"))
+                && !caps.has("bi:template:list") && !caps.has("bi:pipeline:list"))
             throw new IllegalArgumentException("没有可访问的 BI 资源列表权限");
     }
 

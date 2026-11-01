@@ -67,4 +67,74 @@ class SnapshotParserTest {
             row.getCell(1).setCellFormula("1+1");out.reset();workbook.write(out);assertThrows(IllegalArgumentException.class,()->SnapshotParser.file(out.toByteArray(),"test.xlsx","sales"));
         }
     }
+    @Test void parquetReadsFlatPrimitivesAndRejectsEmpty()throws Exception {
+        org.apache.avro.Schema schema=org.apache.avro.SchemaBuilder.record("row").fields()
+                .requiredString("code").requiredDouble("amount").endRecord();
+        ByteArrayOutputStream sink=new ByteArrayOutputStream();
+        org.apache.parquet.io.OutputFile out=new org.apache.parquet.io.OutputFile(){
+            @Override public org.apache.parquet.io.PositionOutputStream create(long blockSizeHint){return stream();}
+            @Override public org.apache.parquet.io.PositionOutputStream createOrOverwrite(long blockSizeHint){sink.reset();return stream();}
+            @Override public boolean supportsBlockSize(){return false;}
+            @Override public long defaultBlockSize(){return 0;}
+            private org.apache.parquet.io.PositionOutputStream stream(){
+                return new org.apache.parquet.io.PositionOutputStream(){
+                    @Override public long getPos(){return sink.size();}
+                    @Override public void write(int b){sink.write(b);}
+                    @Override public void write(byte[] b,int off,int len){sink.write(b,off,len);}
+                };
+            }
+        };
+        try(org.apache.parquet.hadoop.ParquetWriter<org.apache.avro.generic.GenericRecord> writer=
+                    org.apache.parquet.avro.AvroParquetWriter.<org.apache.avro.generic.GenericRecord>builder(out)
+                            .withSchema(schema).build()){
+            org.apache.avro.generic.GenericRecord r=new org.apache.avro.generic.GenericData.Record(schema);
+            r.put("code","001");r.put("amount",12.5);writer.write(r);
+            r=new org.apache.avro.generic.GenericData.Record(schema);r.put("code","002");r.put("amount",20.0);writer.write(r);
+        }
+        byte[] parquet=sink.toByteArray();
+        var data=SnapshotParser.parquet(parquet);
+        assertEquals(List.of("code","amount"),data.columns().stream().map(SnapshotData.Column::name).toList());
+        assertEquals("001",data.rows().get(0).get(0));assertEquals(2,data.rows().size());
+        assertEquals(data.columns(),SnapshotParser.file(parquet,"sales.parquet",null).columns());
+        assertThrows(IllegalArgumentException.class,()->SnapshotParser.parquet(new byte[0]));
+    }
+
+    @Test void parquetFlattensNestedRecordFields() throws Exception {
+        org.apache.avro.Schema address = org.apache.avro.SchemaBuilder.record("addr").fields()
+                .requiredString("city").requiredInt("zip").endRecord();
+        org.apache.avro.Schema schema = org.apache.avro.SchemaBuilder.record("row").fields()
+                .requiredString("code")
+                .name("address").type(address).noDefault()
+                .endRecord();
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        org.apache.parquet.io.OutputFile out = new org.apache.parquet.io.OutputFile() {
+            @Override public org.apache.parquet.io.PositionOutputStream create(long blockSizeHint) { return stream(); }
+            @Override public org.apache.parquet.io.PositionOutputStream createOrOverwrite(long blockSizeHint) { sink.reset(); return stream(); }
+            @Override public boolean supportsBlockSize() { return false; }
+            @Override public long defaultBlockSize() { return 0; }
+            private org.apache.parquet.io.PositionOutputStream stream() {
+                return new org.apache.parquet.io.PositionOutputStream() {
+                    @Override public long getPos() { return sink.size(); }
+                    @Override public void write(int b) { sink.write(b); }
+                    @Override public void write(byte[] b, int off, int len) { sink.write(b, off, len); }
+                };
+            }
+        };
+        try (org.apache.parquet.hadoop.ParquetWriter<org.apache.avro.generic.GenericRecord> writer =
+                     org.apache.parquet.avro.AvroParquetWriter.<org.apache.avro.generic.GenericRecord>builder(out)
+                             .withSchema(schema).build()) {
+            org.apache.avro.generic.GenericRecord addr = new org.apache.avro.generic.GenericData.Record(address);
+            addr.put("city", "北京");
+            addr.put("zip", 100000);
+            org.apache.avro.generic.GenericRecord r = new org.apache.avro.generic.GenericData.Record(schema);
+            r.put("code", "001");
+            r.put("address", addr);
+            writer.write(r);
+        }
+        var data = SnapshotParser.parquet(sink.toByteArray());
+        assertEquals(List.of("code", "address.city", "address.zip"), data.columns().stream().map(SnapshotData.Column::name).toList());
+        assertEquals("北京", data.rows().get(0).get(1));
+        assertEquals("100000", data.rows().get(0).get(2));
+    }
 }
+

@@ -8,6 +8,7 @@ import com.wanfo.bi.datasource.DbDataSourceProvider;
 import com.wanfo.bi.domain.BiDatasourceDO;
 import com.wanfo.bi.query.CalciteQueryEngine;
 import com.wanfo.bi.service.BiDataSourceService;
+import com.wanfo.bi.service.CredentialKeyService;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -18,7 +19,7 @@ class BiConnectionTest
     private final CredentialCipher cipher = new CredentialCipher("test-key");
     private final CalciteQueryEngine engine = mock(CalciteQueryEngine.class);
     private final BiResourceAuthorizer resources = mock(BiResourceAuthorizer.class);
-    private final BiDataSourceService service = new BiDataSourceService(provider, cipher, engine, new BiProperties(), resources);
+    private final BiDataSourceService service = new BiDataSourceService(provider, cipher, mock(CredentialKeyService.class), engine, new BiProperties(), resources);
 
     private BiDatasourceDO form()
     {

@@ -1,6 +1,6 @@
 package com.wanfo.bi.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.wanfo.bi.datasource.CredentialCipher;
 import com.wanfo.bi.datasource.snapshot.ApiSnapshotClient;
 import com.wanfo.bi.datasource.snapshot.ApiSnapshotClient.OAuth;

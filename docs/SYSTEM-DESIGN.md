@@ -258,6 +258,8 @@ flowchart TB
 
 - 生产抽取仍是「有界内存批」，不是流式全表 ETL  
 - SQL 型数据集需管理员能力  
+- 历史关联数据集的 `union_sql` 可能仍是 MySQL 反引号 + 物理库名；图表/指标 Calcite 查询前会经 `DatasetQueryBaseBuilder.forCalcite` 归一为双引号 + `schema_name` 别名。新写入的关联 SQL 已按 Calcite 逻辑标识符生成。  
+
 
 ### 3.8 延伸阅读
 
@@ -1027,6 +1029,7 @@ flowchart LR
 | 2026-10-31 | 前端壳：分析/数据中心双域 + 分组导航；工作台今日待办；编辑器全屏 |
 | 2026-10-31 | 前端：三套可切换 UI 主题（令牌 + 工作台外观设置；List 骨架分批） |
 | 2026-11-01 | 指标：原子/派生/复合标准定义（schema v2）；定义与查询分离；V64 干净切换 |
+| 2026-11-01 | 图表/指标查询：遗留 MySQL 反引号 `union_sql` 在 Calcite 前归一（forCalcite） |
 
 ---
 

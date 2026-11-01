@@ -489,8 +489,12 @@ async function save() {
     currentId.value = r.data.id; version.value = r.data.version
     Object.assign(definition, snapshot); await nextTick(); baseline.value = fingerprint(); await refresh()
     ElMessage.success('指标已保存')
-  } catch { error.value = '保存未完成。若提示版本冲突，请重新打开后再保存' }
-  finally { saving.value = false }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : ''
+    error.value = msg && msg !== 'error'
+      ? msg
+      : '保存未完成。若仍提示「请选择指标类型并配置查询」，说明 BI 后端未升级到标准指标（atomic/derived/composite），请重新编译并重启 ruoyi-modules-bi。'
+  } finally { saving.value = false }
 }
 async function togglePublish(row: MetricSummary) {
   if (row.inUse) { ElMessage.warning('指标已被引用，不能取消发布'); return }

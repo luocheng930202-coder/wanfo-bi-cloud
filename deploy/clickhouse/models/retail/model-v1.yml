@@ -1,0 +1,141 @@
+model:
+  name: retail
+  version: retail-v1
+  status: pilot
+  timezone: Asia/Shanghai
+  tenantField: tenant_id
+  organizationField: org_id
+  sourceFields:
+    system: source_system
+    updatedAt: source_updated_at
+    ingestedAt: ingested_at
+    runId: load_run_id
+  demoSourceMappings:
+    store: bi_phase_a_test.dim_store
+    product: bi_phase_a_test.dim_product
+    orderLine: bi_phase_a_test.fact_order
+    demoTenantId: wanfo_demo
+    orderLineNumber: 1
+    note: Existing demo data has no tenant_id, organization hierarchy codes, currency, delete marker or source update timestamp. Supply explicit demo mappings or a synthetic source; never apply these defaults to production data.
+
+tables:
+  - name: dim_retail_org
+    layer: dwd
+    grain: one organization version per tenant and valid_from
+    keys: [tenant_id, org_id, valid_from]
+    history: scd_type_2
+    columns:
+      tenant_id: { type: String, nullable: false, description: Tenant identity }
+      org_id: { type: String, nullable: false, description: Stable organization identity }
+      parent_org_id: { type: Nullable(String), nullable: true, description: Parent organization }
+      org_level: { type: UInt8, nullable: false, description: 1 province, 2 city, 3 county }
+      org_code: { type: String, nullable: false, description: Stable administrative code }
+      org_name: { type: String, nullable: false, description: Display name }
+      province_code: { type: String, nullable: false, description: Province code }
+      city_code: { type: Nullable(String), nullable: true, description: City code }
+      county_code: { type: Nullable(String), nullable: true, description: County code }
+      valid_from: { type: DateTime64(3, UTC), nullable: false, description: Inclusive version start }
+      valid_to: { type: Nullable(DateTime64(3, UTC)), nullable: true, description: Exclusive version end; null means current }
+      is_current: { type: UInt8, nullable: false, description: Current version flag }
+      source_system: { type: LowCardinality(String), nullable: false, description: Source system identifier }
+      source_record_id: { type: String, nullable: false, description: Source record identity }
+      source_updated_at: { type: Nullable(DateTime64(3, UTC)), nullable: true, description: Source update timestamp }
+      ingested_at: { type: DateTime64(3, UTC), nullable: false, description: Ingestion timestamp }
+      load_run_id: { type: UInt64, nullable: false, description: Warehouse load run }
+
+  - name: dim_retail_store
+    layer: dwd
+    grain: one store version per tenant and valid_from
+    keys: [tenant_id, store_id, valid_from]
+    history: scd_type_2
+    columns:
+      tenant_id: { type: String, nullable: false }
+      store_id: { type: String, nullable: false }
+      store_name: { type: String, nullable: false }
+      org_id: { type: String, nullable: false }
+      province_code: { type: String, nullable: false }
+      city_code: { type: Nullable(String), nullable: true }
+      county_code: { type: Nullable(String), nullable: true }
+      province_name: { type: String, nullable: false }
+      city_name: { type: Nullable(String), nullable: true }
+      county_name: { type: Nullable(String), nullable: true }
+      valid_from: { type: DateTime64(3, UTC), nullable: false }
+      valid_to: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      is_current: { type: UInt8, nullable: false }
+      source_system: { type: LowCardinality(String), nullable: false }
+      source_record_id: { type: String, nullable: false }
+      source_updated_at: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      ingested_at: { type: DateTime64(3, UTC), nullable: false }
+      load_run_id: { type: UInt64, nullable: false }
+
+  - name: dim_retail_product
+    layer: dwd
+    grain: one product version per tenant and valid_from
+    keys: [tenant_id, product_id, valid_from]
+    history: scd_type_2
+    columns:
+      tenant_id: { type: String, nullable: false }
+      product_id: { type: String, nullable: false }
+      product_name: { type: String, nullable: false }
+      category_id: { type: Nullable(String), nullable: true }
+      category_name: { type: Nullable(String), nullable: true }
+      list_price: { type: Nullable(Decimal(18, 2)), nullable: true }
+      valid_from: { type: DateTime64(3, UTC), nullable: false }
+      valid_to: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      is_current: { type: UInt8, nullable: false }
+      source_system: { type: LowCardinality(String), nullable: false }
+      source_record_id: { type: String, nullable: false }
+      source_updated_at: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      ingested_at: { type: DateTime64(3, UTC), nullable: false }
+      load_run_id: { type: UInt64, nullable: false }
+
+  - name: fact_retail_order_line
+    layer: dwd
+    grain: one source order line; the existing demo fact_order maps one row to line_no=1
+    keys: [tenant_id, order_id, line_no]
+    updateStrategy: source_updated_at plus key-based idempotent merge; physical delete not inferred
+    columns:
+      tenant_id: { type: String, nullable: false }
+      order_id: { type: String, nullable: false }
+      line_no: { type: UInt32, nullable: false }
+      order_date: { type: Date, nullable: false }
+      order_at: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      store_id: { type: String, nullable: false }
+      product_id: { type: String, nullable: false }
+      org_id: { type: String, nullable: false }
+      province_code: { type: String, nullable: false }
+      city_code: { type: Nullable(String), nullable: true }
+      county_code: { type: Nullable(String), nullable: true }
+      channel: { type: String, nullable: false }
+      quantity: { type: Decimal(18, 3), nullable: false, description: Signed quantity for returns }
+      sales_amount: { type: Decimal(18, 2), nullable: false, description: Signed line amount }
+      currency_code: { type: String, nullable: false }
+      source_system: { type: LowCardinality(String), nullable: false }
+      source_updated_at: { type: DateTime64(3, UTC), nullable: false }
+      ingested_at: { type: DateTime64(3, UTC), nullable: false }
+      load_run_id: { type: UInt64, nullable: false }
+      is_deleted: { type: UInt8, nullable: false, description: Only set when source tombstone or CDC identifies deletion }
+
+  - name: agg_retail_sales_monthly
+    layer: dws
+    grain: one tenant, month, organization, channel and category
+    keys: [tenant_id, month_start, org_id, channel, category_id]
+    metricDefinitions:
+      sales_amount: sum(fact_retail_order_line.sales_amount), Decimal(20, 2)
+      net_quantity: sum(fact_retail_order_line.quantity), Decimal(20, 3)
+      order_count: uniqExact(order_id) within tenant and requested organization scope
+    columns:
+      tenant_id: { type: String, nullable: false }
+      month_start: { type: Date, nullable: false, description: Month in Asia/Shanghai business timezone }
+      org_id: { type: String, nullable: false }
+      province_code: { type: String, nullable: false }
+      city_code: { type: Nullable(String), nullable: true }
+      county_code: { type: Nullable(String), nullable: true }
+      channel: { type: String, nullable: false }
+      category_id: { type: Nullable(String), nullable: true }
+      sales_amount: { type: Decimal(20, 2), nullable: false }
+      net_quantity: { type: Decimal(20, 3), nullable: false }
+      order_count: { type: UInt64, nullable: false }
+      source_max_updated_at: { type: Nullable(DateTime64(3, UTC)), nullable: true }
+      generated_at: { type: DateTime64(3, UTC), nullable: false }
+      load_run_id: { type: UInt64, nullable: false }

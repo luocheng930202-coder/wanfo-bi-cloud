@@ -114,8 +114,11 @@ const form = reactive({
 function statusLabel(status: string) {
   return ({ PENDING: '待审', APPROVED: '已通过', REJECTED: '已驳回', EXPIRED: '已过期', CANCELLED: '已取消' } as Record<string, string>)[status] || status
 }
-function statusType(status: string) {
-  return ({ PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', EXPIRED: 'info' } as Record<string, string>)[status] || 'info'
+function statusType(status: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' {
+  const map: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
+    PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', EXPIRED: 'info', CANCELLED: 'info'
+  }
+  return map[status] || 'info'
 }
 
 async function load() {

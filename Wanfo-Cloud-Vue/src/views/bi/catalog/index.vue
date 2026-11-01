@@ -91,7 +91,7 @@
           <el-button v-for="action in consumeActions" :key="action.key" type="primary" plain @click="runConsumeAction(action)">{{ action.label }}</el-button>
           <el-button v-if="detailAsset.sourceKind !== 'BI_RESOURCE' || detailAsset.assetType === 'API_SOURCE'" type="primary" plain @click="openSource(detailAsset.sourceId)">打开来源数据源</el-button>
           <el-button v-if="detailAsset.sourceKind === 'CONNECTOR' && detailAsset.assetType === 'TABLE'" type="warning" plain @click="openSchemaChanges(detailAsset)">结构变化与影响</el-button>
-          <el-button v-if="detailAsset.sourceKind === 'CONNECTOR' && (detailAsset.assetType === 'TABLE' || detailAsset.assetType === 'VIEW')" type="danger" plain :loading="impactPackLoading" @click="openImpactPack(detailAsset)">运维影响包</el-button>
+          <el-button v-if="detailAsset.sourceKind === 'CONNECTOR' && detailAsset.assetType === 'TABLE'" type="danger" plain :loading="impactPackLoading" @click="openImpactPack(detailAsset)">运维影响包</el-button>
           <el-button v-if="detailAsset.sourceKind === 'CONNECTOR' && detailAsset.assetType === 'COLUMN'" v-hasPermi="['bi:resource:admin']" type="success" plain :loading="onlineSampleLoading" @click="runOnlineSample(detailAsset)">JDBC 在线抽样</el-button>
         </div>
         <section class="metadata-section">

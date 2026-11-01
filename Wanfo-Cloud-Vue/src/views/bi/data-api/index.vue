@@ -357,7 +357,7 @@ async function refreshContractSample(row: DataApiSummary) {
 async function autoDeprecate(row: DataApiSummary) {
   try {
     await ElMessageBox.confirm(
-      `将同 family 其它 ACTIVE 版本废弃，并指向「${row.code}」为继任（默认 90 天 sunset）？`,
+      `将同 family 其它 ACTIVE 版本废弃，并指向「${row.apiCode}」为继任（默认 90 天 sunset）？`,
       '废弃同族旧版',
       { type: 'warning' }
     )

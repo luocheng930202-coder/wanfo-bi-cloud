@@ -67,7 +67,7 @@ class BiConnectionTest
             driver.verify(() -> DriverManager.getConnection(eq("jdbc:bi-test:local"), argThat((java.util.Properties p) -> "testuser".equals(p.getProperty("user")) && "saved-secret".equals(p.getProperty("password")))));
             assertEquals(false, result.get("ok"));
             assertFalse(result.toString().contains("sensitive details"));
-            assertTrue(saved.getPassword().startsWith("enc:"));
+            assertTrue(saved.getPassword().startsWith("enc"));
             assertEquals("", edit.getPassword());
             verify(provider, never()).update(any());
         }

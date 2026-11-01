@@ -14,7 +14,7 @@ class ChartDataPolicyTest {
         var cache=new UserQueryCache();var actors=mock(CurrentActorProvider.class);var snapshots=mock(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.class);
         service.configureCache(cache,actors,snapshots);var dataset=datasets.selectById(9L);dataset.setCacheEnabled("1");dataset.setCacheTtl(60);
         when(actors.currentActor()).thenReturn(new BiActor("test",1L,"a",null,Set.of(1L)));
-        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(new QueryResult());
         var request=new org.springframework.mock.web.MockHttpServletRequest();org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(new org.springframework.web.context.request.ServletRequestAttributes(request));
         try{
             var q=model("city");assertEquals(false,((Map<?,?>)service.query(q).get("cache")).get("hit"));assertEquals(true,((Map<?,?>)service.query(q).get("cache")).get("hit"));verify(engine,times(1)).open(anyList());
@@ -26,7 +26,7 @@ class ChartDataPolicyTest {
     @Test void snapshotVersionChangesAndManualBypassForceFreshExecution()throws Exception {
         var cache=new UserQueryCache();var actors=mock(CurrentActorProvider.class);var snapshots=mock(com.wanfo.bi.datasource.snapshot.SnapshotRegistry.class);service.configureCache(cache,actors,snapshots);
         datasets.selectById(9L).setCacheEnabled("1");var source=sources.getById(7L);source.setId(7L);source.setType("csv");when(snapshots.version(7L)).thenReturn(1L);when(actors.currentActor()).thenReturn(new BiActor("test",1L,"a",null,Set.of()));
-        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(new QueryResult());
         var request=new org.springframework.mock.web.MockHttpServletRequest();org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(new org.springframework.web.context.request.ServletRequestAttributes(request));
         try{
             var q=model("city");service.query(q);service.query(q);verify(engine,times(1)).open(anyList());when(snapshots.version(7L)).thenReturn(2L);service.query(q);verify(engine,times(2)).open(anyList());
@@ -38,8 +38,8 @@ class ChartDataPolicyTest {
         var date=new BiDatasetFieldDO();date.setOriginName("day");date.setOriginType("DATE");var city=new BiDatasetFieldDO();city.setOriginName("city");city.setOriginType("VARCHAR");var id=new BiDatasetFieldDO();id.setOriginName("id");id.setOriginType("INT");when(fields.selectByDatasetId(9L)).thenReturn(List.of(date,city,id));
         var ds=datasets.selectById(9L);ds.setUnionSql("SELECT city,id,day FROM demo.orders");var q=model("day");q.getDimensions().get(0).setTimeGrain("month");q.addMetric("id","AVG","mean");q.addFilter("day","BETWEEN",List.of("2026-02-01","2026-02-28"));q.addFilter("city","EQ","B");q.setTimeComparison("previous");
         var current=new QueryResult();current.setColumns(List.of("day","mean"));current.setRows(List.of(Map.of("day","2026-02-01","mean",15)));var prior=new QueryResult();prior.setColumns(current.getColumns());prior.setRows(List.of(Map.of("day","2026-01-01","mean",10)));
-        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(current,prior);
-        var result=service.queryForDashboard(q);var arguments=org.mockito.ArgumentCaptor.forClass(List.class);verify(engine,times(2)).queryWithParams(any(),anyString(),arguments.capture(),anyInt());
+        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(current,prior);
+        var result=service.queryForDashboard(q);var arguments=org.mockito.ArgumentCaptor.forClass(List.class);verify(engine,times(2)).queryWithParams(any(),anyString(),arguments.capture(),anyInt(),anyInt());
         assertEquals("A",arguments.getAllValues().get(0).get(0));assertEquals("A",arguments.getAllValues().get(1).get(0));assertTrue(arguments.getAllValues().get(1).toString().contains("2026-01-01"));assertTrue(arguments.getAllValues().get(1).contains("B"));assertFalse(arguments.getAllValues().get(1).toString().contains("2026-02-28"));
         assertEquals("complete",((Map<?,?>)result.get("timeComparison")).get("status"));assertFalse(result.containsKey("executedSql"));assertFalse(result.containsKey("params"));verify(caps,never()).require("bi:dataset:query");
     }
@@ -48,9 +48,9 @@ class ChartDataPolicyTest {
         var q=model("city");q.addDimension("id","group_id");q.addMetric("id","AVG","mean");q.addMetric("id","COUNT_DISTINCT","buyers");
         q.setPivot(new QueryModel.Pivot(List.of("city"),List.of("id")));q.addFilter("id","GTE",0);
         var raw=new QueryResult();raw.setColumns(List.of("city","group_id","mean","buyers","__bi_pivot_row_depth","__bi_pivot_col_depth"));raw.setRows(List.of(Map.of("__bi_pivot_row_depth",0,"__bi_pivot_col_depth",0,"mean",new java.math.BigDecimal("1.5"),"buyers",2L)));
-        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(raw);
+        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(raw);
         var result=service.queryForDashboard(q);
-        verify(engine,times(1)).queryWithParams(any(),contains("UNION ALL"),eq(List.of("A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO)),eq(4004));
+        verify(engine,times(1)).queryWithParams(any(),contains("UNION ALL"),eq(List.of("A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO,"A",java.math.BigDecimal.ZERO)),eq(4004),anyInt());
         assertEquals(List.of("city","group_id","mean","buyers"),result.get("columns"));assertTrue(result.containsKey("pivotTotals"));assertFalse(result.containsKey("executedSql"));assertFalse(result.containsKey("params"));assertFalse(result.containsKey("datasetName"));
         verify(resources).require("dataset",9L,"consume");verify(caps,never()).require("bi:dataset:query");
     }
@@ -84,7 +84,7 @@ class ChartDataPolicyTest {
         when(sources.listEnabled()).thenThrow(new IllegalStateException("unrelated source offline"));
         when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());
         when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));
-        when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(new QueryResult());
         service.query(model("city"));
         verify(engine).open(eq(List.of(sources.getById(7L))));
         verify(sources,never()).listEnabled();
@@ -105,10 +105,10 @@ class ChartDataPolicyTest {
     }
     @Test void dashboardConsumerNeedsConsumeGrantButNotExplorationPermission() throws Exception {
         when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","A","admin")),Set.of(),Set.of()));
-        var conn=mock(java.sql.Connection.class);when(engine.open(anyList())).thenReturn(conn);when(engine.queryWithParams(any(),anyString(),anyList(),anyInt())).thenReturn(new QueryResult());
+        var conn=mock(java.sql.Connection.class);when(engine.open(anyList())).thenReturn(conn);when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(new QueryResult());
         var result=service.queryForDashboard(model("city"));verify(resources).require("dataset",9L,"consume");verify(caps).require("bi:dashboard:consume");verify(caps,never()).require("bi:dataset:query");verify(resources,never()).require("dataset",9L,"query");
         assertFalse(result.containsKey("datasetName"));assertFalse(result.containsKey("executedSql"));assertFalse(result.containsKey("params"));
-        verify(engine).queryWithParams(any(),contains("WHERE \"city\" = ?"),eq(List.of("A")),eq(1000));
+        verify(engine).queryWithParams(any(),contains("WHERE \"city\" = ?"),eq(List.of("A")),eq(1000),anyInt());
     }
     @Test void missingConsumeGrantCannotOpenDatabase() {
         doThrow(new BiAccessException(403,"denied")).when(resources).require("dataset",9L,"consume");assertThrows(BiAccessException.class,()->service.queryForDashboard(model("city")));verifyNoInteractions(engine,fields,policies);

@@ -313,6 +313,7 @@ public class CatalogService
     {
         BiDatasource ds = requireModel(schemaName);
         DatasetDataPolicy.Scope scope = classifications.scopeForConnectorPreview(ds.getId(), table, fields);
+        if (scope == null) scope = DatasetDataPolicy.Scope.unrestricted();
         Map<String,Object> result = savedPreview(schemaName, catalog, table, fields, maxRows, scope);
         audit.record("CATALOG_PREVIEW", "DATASOURCE", ds.getId(), ds.getId(),
                 Map.of("table", table == null ? "" : table,

@@ -26,7 +26,27 @@ import Layout from '@/layout/index.vue'
 
 // 公共路由
 export const constantRoutes = [
-  {path:'/bi-admin/query-monitor',component:Layout,hidden:true,children:[{path:'',name:'BiQueryMonitor',component:()=>import('@/views/bi/query-monitor/index.vue'),meta:{title:'查询监控',noCache:true,activeMenu:'/bi-admin/query-monitor'}}]},
+  {
+    path: '/bi-admin',
+    component: Layout,
+    hidden: true,
+    children: [
+      { path: 'workbench', name: 'BiWorkbench', component: () => import('@/views/bi/workbench/index.vue'), meta: { title: '工作台', noCache: true, activeMenu: '/bi-admin/workbench' } },
+      { path: 'query-monitor', name: 'BiQueryMonitor', component: () => import('@/views/bi/query-monitor/index.vue'), meta: { title: '查询监控', noCache: true, activeMenu: '/bi-admin/query-monitor' } },
+      { path: 'catalog', name: 'BiCatalog', component: () => import('@/views/bi/catalog/index.vue'), meta: { title: '数据资产目录', noCache: true, activeMenu: '/bi-admin/catalog' } },
+      { path: 'pipeline', name: 'BiPipeline', component: () => import('@/views/bi/pipeline/index.vue'), meta: { title: '数据加工流程', noCache: true, activeMenu: '/bi-admin/pipeline' } },
+      { path: 'warehouse', name: 'BiWarehouse', component: () => import('@/views/bi/warehouse/index.vue'), meta: { title: '数仓装载', noCache: true, activeMenu: '/bi-admin/warehouse' } },
+      { path: 'lineage', name: 'BiLineage', component: () => import('@/views/bi/lineage/index.vue'), meta: { title: '数据血缘', noCache: true, activeMenu: '/bi-admin/lineage' } },
+      { path: 'data-api', name: 'BiDataApi', component: () => import('@/views/bi/data-api/index.vue'), meta: { title: '开放数据API', noCache: true, activeMenu: '/bi-admin/data-api' } },
+      { path: 'glossary', name: 'BiGlossary', component: () => import('@/views/bi/glossary/index.vue'), meta: { title: '业务术语表', noCache: true, activeMenu: '/bi-admin/glossary' } },
+      { path: 'field-standard', name: 'BiFieldStandard', component: () => import('@/views/bi/field-standard/index.vue'), meta: { title: '字段标准', noCache: true, activeMenu: '/bi-admin/field-standard' } },
+      { path: 'backup-drills', name: 'BiBackupDrills', component: () => import('@/views/bi/backup-drill/index.vue'), meta: { title: '备份与演练', noCache: true, activeMenu: '/bi-admin/backup-drills' } },
+      { path: 'metric-set', name: 'BiMetricSet', component: () => import('@/views/bi/metric-set/index.vue'), meta: { title: '指标集', noCache: true, activeMenu: '/bi-admin/metric-set' } },
+      { path: 'access-requests', name: 'BiAccessRequests', component: () => import('@/views/bi/access-request/index.vue'), meta: { title: '访问申请', noCache: true, activeMenu: '/bi-admin/access-requests' } },
+      { path: 'task-center', name: 'BiTaskCenter', component: () => import('@/views/bi/task-center/index.vue'), meta: { title: '统一任务池', noCache: true, activeMenu: '/bi-admin/task-center' } },
+      { path: 'subscription', name: 'BiSubscription', component: () => import('@/views/bi/subscription/index.vue'), meta: { title: '报表订阅', noCache: true, activeMenu: '/bi-admin/subscription' } }
+    ]
+  },
   {
     path:'/bi-admin/chart-workspace',component:Layout,hidden:true,
     children:[

@@ -1,5 +1,5 @@
 <template>
-   <div class="app-container bi-container">
+   <div class="app-container bi-container bi-page">
       <el-alert
          type="info"
          :closable="false"
@@ -260,6 +260,7 @@ import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import { checkPermi } from '@/utils/permission'
+import { useRoute } from 'vue-router'
 import {
   listDatasources,
   createDatasource,
@@ -272,7 +273,8 @@ import {
   searchGrantPrincipals, listResourceGrants, grantResource, revokeResource,
   type ResourceGrant, type GrantPrincipal, type ConnectionTestResult,
   type BiDatasource,
-  type DatasourceForm
+  type DatasourceForm, type DatasourceConnector, type DatasourceCategory,
+  getDatasourceConnectorCatalog
 } from '@/api/bi/datasource'
 
 import SnapshotSourceDialog from './SnapshotSourceDialog.vue'
@@ -280,33 +282,28 @@ import { refreshApiSource } from '@/api/bi/datasource'
 const snapshotDialog=ref<InstanceType<typeof SnapshotSourceDialog>>()
 const isSnapshot=(type:string)=>['api','csv','excel'].includes(type)
 async function refreshSnapshot(row:BiDatasource){await refreshApiSource(row.id);ElMessage.success('快照已刷新');getList()}
-const DB_TYPES = [
-  { value: 'mysql', label: 'MySQL', category: 'oltp', abbr: 'My', color: '#00758f', description: '关系型数据库', url: 'jdbc:mysql://host:3306/database' },
-  { value: 'postgresql', label: 'PostgreSQL', category: 'oltp', abbr: 'PG', color: '#336791', description: '关系型数据库', url: 'jdbc:postgresql://host:5432/database' },
-  { value: 'oracle', label: 'Oracle', category: 'oltp', abbr: 'Or', color: '#c74634', description: '关系型数据库', url: 'jdbc:oracle:thin:@//host:1521/service' },
-  { value: 'sqlserver', label: 'SQL Server', category: 'oltp', abbr: 'SQL', color: '#b52d36', description: '关系型数据库', url: 'jdbc:sqlserver://host:1433;databaseName=database' },
-  { value: 'doris', label: 'Doris', category: 'olap', abbr: 'Do', color: '#2876df', description: '实时分析数据库', url: 'jdbc:mysql://host:9030/database' },
-  { value: 'starrocks', label: 'StarRocks', category: 'olap', abbr: 'SR', color: '#6849c9', description: '实时分析数据库', url: 'jdbc:mysql://host:9030/database' },
-  { value: 'clickhouse', label: 'ClickHouse', category: 'olap', abbr: 'CH', color: '#997400', description: '列式分析数据库', url: 'jdbc:clickhouse://host:8123/database' },
-  { value:'api',label:'JSON API',category:'api',abbr:'API',color:'#2876df',description:'GET JSON · 可刷新快照',url:'' },
-  { value:'csv',label:'CSV',category:'file',abbr:'CSV',color:'#248451',description:'UTF-8 · 保留标识符前导零',url:'' },
-  { value:'excel',label:'Excel',category:'file',abbr:'XLS',color:'#248451',description:'XLS / XLSX · 工作表导入',url:'' }
-]
-const sourceCategories = [
-  { value: 'recent', label: '最近创建' }, { value: 'all', label: '全部' },
-  { value: 'oltp', label: 'OLTP' }, { value: 'olap', label: 'OLAP' },
-  { value: 'lake', label: '数据湖' }, { value: 'api', label: 'API 数据' }, { value: 'file', label: '文件' }
-]
+const DB_TYPES = ref<DatasourceConnector[]>([])
+const connectorCategories = ref<DatasourceCategory[]>([])
+async function loadConnectorCatalog() {
+  const response = await getDatasourceConnectorCatalog()
+  DB_TYPES.value = response.data?.connectors || []
+  connectorCategories.value = response.data?.categories || []
+}
 const createStep = ref(0)
 const sourceSearch = ref('')
 const activeCategory = ref('all')
 const selectedSource = ref('')
 const recentSourceTypes = ref<string[]>([])
-const activeCategoryLabel = computed(() => sourceCategories.find(c => c.value === activeCategory.value)?.label || '全部')
-const selectedSourceLabel = computed(() => DB_TYPES.find(t => t.value === form.type)?.label || form.type)
+const sourceCategories = computed(() => [
+  { value: 'recent', label: '最近创建' },
+  { value: 'all', label: '全部' },
+  ...connectorCategories.value
+])
+const activeCategoryLabel = computed(() => sourceCategories.value.find(c => c.value === activeCategory.value)?.label || '全部')
+const selectedSourceLabel = computed(() => DB_TYPES.value.find(t => t.value === form.type)?.label || form.type)
 function categoryTypes(category: string) {
-  if (category === 'recent') return recentSourceTypes.value.flatMap(value => DB_TYPES.filter(t => t.value === value))
-  return DB_TYPES.filter(t => category === 'all' || t.category === category)
+  if (category === 'recent') return recentSourceTypes.value.flatMap(value => DB_TYPES.value.filter(t => t.value === value))
+  return DB_TYPES.value.filter(t => category === 'all' || t.category === category)
 }
 function categoryCount(category: string) { return categoryTypes(category).length }
 const filteredSourceTypes = computed(() => {
@@ -314,7 +311,7 @@ const filteredSourceTypes = computed(() => {
   return categoryTypes(activeCategory.value).filter(t => `${t.label} ${t.value} ${t.description}`.toLowerCase().includes(keyword))
 })
 function nextSourceStep() {
-  const source = DB_TYPES.find(t => t.value === selectedSource.value)
+  const source = DB_TYPES.value.find(t => t.value === selectedSource.value)
   if (!source) return
   if(isSnapshot(source.value)){dialog.visible=false;snapshotDialog.value?.open(source.value);return}
   if (form.type !== source.value) {
@@ -343,6 +340,8 @@ const queryParams = reactive({
   name: '',
   status: ''
 })
+const route = useRoute()
+const sourceIdFilter = Number(route.query.datasourceId) || undefined
 
 const dialog = reactive({
   title: '',
@@ -392,6 +391,7 @@ function getList() {
   listDatasources()
     .then(res => {
       let rows: BiDatasource[] = res.data || []
+      if (sourceIdFilter) rows = rows.filter(row => row.id === sourceIdFilter)
       recentSourceTypes.value = [...new Set([...rows].sort((a, b) =>
         (b.createTime || '').localeCompare(a.createTime || '') || b.id - a.id
       ).map(row => row.type))].slice(0, 6)
@@ -429,7 +429,13 @@ function resetForm() {
   formRef.value?.resetFields()
 }
 
-function handleAdd() {
+async function handleAdd() {
+  if (!DB_TYPES.value.length) {
+    try { await loadConnectorCatalog() } catch {
+      ElMessage.error('连接器目录加载失败，请刷新页面后重试')
+      return
+    }
+  }
   resetForm()
   createStep.value = 0
   sourceSearch.value = ''
@@ -592,7 +598,10 @@ async function removeGrant(row: ResourceGrant) {
   ElMessage.success('已撤销授权')
 }
 
-onMounted(getList)
+onMounted(() => {
+  getList()
+  loadConnectorCatalog().catch(() => ElMessage.error('连接器目录加载失败，请刷新页面后重试'))
+})
 </script>
 
 <style scoped>

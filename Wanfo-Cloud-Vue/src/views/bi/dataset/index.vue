@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="app-container bi-page">
     <el-row :gutter="16">
       <el-col :xs="24" :sm="6">
         <el-card class="mb8">
@@ -23,12 +23,13 @@
             <el-table-column prop="sourceCatalog" label="数据库" min-width="110" />
             <el-table-column prop="sourceTable" label="来源表" min-width="120" />
             <el-table-column prop="fieldCount" label="字段数" width="85" />
-            <el-table-column label="操作" width="450" fixed="right"><template #default="{row}">
+            <el-table-column label="操作" width="510" fixed="right"><template #default="{row}">
               <el-button v-if="row.type==='table' && checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" link type="primary" @click="openModel(row)">建模</el-button>
               <el-button v-if="row.resourceActions?.includes('query')" v-hasPermi="['bi:dataset:query']" link type="primary" @click="previewSaved(row)">预览</el-button>
               <el-button link @click="viewDefinition(row)">定义</el-button>
               <el-button v-if="row.type==='table' && row.resourceActions?.includes('query')" v-hasPermi="['bi:chart:add']" link type="primary" @click="router.push({path:'/bi-admin/chart',query:{datasetId:row.id}})">建图表</el-button>
               <el-button v-if="row.type==='table' && checkPermi(['bi:resource:admin'])" link type="primary" @click="Object.assign(policyDialog,{visible:true,id:row.id,name:row.name})">数据权限</el-button>
+              <el-button v-if="row.type==='table' && checkPermi(['bi:resource:admin'])" link type="primary" @click="Object.assign(warehouseScopeDialog,{visible:true,id:row.id,name:row.name})">数仓范围</el-button>
               <el-button v-if="row.resourceActions?.includes('grant')" v-hasPermi="['bi:dataset:grant']" link type="primary" @click="openGrants(row)">授权</el-button>
               <DatasetCacheButton v-if="row.type==='table'" :id="row.id"/><ResourceImpactButton type="dataset" :id="row.id"/><el-button v-if="row.resourceActions?.includes('remove')" v-hasPermi="['bi:dataset:remove']" link type="danger" @click="removeDataset(row)">删除</el-button>
             </template></el-table-column>
@@ -96,6 +97,7 @@
     </el-dialog>
 
     <DataPolicyDialog v-model="policyDialog.visible" :dataset-id="policyDialog.id" :name="policyDialog.name" />
+    <WarehouseScopeDialog v-model="warehouseScopeDialog.visible" :dataset-id="warehouseScopeDialog.id" :name="warehouseScopeDialog.name" />
     <DatasetModelDialog v-model:visible="modelDialog.visible" :dataset-id="modelDialog.id" :name="modelDialog.name" @saved="loadDatasets" />
     <el-dialog v-model="previewDialog.visible" :title="previewDialog.title" width="min(1000px, calc(100vw - 24px))">
       <el-table :data="previewDialog.rows" border size="small" height="360"><el-table-column v-for="col in previewDialog.columns" :key="col" :prop="col" :label="savedColumnLabel(col)" min-width="140" show-overflow-tooltip /></el-table>
@@ -122,8 +124,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
 import DataPolicyDialog from './DataPolicyDialog.vue'
+import WarehouseScopeDialog from './WarehouseScopeDialog.vue'
 import DatasetModelDialog from './DatasetModelDialog.vue'
 const policyDialog=reactive({visible:false,id:0,name:''})
+const warehouseScopeDialog=reactive({visible:false,id:0,name:''})
 const modelDialog=reactive({visible:false,id:0,name:''})
 import { getGroupTree, createGroup, deleteGroup, listDatasets, getDataset, listCatalogs, listTables, listColumns, listModelSources, previewTable, createTableDataset, createSqlDataset, previewDataset, deleteDataset, searchDatasetPrincipals, listDatasetGrants, grantDataset, revokeDatasetGrant, type DatasetGroupNode, type DatasetSummary, type ModelDatasource, type CatalogTable, type CatalogColumn, type PreviewResult, type DatasetField } from '@/api/bi/dataset'
 import { previewColumnLabel } from '@/utils/biFieldLabels'

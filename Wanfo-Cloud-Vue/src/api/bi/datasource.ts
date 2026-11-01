@@ -38,6 +38,24 @@ export interface DatasourceForm {
   status?: string
 }
 
+export interface DatasourceConnector {
+  value: string
+  label: string
+  category: string
+  abbr: string
+  color: string
+  description: string
+  url: string
+  capabilities: string[]
+}
+export interface DatasourceCategory { value: string; label: string }
+export interface DatasourceConnectorCatalog { categories: DatasourceCategory[]; connectors: DatasourceConnector[] }
+
+/** 服务端连接器注册表；分类及能力以服务端为准 */
+export function getDatasourceConnectorCatalog(): Promise<AjaxResult<DatasourceConnectorCatalog>> {
+  return request({ url: '/bi/datasource/connectors', method: 'get' })
+}
+
 /** 管理列表（含停用，密码只返回是否已设置） */
 export function listDatasources(): Promise<AjaxResult<BiDatasource[]>> {
   return request({

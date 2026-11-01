@@ -126,7 +126,12 @@ public class ChartQueryService
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
         if (!"sql".equals(ds.getType()))
-        { unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, fields); }
+        {
+            var source = datasourceProvider.getById(ds.getDatasourceId());
+            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
+                    unionSql, source == null ? null : source.getSchemaName(), ds.getSourceCatalog());
+            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, fields);
+        }
 
         var scope=policies.resolve(model.getDatasetId());
         var restricted=restrictedBase(unionSql,fields,scope);
@@ -268,7 +273,12 @@ public class ChartQueryService
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
         if (!"sql".equals(ds.getType()))
-        { unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, compileFields); }
+        {
+            var source = datasourceProvider.getById(ds.getDatasourceId());
+            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
+                    unionSql, source == null ? null : source.getSchemaName(), ds.getSourceCatalog());
+            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, compileFields);
+        }
         var scope=policies.resolve(model.getDatasetId());
         var restricted=restrictedBase(unionSql, compileFields, scope);
         scope.denied().forEach(valid::remove);scope.masked().forEach(valid::remove);

@@ -1,6 +1,7 @@
 -- RuoYi adapter installation only. Run explicitly against the RuoYi system database.
 -- Do not put sys_menu writes in BI Flyway migrations; standalone mode has no sys_* tables.
 -- Uses auto IDs; does not grant any existing business role automatically.
+SET NAMES utf8mb4;
 START TRANSACTION;
 INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, route_name,
     is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time)
@@ -119,6 +120,80 @@ INSERT INTO sys_menu(menu_name,parent_id,order_num,path,menu_type,visible,status
 SELECT p.label,@bi_subscription,p.position,'#','F','0','0',p.permission,'#','system',NOW()
 FROM (SELECT '新建订阅' label,1 position,'bi:subscription:add' permission UNION ALL SELECT '编辑与启停',2,'bi:subscription:edit' UNION ALL SELECT '删除订阅',3,'bi:subscription:remove') p
 WHERE @bi_subscription IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.parent_id=@bi_subscription AND m.perms=p.permission);
+
+-- 统一任务中心聚合现有运行事实表，不复制各业务任务状态。
+INSERT INTO sys_menu (menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '任务中心',@bi_parent,9,'task-center','bi/task-center/index','BiTaskCenter',1,1,'C','0','0','bi:task:list','list','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='task-center');
+
+-- 数据平台可见菜单：流程、目录、数仓、血缘（页面组件可先占位到工作台/任务中心深链）。
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '数据加工',@bi_parent,10,'pipeline','bi/pipeline/index','BiPipeline',1,1,'C','0','0','bi:pipeline:list','guide','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='pipeline');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '数据目录',@bi_parent,11,'catalog','bi/catalog/index','BiCatalog',1,1,'C','0','0','bi:datasource:model','tree-table','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='catalog');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '数仓装载',@bi_parent,12,'warehouse','bi/warehouse/index','BiWarehouse',1,1,'C','0','0','bi:resource:admin','server','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='warehouse');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '数据血缘',@bi_parent,13,'lineage','bi/lineage/index','BiLineage',1,1,'C','0','0','bi:resource:admin','tree','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='lineage');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '开放数据API',@bi_parent,14,'data-api','bi/data-api/index','BiDataApi',1,1,'C','0','0','bi:metric:list','link','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='data-api');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '业务术语表',@bi_parent,15,'glossary','bi/glossary/index','BiGlossary',1,1,'C','0','0','bi:resource:admin','documentation','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='glossary');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '字段标准',@bi_parent,19,'field-standard','bi/field-standard/index','BiFieldStandard',1,1,'C','0','0','bi:resource:admin','dict','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='field-standard');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '备份与演练',@bi_parent,20,'backup-drills','bi/backup-drill/index','BiBackupDrills',1,1,'C','0','0','bi:resource:admin','download','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='backup-drills');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '指标集',@bi_parent,17,'metric-set','bi/metric-set/index','BiMetricSet',1,1,'C','0','0','bi:metric:list','collection','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='metric-set');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '访问申请',@bi_parent,18,'access-requests','bi/access-request/index','BiAccessRequests',1,1,'C','0','0','bi:datasource:model','form','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='access-requests');
+INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '查询监控',@bi_parent,16,'query-monitor','bi/query-monitor/index','BiQueryMonitor',1,1,'C','0','0','bi:resource:admin','monitor','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='query-monitor');
+
+-- 若早期菜单已写入但权限码过旧，修正开放数据 API 入口权限为指标列表权限（与后端非管理员访问对齐）。
+UPDATE sys_menu SET perms='bi:metric:list', component='bi/data-api/index', route_name='BiDataApi', visible='0', status='0'
+WHERE path='data-api' AND menu_type='C' AND parent_id=@bi_parent AND (perms IS NULL OR perms<>'bi:metric:list' OR component IS NULL OR component='');
+
+UPDATE sys_menu SET component='bi/warehouse/index', route_name='BiWarehouse', visible='0', status='0'
+WHERE path='warehouse' AND menu_type='C' AND parent_id=@bi_parent AND (component IS NULL OR component='' OR component LIKE 'bi/workbench%');
+
+UPDATE sys_menu SET component='bi/pipeline/index', route_name='BiPipeline', visible='0', status='0'
+WHERE path='pipeline' AND menu_type='C' AND parent_id=@bi_parent AND (component IS NULL OR component='' OR component LIKE 'bi/workbench%');
+
+UPDATE sys_menu SET component='bi/lineage/index', route_name='BiLineage', visible='0', status='0'
+WHERE path='lineage' AND menu_type='C' AND parent_id=@bi_parent AND (component IS NULL OR component='' OR component LIKE 'bi/workbench%');
+
+UPDATE sys_menu SET component='bi/glossary/index', route_name='BiGlossary', visible='0', status='0'
+WHERE path='glossary' AND menu_type='C' AND parent_id=@bi_parent AND (component IS NULL OR component='' OR component LIKE 'bi/workbench%');
+
+UPDATE sys_menu SET component='bi/catalog/index', route_name='BiCatalog', visible='0', status='0'
+WHERE path='catalog' AND menu_type='C' AND parent_id=@bi_parent AND (component IS NULL OR component='' OR component LIKE 'bi/workbench%');
+
+INSERT INTO sys_menu (menu_name,parent_id,order_num,path,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT '查看统一任务中心',@bi_parent,36,'#','F','0','0','bi:task:list','#','system',NOW()
+WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND perms='bi:task:list');
+INSERT INTO sys_menu (menu_name,parent_id,order_num,path,menu_type,visible,status,perms,icon,create_by,create_time)
+SELECT p.label,@bi_parent,p.position,'#','F','0','0',p.permission,'#','system',NOW()
+FROM (
+ SELECT '查看数据加工流程' label,30 position,'bi:pipeline:list' permission
+ UNION ALL SELECT '新建数据加工流程',31,'bi:pipeline:add'
+ UNION ALL SELECT '编辑数据加工流程',32,'bi:pipeline:edit'
+ UNION ALL SELECT '发布数据加工流程',33,'bi:pipeline:publish'
+ UNION ALL SELECT '回滚数据加工流程',34,'bi:pipeline:rollback'
+ UNION ALL SELECT '运行数据加工预览',35,'bi:pipeline:run'
+ UNION ALL SELECT 'BI 资源管理（仓/血缘/术语）',37,'bi:resource:admin'
+) p WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.parent_id=@bi_parent AND m.perms=p.permission);
 INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,route_name,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time)
 SELECT '数据填报',@bi_parent,6,'form','bi/form/index','BiDataForm',1,1,'C','0','0','bi:form:list','edit','system',NOW()
 WHERE @bi_parent IS NOT NULL AND NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=@bi_parent AND path='form');
@@ -156,4 +231,6 @@ COMMIT;
 -- Verify the resulting IDs, paths and permission codes before assigning roles in RuoYi.
 SELECT menu_id, parent_id, menu_name, path, component, perms FROM sys_menu
 WHERE menu_id IN (@bi_parent, @bi_datasource,@bi_dataset,@bi_chart,@bi_metric,@bi_dashboard,@bi_export,@bi_form) OR parent_id IN (@bi_datasource,@bi_dataset,@bi_chart,@bi_metric,@bi_dashboard,@bi_export,@bi_form)
-   OR (path IN ('template','form','workbench','metric') AND parent_id=@bi_parent);
+   OR (path IN ('template','form','workbench','metric') AND parent_id=@bi_parent)
+   OR path IN ('task-center','pipeline','catalog','warehouse','lineage','data-api','glossary','query-monitor')
+   OR perms IN ('bi:pipeline:list','bi:pipeline:add','bi:pipeline:edit','bi:pipeline:publish','bi:pipeline:rollback','bi:pipeline:run','bi:task:list','bi:resource:admin','bi:metric:list');

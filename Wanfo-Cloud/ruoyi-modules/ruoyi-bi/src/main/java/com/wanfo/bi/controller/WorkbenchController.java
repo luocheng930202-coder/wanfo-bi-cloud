@@ -20,12 +20,12 @@ public class WorkbenchController {
 
     @Operation(summary = "资源统计")
     @GetMapping("/summary")
-    @BiPermission(anyOf = {"bi:datasource:list", "bi:dataset:list", "bi:chart:list", "bi:dashboard:list", "bi:form:list", "bi:export:list", "bi:template:list"})
+    @BiPermission(anyOf = {"bi:datasource:list", "bi:dataset:list", "bi:chart:list", "bi:dashboard:list", "bi:form:list", "bi:export:list", "bi:template:list", "bi:pipeline:list"})
     public Map<String, Object> summary() { return service.summary(); }
 
     @Operation(summary = "最近资源")
     @GetMapping("/recent")
-    @BiPermission(anyOf = {"bi:chart:list", "bi:dashboard:list"})
+    @BiPermission(anyOf = {"bi:chart:list", "bi:dashboard:list", "bi:pipeline:list"})
     public List<Map<String, Object>> recent(@RequestParam(defaultValue = "all") String kind,
             @RequestParam(defaultValue = "12") int limit) {
         return service.recent(kind, limit);

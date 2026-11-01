@@ -8,22 +8,27 @@
         </div>
       </template>
       <el-alert class="mb8" :closable="false" show-icon title="已发布指标必须先取消发布才能修改。若已被其他地方引用，不允许修改或下线。按编码取数时不再接受额外条件。" />
+      <el-alert v-if="conflicts.length" class="mb8" type="warning" :closable="false" show-icon :title="`检测到 ${conflicts.length} 组同数据集、同度量但口径描述不一致的指标，请核对单位、粒度、时区和业务定义。`">
+        <div class="conflict-lines"><div v-for="item in conflicts.slice(0, 5)" :key="`${item.leftId}-${item.rightId}-${item.field}`">{{ item.leftCode }} / {{ item.rightCode }} · {{ item.field }} ({{ item.aggregation }}) · 差异：{{ item.differences.join('、') }}</div></div>
+      </el-alert>
       <el-table :data="metrics" v-loading="listLoading" border max-height="280">
         <el-table-column prop="code" label="编码" min-width="140" />
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column label="类型" width="90">
-          <template #default="{ row }">{{ row.kind === 'scalar' ? '标量' : '表格' }}</template>
+          <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="120">
+        <el-table-column label="状态" width="160">
           <template #default="{ row }">
             <el-tag :type="row.publishStatus === 'published' ? 'success' : 'info'" size="small">{{ row.publishStatus === 'published' ? '已发布' : '草稿' }}</el-tag>
+            <el-tag v-if="row.pendingPublish" type="warning" size="small" class="ml4">待审</el-tag>
             <el-tag v-if="row.inUse" type="warning" size="small" class="ml4">引用中</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="360" fixed="right">
+        <el-table-column label="操作" width="420" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" :disabled="busy" @click="openMetric(row)">打开</el-button>
-            <el-button v-if="row.resourceActions.includes('publish')" v-hasPermi="['bi:metric:publish']" link :disabled="busy || row.inUse" @click="togglePublish(row)">{{ row.publishStatus === 'published' ? '取消发布' : '发布' }}</el-button>
+            <el-button link :disabled="busy" @click="openConsumer(row)">口径</el-button>
+            <el-button v-if="row.resourceActions.includes('publish')" v-hasPermi="['bi:metric:publish']" link :disabled="busy || row.inUse || (!!row.pendingPublish && row.publishStatus !== 'published')" @click="togglePublish(row)">{{ row.publishStatus === 'published' ? '取消发布' : '提交审批' }}</el-button>
             <el-button v-if="row.resourceActions.includes('grant')" v-hasPermi="['bi:metric:grant']" link :disabled="busy" @click="openGrants(row)">授权</el-button>
             <el-button v-if="row.resourceActions.includes('remove')" v-hasPermi="['bi:metric:remove']" link type="danger" :disabled="busy || row.publishStatus === 'published' || row.inUse" @click="removeMetric(row)">删除</el-button>
           </template>
@@ -58,8 +63,27 @@
           <el-radio-group v-model="definition.kind" :disabled="!editable" @change="kindChanged">
             <el-radio value="scalar">标量</el-radio>
             <el-radio value="table">表格</el-radio>
+            <el-radio value="composite">复合</el-radio>
           </el-radio-group>
         </el-form-item>
+        <template v-if="definition.kind === 'composite'">
+          <el-form-item label="组件指标" required>
+            <el-select v-model="definition.componentMetricCodes" multiple filterable allow-create default-first-option style="width:100%" :disabled="!editable" placeholder="选择或输入已发布标量指标编码">
+              <el-option v-for="m in compositeComponentOptions" :key="m.code" :value="m.code" :label="`${m.code} · ${m.name}`" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="复合表达式" required>
+            <el-input v-model="definition.compositeExpression" :disabled="!editable" maxlength="500" placeholder="例如：(revenue - cost) / revenue" />
+            <div class="hint">仅允许组件编码与 + - * / ( )；须引用全部组件编码。</div>
+          </el-form-item>
+        </template>
+        <el-divider content-position="left">业务口径</el-divider>
+        <el-form-item label="业务定义" required><el-input v-model="definition.businessDefinition" type="textarea" :rows="2" maxlength="2000" show-word-limit :disabled="!editable" placeholder="说明该指标的业务含义、过滤范围和计算规则" /></el-form-item>
+        <el-form-item label="业务维度"><el-input v-model="definition.businessDimensions" maxlength="1000" :disabled="!editable" placeholder="例如：按区域、渠道统计；多个维度可用逗号分隔" /></el-form-item>
+        <el-form-item label="统计粒度" required><el-input v-model="definition.grain" maxlength="100" :disabled="!editable" placeholder="例如：订单日 / 自然月 / 用户" /></el-form-item>
+        <el-form-item label="单位" required><el-input v-model="definition.unit" maxlength="64" :disabled="!editable" placeholder="例如：元、单、人、百分比" /></el-form-item>
+        <el-form-item label="时区" required><el-input v-model="definition.timeZone" maxlength="64" :disabled="!editable" placeholder="IANA 时区，例如 Asia/Shanghai" /></el-form-item>
+        <el-form-item label="负责人" required><el-input v-model="definition.owner" maxlength="128" :disabled="!editable" placeholder="业务负责人或团队" /></el-form-item>
         <el-form-item label="数据集" required>
           <el-select v-model="definition.query.datasetId" filterable style="width:100%" :disabled="!editable" @change="datasetChanged">
             <el-option v-for="d in datasetOptions" :key="d.id" :value="d.id" :label="d.name" />
@@ -70,7 +94,7 @@
             <el-option v-for="f in fields" :key="f.name" :value="f.name" :label="fieldLabel(f.name)" />
           </el-select>
         </el-form-item>
-        <el-form-item label="度量" required>
+        <el-form-item v-if="definition.kind !== 'composite'" label="度量" required>
           <div class="metric-rows">
             <div v-for="(m, index) in definition.query.metrics" :key="index" class="metric-row">
               <el-select v-model="m.field" filterable :disabled="!editable" style="width:220px">
@@ -88,7 +112,7 @@
         <el-form-item v-if="definition.kind === 'table'" label="行数">
           <el-input-number v-model="definition.query.limit" :min="1" :max="1000" :disabled="!editable" />
         </el-form-item>
-        <el-form-item label="筛选">
+        <el-form-item v-if="definition.kind !== 'composite'" label="筛选">
           <div v-if="definition.query.filterTree">
             <FilterTreeEditor :model-value="definition.query.filterTree" :fields="fields" :disabled="!editable" @update:model-value="value => definition.query.filterTree = value" @remove="definition.query.filterTree = undefined" />
           </div>
@@ -126,11 +150,57 @@
       <el-table :data="historyDialog.rows" border>
         <el-table-column prop="publishedVersion" label="版本" width="80" />
         <el-table-column prop="name" label="名称" min-width="140" />
-        <el-table-column label="类型" width="80"><template #default="{ row }">{{ row.kind === 'scalar' ? '标量' : '表格' }}</template></el-table-column>
+        <el-table-column label="类型" width="80"><template #default="{ row }">{{ kindLabel(row.kind) }}</template></el-table-column>
         <el-table-column prop="publishBy" label="发布人" width="120" />
+        <el-table-column prop="businessDefinition" label="冻结业务定义" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="grain" label="粒度" width="120" />
+        <el-table-column prop="unit" label="单位" width="100" />
+        <el-table-column prop="timeZone" label="时区" width="150" />
+        <el-table-column prop="owner" label="负责人" width="130" />
         <el-table-column prop="publishTime" label="发布时间" min-width="170" />
       </el-table>
     </el-dialog>
+
+    <el-card v-if="pendingPublish.length" class="mb8">
+      <template #header><div class="toolbar"><span>待审批发布</span><el-button link @click="loadPendingPublish">刷新</el-button></div></template>
+      <el-table :data="pendingPublish" border>
+        <el-table-column prop="id" label="单号" width="80" />
+        <el-table-column prop="metricId" label="指标 ID" width="100" />
+        <el-table-column prop="requestedBy" label="提交人" width="120" />
+        <el-table-column prop="requestNote" label="说明" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="metricVersion" label="版本" width="80" />
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="success" :disabled="busy" @click="decidePublish(row.id, true)">通过</el-button>
+            <el-button link type="danger" :disabled="busy" @click="decidePublish(row.id, false)">驳回</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-drawer v-model="consumerVisible" title="消费侧口径" size="min(480px, 94vw)" destroy-on-close>
+      <template v-if="consumer">
+        <el-alert :closable="false" show-icon :title="consumer.pinNote" class="mb8" />
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="编码">{{ consumer.code }}</el-descriptions-item>
+          <el-descriptions-item label="名称">{{ consumer.name }}</el-descriptions-item>
+          <el-descriptions-item label="发布版本">{{ consumer.publishedVersion || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="业务定义">{{ consumer.businessDefinition || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="业务维度">{{ consumer.businessDimensions || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="粒度">{{ consumer.grain || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="单位">{{ consumer.unit || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="时区">{{ consumer.timeZone || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="负责人">{{ consumer.owner || '—' }}</el-descriptions-item>
+        </el-descriptions>
+        <h4 class="consumer-terms-title">关联术语</h4>
+        <el-empty v-if="!(consumer.glossaryTerms || []).length" description="暂无关联术语" :image-size="64" />
+        <el-table v-else :data="consumer.glossaryTerms" size="small" border>
+          <el-table-column prop="termCode" label="编码" width="120" />
+          <el-table-column prop="name" label="名称" min-width="120" />
+          <el-table-column prop="definitionText" label="口径" min-width="180" show-overflow-tooltip />
+        </el-table>
+      </template>
+    </el-drawer>
   </div>
 </template>
 <script setup lang="ts" name="BiMetric">
@@ -138,18 +208,23 @@ import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
 import { listDatasets, type DatasetSummary } from '@/api/bi/dataset'
-import { listMetrics, getMetric, saveMetric, deleteMetric, previewMetric, savedMetricData, publishMetric, unpublishMetric, metricHistory, metricFields, searchMetricPrincipals, listMetricGrants, grantMetric, revokeMetricGrant, type MetricDefinition, type MetricSummary, type MetricHistory } from '@/api/bi/metric'
+import { listMetrics, listMetricConflicts, getMetric, saveMetric, deleteMetric, previewMetric, savedMetricData, publishMetric, unpublishMetric, metricHistory, metricFields, searchMetricPrincipals, listMetricGrants, grantMetric, revokeMetricGrant, listPendingMetricPublishRequests, decideMetricPublish, metricConsumerContext, type MetricDefinition, type MetricSummary, type MetricHistory, type MetricConflict, type MetricPublishRequest, type MetricConsumerContext } from '@/api/bi/metric'
 import type { Field, ChartResult } from '@/api/bi/chart'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
 import FilterTreeEditor from '../chart/FilterTreeEditor.vue'
 
 const aggregations: Record<string, string> = { COUNT: '计数', COUNT_DISTINCT: '去重计数', SUM: '求和', AVG: '平均值', MIN: '最小值', MAX: '最大值', NONE: '原始值' }
 function empty(): MetricDefinition {
-  return { schemaVersion: 1, name: '', code: '', kind: 'scalar', query: { datasetId: 0, dimensions: [], metrics: [], filters: [], orderBys: [], limit: 1 } }
+  return { schemaVersion: 1, name: '', code: '', kind: 'scalar', businessDefinition: '', businessDimensions: '', grain: '', unit: '', timeZone: 'Asia/Shanghai', owner: '', componentMetricCodes: [], compositeExpression: '', query: { datasetId: 0, dimensions: [], metrics: [], filters: [], orderBys: [], limit: 1 } }
 }
+function kindLabel(kind: string) {
+  return kind === 'scalar' ? '标量' : kind === 'table' ? '表格' : kind === 'composite' ? '复合' : kind
+}
+const compositeComponentOptions = computed(() => metrics.value.filter(m => m.kind === 'scalar' && m.publishStatus === 'published'))
 const definition = reactive<MetricDefinition>(empty())
 const metrics = ref<MetricSummary[]>([]), datasets = ref<DatasetSummary[]>([]), fields = ref<Field[]>([]), result = ref<ChartResult | null>(null)
 const currentId = ref<number>(), version = ref<number>(), editorVisible = ref(false), loading = ref(false), saving = ref(false), previewing = ref(false), listLoading = ref(false), error = ref(''), baseline = ref('')
+const conflicts = ref<MetricConflict[]>([])
 let revision = 0, loadVersion = 0
 const fingerprint = () => JSON.stringify(definition)
 const dirty = computed(() => editorVisible.value && fingerprint() !== baseline.value)
@@ -183,7 +258,7 @@ async function discard() {
   if (!dirty.value) return true
   try { await ElMessageBox.confirm('当前指标有未保存的配置，是否放弃？', '未保存的修改', { type: 'warning' }); return true } catch { return false }
 }
-async function refresh() { listLoading.value = true; try { metrics.value = (await listMetrics()).data || [] } finally { listLoading.value = false } }
+async function refresh() { listLoading.value = true; try { const [metricRows, conflictRows] = await Promise.all([listMetrics(), listMetricConflicts()]); metrics.value = metricRows.data || []; conflicts.value = conflictRows.data || [] } finally { listLoading.value = false } }
 async function availableDatasets() {
   if (checkPermi(['bi:dataset:list'])) datasets.value = ((await listDatasets()).data || []).filter(d => d.type === 'table' && d.resourceActions?.includes('query'))
 }
@@ -194,6 +269,12 @@ function kindChanged() {
     definition.query.metrics = definition.query.metrics.slice(0, 1)
     if (definition.query.metrics[0]) definition.query.metrics[0].agg = definition.query.metrics[0].agg === 'NONE' ? 'COUNT' : definition.query.metrics[0].agg
     definition.query.limit = 1
+  } else if (definition.kind === 'composite') {
+    definition.query.dimensions = []
+    definition.query.metrics = []
+    definition.query.limit = 1
+    if (!definition.componentMetricCodes) definition.componentMetricCodes = []
+    if (!definition.compositeExpression) definition.compositeExpression = ''
   } else if (!definition.query.limit || definition.query.limit === 1) definition.query.limit = 100
 }
 function addMeasure() {
@@ -255,6 +336,12 @@ async function save() {
   if (!definition.code.trim() || !/^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(definition.code.trim())) { ElMessage.warning('请填写有效编码'); return }
   if (!definition.name.trim()) { ElMessage.warning('请填写指标名称'); return }
   if (definition.kind === 'scalar') { definition.query.dimensions = []; definition.query.limit = 1 }
+  if (definition.kind === 'composite') {
+    definition.query.dimensions = []
+    definition.query.metrics = []
+    definition.query.limit = 1
+    if (!definition.componentMetricCodes?.length || !definition.compositeExpression?.trim()) { ElMessage.warning('复合指标须填写组件编码与表达式'); return }
+  }
   const snapshot = JSON.parse(fingerprint()) as MetricDefinition
   snapshot.name = snapshot.name.trim(); snapshot.code = snapshot.code.trim()
   saving.value = true; error.value = ''
@@ -268,17 +355,43 @@ async function save() {
 }
 async function togglePublish(row: MetricSummary) {
   if (row.inUse) { ElMessage.warning('指标已被引用，不能取消发布'); return }
-  const action = row.publishStatus === 'published' ? '取消发布' : '发布'
+  const action = row.publishStatus === 'published' ? '取消发布' : '提交发布审批'
   try { await ElMessageBox.confirm(`确定${action}指标「${row.name}」？`, action, { type: 'warning' }) } catch { return }
   saving.value = true
   try {
-    if (row.publishStatus === 'published') await unpublishMetric(row.id, row.version)
-    else await publishMetric(row.id, row.version)
-    if (currentId.value === row.id) version.value = row.version + 1
+    if (row.publishStatus === 'published') {
+      await unpublishMetric(row.id, row.version)
+      if (currentId.value === row.id) version.value = row.version + 1
+    } else {
+      await publishMetric(row.id, row.version)
+    }
     await refresh()
+    await loadPendingPublish()
     if (currentId.value === row.id) await openMetric((await listMetrics()).data?.find(m => m.id === row.id) || row)
+    ElMessage.success(row.publishStatus === 'published' ? '已取消发布' : '已提交审批')
+  } finally { saving.value = false }
+}
+const pendingPublish = ref<MetricPublishRequest[]>([])
+async function loadPendingPublish() {
+  if (!checkPermi(['bi:metric:publish'])) { pendingPublish.value = []; return }
+  try { pendingPublish.value = (await listPendingMetricPublishRequests()).data || [] }
+  catch { pendingPublish.value = [] }
+}
+async function decidePublish(requestId: number, approve: boolean) {
+  const action = approve ? '通过并发布' : '驳回'
+  try { await ElMessageBox.confirm(`确定${action}？`, action, { type: approve ? 'success' : 'warning' }) } catch { return }
+  saving.value = true
+  try {
+    await decideMetricPublish(requestId, approve)
+    await Promise.all([refresh(), loadPendingPublish()])
     ElMessage.success('已' + action)
   } finally { saving.value = false }
+}
+const consumerVisible = ref(false)
+const consumer = ref<MetricConsumerContext | null>(null)
+async function openConsumer(row: MetricSummary) {
+  consumer.value = (await metricConsumerContext(row.id)).data || null
+  consumerVisible.value = true
 }
 async function removeMetric(row: MetricSummary) {
   try { await ElMessageBox.confirm(`确定删除指标「${row.name}」？`, '删除指标', { type: 'warning' }) } catch { return }
@@ -317,13 +430,16 @@ async function removeGrant(row: ResourceGrant) {
   try { await revokeMetricGrant(grantDialog.id, row.principalId, row.action); await reloadGrants(); ElMessage.success('已撤销') }
   finally { grantSaving.value = false }
 }
-onMounted(async () => { await Promise.all([refresh(), availableDatasets()]) })
+onMounted(async () => { await Promise.all([refresh(), availableDatasets(), loadPendingPublish()]) })
 </script>
 <style scoped>
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .ml4{margin-left:4px}
+.consumer-terms-title{margin:16px 0 8px;font-size:14px}
 .metric-form{max-width:960px}
 .metric-rows{display:flex;flex-direction:column;gap:8px}
+.conflict-lines{display:grid;gap:4px;margin-top:6px;font-size:12px}
+.hint{margin-top:6px;color:#667085;font-size:12px}
 .metric-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .preview{margin-top:8px}
 .scalar{font-size:36px;font-weight:600;padding:24px 0}

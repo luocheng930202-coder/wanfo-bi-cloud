@@ -13,6 +13,6 @@ public final class DerivedFieldPolicy {
   Set<String> denied=new HashSet<>(scope.denied()),blocked=new HashSet<>(denied);blocked.addAll(scope.masked());boolean changed;
   do{changed=false;for(var entry:dependencies.entrySet())if(!Collections.disjoint(entry.getValue(),blocked) && blocked.add(entry.getKey())){denied.add(entry.getKey());changed=true;}}while(changed);
   Set<String> masked=new HashSet<>(scope.masked());masked.removeAll(denied);
-  return new DatasetDataPolicy.Scope(scope.rows(),Set.copyOf(denied),Set.copyOf(masked));
+  return new DatasetDataPolicy.Scope(scope.rows(),Set.copyOf(denied),Set.copyOf(masked),scope.allowedValues());
  }
 }

@@ -23,7 +23,7 @@ class CatalogModelTest
 
     @BeforeEach void setup() throws Exception
     {
-        service = new CatalogService(engine,sources,resources,capabilities);
+        service = new CatalogService(engine,sources,resources,capabilities,mock(ClassificationService.class),mock(CatalogAuditService.class));
         BiDatasource ds = new BiDatasource(); ds.setId(7L); ds.setSchemaName("demo"); ds.setStatus("0");
         ds.setName("Demo"); ds.setType("mysql"); ds.setJdbcUrl("secret-url"); ds.setUsername("secret-user");
         when(sources.getBySchemaName("demo")).thenReturn(ds); when(sources.listEnabled()).thenReturn(List.of(ds));
@@ -67,6 +67,34 @@ class CatalogModelTest
         assertThrows(IllegalArgumentException.class,()->service.plan("demo","poc_a","orders_2026",List.of("id FROM mysql.user")));
         verify(md).getTables(eq("poc_a"),isNull(),eq("orders\\_2026"),any(String[].class));
         verify(conn,never()).createStatement();
+    }
+
+    @Test void decimalMetadataPreservesPrecisionScaleNullabilityAndComment() throws Exception
+    {
+        ResultSet tables=mock(ResultSet.class), columns=mock(ResultSet.class), keys=mock(ResultSet.class);
+        when(md.getTables(anyString(),isNull(),anyString(),any(String[].class))).thenReturn(tables);
+        when(tables.next()).thenReturn(true,false);
+        when(tables.getString("TABLE_NAME")).thenReturn("orders_2026");
+        when(md.getPrimaryKeys(anyString(),isNull(),anyString())).thenReturn(keys);
+        when(keys.next()).thenReturn(false);
+        when(md.getColumns(anyString(),isNull(),anyString(),eq("%"))).thenReturn(columns);
+        when(columns.next()).thenReturn(true,false);
+        when(columns.getString("TABLE_NAME")).thenReturn("orders_2026");
+        when(columns.getString("COLUMN_NAME")).thenReturn("amount");
+        when(columns.getString("TYPE_NAME")).thenReturn("numeric");
+        when(columns.getInt("DATA_TYPE")).thenReturn(Types.NUMERIC);
+        when(columns.getInt("COLUMN_SIZE")).thenReturn(12);
+        when(columns.getInt("DECIMAL_DIGITS")).thenReturn(3);
+        when(columns.getString("IS_NULLABLE")).thenReturn("YES");
+        when(columns.getString("REMARKS")).thenReturn("amount with precision and scale");
+
+        var field=service.listColumns("demo",null,"orders_2026").get(0);
+
+        assertEquals("DECIMAL",field.get("type"));
+        assertEquals(12,field.get("precision"));
+        assertEquals(3,field.get("scale"));
+        assertEquals(true,field.get("nullable"));
+        assertEquals("amount with precision and scale",field.get("comment"));
     }
 
     @Test void fabricatedTableCannotReachExecution() throws Exception

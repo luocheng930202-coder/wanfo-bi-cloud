@@ -29,11 +29,15 @@ public class CatalogService
     private final DataSourceProvider provider;
     private final BiResourceAuthorizer resources;
     private final CapabilityProvider capabilities;
+    private final ClassificationService classifications;
+    private final CatalogAuditService audit;
 
     public CatalogService(CalciteQueryEngine engine, DataSourceProvider provider,
-                          BiResourceAuthorizer resources, CapabilityProvider capabilities)
+                          BiResourceAuthorizer resources, CapabilityProvider capabilities,
+                          ClassificationService classifications, CatalogAuditService audit)
     {
         this.engine = engine; this.provider = provider; this.resources = resources; this.capabilities = capabilities;
+        this.classifications = classifications; this.audit = audit;
         engine.setFallbackProvider(provider);
     }
 
@@ -136,11 +140,18 @@ public class CatalogService
             {
                 if (!table.equals(rs.getString("TABLE_NAME"))) { continue; }
                 String name = rs.getString("COLUMN_NAME"), type = rs.getString("TYPE_NAME");
-                type = com.wanfo.bi.datasource.JdbcSourceScope.columnType(rs.getInt("DATA_TYPE"), type);
+                int jdbcType = rs.getInt("DATA_TYPE");
+                type = com.wanfo.bi.datasource.JdbcSourceScope.columnType(jdbcType, type);
                 String lower = type.toLowerCase(Locale.ROOT);
                 boolean number = lower.matches(".*(int|decimal|numeric|float|double|real).*" );
                 Map<String,Object> field = new LinkedHashMap<>();
-                field.put("name",name); field.put("type",type); field.put("size",rs.getInt("COLUMN_SIZE"));
+                int size = rs.getInt("COLUMN_SIZE");
+                field.put("name",name); field.put("type",type); field.put("size",size);
+                if (jdbcType == Types.NUMERIC || jdbcType == Types.DECIMAL)
+                {
+                    field.put("precision", size);
+                    field.put("scale", rs.getInt("DECIMAL_DIGITS"));
+                }
                 field.put("nullable", "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE")));
                 field.put("comment",rs.getString("REMARKS")); field.put("primaryKey",primary.contains(name));
                 field.put("suggestAs",number ? "metric" : "dimension"); result.add(field);
@@ -172,6 +183,12 @@ public class CatalogService
     // Internal consumption path: DatasetService must first check dataset view/query permissions.
     TablePlan savedPlan(String schemaName, String catalog, String table, List<String> fields) throws Exception
     {
+        return savedPlan(schemaName, catalog, table, fields, Map.of());
+    }
+
+    TablePlan savedPlan(String schemaName, String catalog, String table, List<String> fields,
+                        Map<String,String> physicalByLogical) throws Exception
+    {
         activeSource(schemaName);
         if (fields == null || fields.isEmpty() || fields.size() > 200)
         { throw new IllegalArgumentException("请选择 1～200 个字段"); }
@@ -179,8 +196,11 @@ public class CatalogService
             snapshotScope(catalog,table);var columns=snapshotColumns(schemaName);
             var valid=columns.stream().map(c->(String)c.get("name")).collect(Collectors.toSet());
             var selected=new ArrayList<>(new LinkedHashSet<>(fields));
-            if(!valid.containsAll(selected))throw new IllegalArgumentException("字段不存在");
-            return new TablePlan("snapshot","data",selected,columns,"SELECT "+selected.stream().map(CatalogService::logical).collect(Collectors.joining(", "))+" FROM "+logical(schemaName)+".\"data\"");
+            Map<String,String> mappings=physicalByLogical==null?Map.of():physicalByLogical;
+            List<String> physical=selected.stream().map(name->mappings.getOrDefault(name,name)).toList();
+            if(!valid.containsAll(physical))throw new IllegalArgumentException("字段不存在");
+            List<String> projections=new ArrayList<>();for(int i=0;i<selected.size();i++){String source=physical.get(i),logicalName=selected.get(i);projections.add(logical(source)+(source.equals(logicalName)?"":" AS "+logical(logicalName)));}
+            return new TablePlan("snapshot","data",selected,columns,"SELECT "+String.join(", ",projections)+" FROM "+logical(schemaName)+".\"data\"");
         }
         try (Connection conn = engine.borrowConnection(schemaName))
         {
@@ -189,9 +209,11 @@ public class CatalogService
             List<Map<String,Object>> columns = columns(conn, scope, table);
             Set<String> valid = columns.stream().map(c -> (String)c.get("name")).collect(Collectors.toSet());
             List<String> selected = new ArrayList<>(new LinkedHashSet<>(fields));
-            if (!valid.containsAll(selected)) { throw new IllegalArgumentException("字段不存在，请刷新后重新选择"); }
+            Map<String,String> mappings=physicalByLogical==null?Map.of():physicalByLogical;
+            List<String> physical=selected.stream().map(name->mappings.getOrDefault(name,name)).toList();
+            if (!valid.containsAll(physical)) { throw new IllegalArgumentException("字段不存在，请刷新后重新选择"); }
             List<String> quoted = new ArrayList<>();
-            for (String field : selected) { quoted.add(logical(field)); }
+            for (int i=0;i<selected.size();i++) { String source=physical.get(i),logicalName=selected.get(i);quoted.add(logical(source)+(source.equals(logicalName)?"":" AS "+logical(logicalName))); }
             String sql = "SELECT " + String.join(", ",quoted) + " FROM " + logical(schemaName) + "." + logical(table);
             return new TablePlan(cat,table,selected,columns,sql);
         }
@@ -289,18 +311,44 @@ public class CatalogService
 
     public Map<String,Object> preview(String schemaName, String catalog, String table, List<String> fields, int maxRows) throws Exception
     {
-        requireModel(schemaName);
-        return savedPreview(schemaName, catalog, table, fields, maxRows);
+        BiDatasource ds = requireModel(schemaName);
+        DatasetDataPolicy.Scope scope = classifications.scopeForConnectorPreview(ds.getId(), table, fields);
+        if (scope == null) scope = DatasetDataPolicy.Scope.unrestricted();
+        Map<String,Object> result = savedPreview(schemaName, catalog, table, fields, maxRows, scope);
+        audit.record("CATALOG_PREVIEW", "DATASOURCE", ds.getId(), ds.getId(),
+                Map.of("table", table == null ? "" : table,
+                        "denied", scope.denied().size(),
+                        "masked", scope.masked().size(),
+                        "rows", result.getOrDefault("rowCount", 0)));
+        return result;
     }
 
     Map<String,Object> savedPreview(String schemaName, String catalog, String table, List<String> fields, int maxRows) throws Exception
     {
+        // Internal dataset joins may call this without classification; keep unrestricted unless explicit scope passed.
         return savedPreview(schemaName,catalog,table,fields,maxRows,DatasetDataPolicy.Scope.unrestricted());
     }
 
     Map<String,Object> savedPreview(String schemaName, String catalog, String table, List<String> fields, int maxRows, DatasetDataPolicy.Scope scope) throws Exception
     {
         if (maxRows < 1 || maxRows > 100) { throw new IllegalArgumentException("预览行数须在 1～100 之间"); }
+        return savedRows(schemaName, catalog, table, fields, maxRows, scope, 10);
+    }
+
+    /** Bounded extract for pipeline production (same SQL path as preview, higher row/timeout caps). */
+    Map<String,Object> savedBoundedExtract(String schemaName, String catalog, String table, List<String> fields, int maxRows,
+            DatasetDataPolicy.Scope scope, int queryTimeoutSeconds) throws Exception
+    {
+        int hardCap = com.wanfo.bi.warehouse.ClickHouseBatchPublisher.MAX_BATCH_ROWS;
+        if (maxRows < 1 || maxRows > hardCap)
+            throw new IllegalArgumentException("有界抽取行数须在 1～" + hardCap + " 之间");
+        int timeout = Math.max(10, Math.min(180, queryTimeoutSeconds));
+        return savedRows(schemaName, catalog, table, fields, maxRows, scope, timeout);
+    }
+
+    private Map<String,Object> savedRows(String schemaName, String catalog, String table, List<String> fields, int maxRows,
+            DatasetDataPolicy.Scope scope, int queryTimeoutSeconds) throws Exception
+    {
         TablePlan plan = savedPlan(schemaName, catalog, table, fields);
         long start = System.currentTimeMillis();
         try (Connection conn = snapshot(schemaName)?engine.open(List.of(activeSource(schemaName))):engine.borrowConnection(schemaName))
@@ -312,7 +360,7 @@ public class CatalogService
                     +(compiled.predicate().isEmpty()?"":" WHERE "+compiled.predicate());
             sql=com.wanfo.bi.datasource.JdbcSourceScope.limit(conn.getMetaData().getDatabaseProductName(),sql,maxRows);
             try (PreparedStatement st=conn.prepareStatement(sql)) {
-            st.setMaxRows(maxRows); st.setQueryTimeout(10);
+            st.setMaxRows(maxRows); st.setQueryTimeout(queryTimeoutSeconds);
             for(int p=0;p<compiled.params().size();p++) st.setObject(p+1,compiled.params().get(p));
             try (ResultSet rs = st.executeQuery())
             {

@@ -38,14 +38,16 @@ public class DatasetController
     private final DatasetService service;
     private final DatasetModelService modelService;
     private final DatasetQualityRuleService qualityRules;
+    private final com.wanfo.bi.service.QualityRuleVersionService qualityVersions;
+    private final com.wanfo.bi.service.QualityTaskService qualityTasks;
     private final CurrentActorProvider actors;
     private final BiResourceAuthorizer resources;
     private final PrincipalCatalog catalog;
     private final com.wanfo.bi.security.DatasetDataPolicy policies;
 
-    public DatasetController(DatasetService service, DatasetModelService modelService, DatasetQualityRuleService qualityRules, CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog, com.wanfo.bi.security.DatasetDataPolicy policies)
+    public DatasetController(DatasetService service, DatasetModelService modelService, DatasetQualityRuleService qualityRules, com.wanfo.bi.service.QualityRuleVersionService qualityVersions, com.wanfo.bi.service.QualityTaskService qualityTasks, CurrentActorProvider actors, BiResourceAuthorizer resources, PrincipalCatalog catalog, com.wanfo.bi.security.DatasetDataPolicy policies)
     {
-        this.service = service; this.modelService = modelService; this.qualityRules=qualityRules; this.actors = actors; this.resources = resources; this.catalog = catalog;this.policies=policies;
+        this.service = service; this.modelService = modelService; this.qualityRules=qualityRules; this.qualityVersions=qualityVersions; this.qualityTasks=qualityTasks; this.actors = actors; this.resources = resources; this.catalog = catalog;this.policies=policies;
     }
 
     // ==================== 目录 ====================
@@ -260,6 +262,104 @@ public class DatasetController
     public List<DatasetQualityRuleService.Rule> saveQualityRules(@PathVariable Long id,@RequestBody QualityRulesRequest request){return qualityRules.save(id,request.rules(),actors.currentActor().username());}
 
     public record QualityRulesRequest(List<DatasetQualityRuleService.Rule> rules){}
+
+    @Operation(summary = "查询数据集质量规则版本")
+    @GetMapping("/{id}/quality/versions")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityVersions(@PathVariable Long id){return qualityVersions.list(id);}
+
+    @Operation(summary = "创建质量规则草稿版本")
+    @PostMapping("/{id}/quality/versions")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> createQualityVersion(@PathVariable Long id,@RequestBody QualityVersionRequest body){return qualityVersions.createDraft(id,body.name(),body.remark(),body.rules(),actors.currentActor().username());}
+
+    @Operation(summary = "复制质量规则版本为新草稿")
+    @PostMapping("/{id}/quality/versions/{versionId}/copy")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> copyQualityVersion(@PathVariable Long id,@PathVariable Long versionId){return qualityVersions.copyDraft(id,versionId,actors.currentActor().username());}
+
+    @GetMapping("/{id}/quality/versions/{versionId}/rules")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityVersionRules(@PathVariable Long id,@PathVariable Long versionId){return qualityVersions.rules(id,versionId);}
+
+    @Operation(summary = "发布质量规则版本")
+    @PostMapping("/{id}/quality/versions/{versionId}/publish")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> publishQualityVersion(@PathVariable Long id,@PathVariable Long versionId){return qualityVersions.publish(id,versionId,actors.currentActor().username());}
+
+    public record QualityVersionRequest(String name,String remark,List<com.wanfo.bi.service.QualityRuleVersionService.RuleInput> rules){}
+
+    @Operation(summary = "预览 V25 数据集质量规则迁移")
+    @PostMapping("/quality/migrations/v25/preview")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> previewLegacyQualityMigration(@RequestBody(required=false) QualityMigrationRequest body){return qualityVersions.previewLegacyMigration(body==null?null:body.datasetIds());}
+
+    @Operation(summary = "执行 V25 数据集质量规则迁移")
+    @PostMapping("/quality/migrations/v25/execute")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> executeLegacyQualityMigration(@RequestBody QualityMigrationRequest body){return qualityVersions.migrateLegacyRules(body==null?null:body.datasetIds(),actors.currentActor().username());}
+
+    public record QualityMigrationRequest(List<Long> datasetIds){}
+
+    @Operation(summary = "列出数据质量任务")
+    @GetMapping("/{id}/quality/tasks")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityTasks(@PathVariable Long id){return qualityTasks.list(id);}
+
+    @Operation(summary = "创建手动数据质量任务")
+    @PostMapping("/{id}/quality/tasks")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> createQualityTask(@PathVariable Long id,@RequestBody com.wanfo.bi.service.QualityTaskService.CreateTask body){return qualityTasks.create(id,body);}
+
+    @PutMapping("/quality/tasks/{taskId}/status")
+    @BiPermission("bi:datasource:model")
+    public Map<String,Object> updateQualityTaskStatus(@PathVariable Long taskId,@RequestBody QualityTaskStatusRequest body){return qualityTasks.status(taskId,body.status());}
+
+    @Operation(summary = "执行数据质量任务")
+    @PostMapping("/quality/tasks/{taskId}/run")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> triggerQualityTask(@PathVariable Long taskId,@org.springframework.web.bind.annotation.RequestHeader(value="X-Trace-Id",required=false) String traceId){return qualityTasks.trigger(taskId,traceId);}
+
+    @GetMapping("/quality/tasks/{taskId}/runs")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityTaskRuns(@PathVariable Long taskId){return qualityTasks.runs(taskId);}
+
+    @GetMapping("/quality/tasks/{taskId}/runs/{runId}/results")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityTaskRunResults(@PathVariable Long taskId,@PathVariable Long runId){return qualityTasks.results(taskId,runId);}
+
+    public record QualityTaskStatusRequest(String status){}
+
+    @GetMapping("/{id}/quality/issues")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityIssues(@PathVariable Long id){return qualityTasks.issues(id);}
+
+    @GetMapping("/{id}/quality/trend")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityTrend(@PathVariable Long id,@RequestParam(defaultValue="30") int days){return qualityTasks.trend(id,days);}
+
+    @GetMapping("/{id}/quality/score")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> qualityScore(@PathVariable Long id){return qualityTasks.score(id);}
+
+    @GetMapping("/{id}/quality/issues/sla")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> qualityIssueSla(@PathVariable Long id){return qualityTasks.issueSlaSummary(id);}
+
+    @GetMapping("/quality/issues/{issueId}/history")
+    @BiPermission("bi:dataset:query")
+    public List<Map<String,Object>> qualityIssueHistory(@RequestParam Long datasetId,@PathVariable Long issueId){return qualityTasks.issueHistory(datasetId,issueId);}
+
+    @PostMapping("/quality/issues/{issueId}/claim")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> claimQualityIssue(@RequestParam Long datasetId,@PathVariable Long issueId){return qualityTasks.claimIssue(datasetId,issueId);}
+
+    @Operation(summary = "标记质量问题已修复（待复验）；关闭需后续同规则 PASS 运行")
+    @PostMapping("/quality/issues/{issueId}/resolve")
+    @BiPermission("bi:dataset:query")
+    public Map<String,Object> resolveQualityIssue(@RequestParam Long datasetId,@PathVariable Long issueId,@RequestBody QualityIssueResolutionRequest body){return qualityTasks.resolveIssue(datasetId,issueId,body.note());}
+
+    public record QualityIssueResolutionRequest(String note){}
 
     @Operation(summary = "删除数据集（级联删除字段）")
     @DeleteMapping("/{id}")

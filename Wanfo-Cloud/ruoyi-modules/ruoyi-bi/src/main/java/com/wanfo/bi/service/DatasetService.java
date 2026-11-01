@@ -497,6 +497,9 @@ public class DatasetService
 
     // ==================== 查询 ====================
 
+    public static final int PREVIEW_MAX_ROWS = 100;
+    public static final int BOUNDED_EXTRACT_MAX_ROWS = com.wanfo.bi.warehouse.ClickHouseBatchPublisher.MAX_BATCH_ROWS;
+
     /**
      * 预览数据集数据。
      *
@@ -505,9 +508,26 @@ public class DatasetService
      */
     public Map<String, Object> preview(Long id, int maxRows) throws Exception
     {
+        if (maxRows < 1 || maxRows > PREVIEW_MAX_ROWS) { throw new IllegalArgumentException("预览行数须在 1～100 之间"); }
+        return extractRows(id, maxRows, false, 10);
+    }
+
+    /**
+     * Pipeline production / internal bounded extract. Same auth and SQL paths as preview,
+     * but row cap aligns with warehouse publisher (not the interactive 100-row preview limit).
+     */
+    public Map<String, Object> boundedExtract(Long id, int maxRows) throws Exception
+    {
+        if (maxRows < 1 || maxRows > BOUNDED_EXTRACT_MAX_ROWS)
+            throw new IllegalArgumentException("有界抽取行数须在 1～" + BOUNDED_EXTRACT_MAX_ROWS + " 之间");
+        int timeout = Math.min(180, Math.max(30, maxRows / 500));
+        return extractRows(id, maxRows, true, timeout);
+    }
+
+    private Map<String, Object> extractRows(Long id, int maxRows, boolean productionBound, int queryTimeoutSeconds) throws Exception
+    {
         resources.require("dataset", id, "view");
         resources.require("dataset", id, "query");
-        if (maxRows < 1 || maxRows > 100) { throw new IllegalArgumentException("预览行数须在 1～100 之间"); }
         BiDatasetTableDO dataset = datasetMapper.selectById(id);
         if (dataset == null) { throw new IllegalArgumentException("数据集不存在"); }
         if ("table".equals(dataset.getType()))
@@ -515,10 +535,14 @@ public class DatasetService
             BiDatasource source = datasourceProvider.getById(dataset.getDatasourceId());
             if (source == null || !"0".equals(source.getStatus())) { throw new BiAccessException(403, "数据源不可用"); }
             if ((dataset.getModelJson() != null && !dataset.getModelJson().isBlank())
-                    || fieldMapper.selectByDatasetId(id).stream().anyMatch(f -> "1".equals(f.getExtFlag())))
-            { return previewJoinedTable(dataset, id, maxRows, source); }
+                    || fieldMapper.selectByDatasetId(id).stream().anyMatch(f -> "1".equals(f.getExtFlag()) || (f.getSourceName()!=null&&!f.getSourceName().isBlank())))
+            { return previewJoinedTable(dataset, id, maxRows, source, queryTimeoutSeconds); }
             List<String> fields = fieldMapper.selectByDatasetId(id).stream().map(BiDatasetFieldDO::getOriginName).toList();
-            Map<String,Object> result = catalog.savedPreview(source.getSchemaName(), dataset.getSourceCatalog(), dataset.getSourceTable(), fields, maxRows, policies.resolve(id));
+            Map<String,Object> result = productionBound
+                    ? catalog.savedBoundedExtract(source.getSchemaName(), dataset.getSourceCatalog(), dataset.getSourceTable(),
+                            fields, maxRows, policies.resolve(id), queryTimeoutSeconds)
+                    : catalog.savedPreview(source.getSchemaName(), dataset.getSourceCatalog(), dataset.getSourceTable(),
+                            fields, maxRows, policies.resolve(id));
             result.put("datasetId",id); result.put("datasetName",dataset.getName()); return result;
         }
         resources.requireAdministrator();
@@ -528,7 +552,11 @@ public class DatasetService
     @SuppressWarnings("unchecked")
     public Map<String,Object> qualityReport(Long id)throws Exception{return qualityReport(id,false);}
     public Map<String,Object> qualityReport(Long id,boolean fullScan)throws Exception{
-        if(fullScan)return fullQualityReport(id);
+        return qualityReport(id,fullScan,120);
+    }
+    public Map<String,Object> qualityReport(Long id,boolean fullScan,int timeoutSeconds)throws Exception{
+        if(timeoutSeconds<1||timeoutSeconds>120)throw new IllegalArgumentException("质量扫描超时须在 1～120 秒之间");
+        if(fullScan)return fullQualityReport(id,timeoutSeconds);
         Map<String,Object> sample=preview(id,100);Object rawColumns=sample.get("columns"),rawRows=sample.get("rows");
         if(!(rawColumns instanceof List<?> columns)||!(rawRows instanceof List<?> rows))throw new IllegalStateException("数据质量检查结果格式无效");
         List<String> names=columns.stream().map(String::valueOf).toList();List<Map<String,Object>> records=new ArrayList<>();
@@ -536,7 +564,7 @@ public class DatasetService
         return DatasetQuality.summarize(names,records);
     }
 
-    private Map<String,Object> fullQualityReport(Long id)throws Exception{
+    private Map<String,Object> fullQualityReport(Long id,int timeoutSeconds)throws Exception{
         resources.require("dataset",id,"view");resources.require("dataset",id,"query");
         BiDatasetTableDO dataset=datasetMapper.selectById(id);if(dataset==null)throw new IllegalArgumentException("数据集不存在");
         List<String> columns;List<String> types;String base;List<Object> params=List.of();Connection conn;
@@ -544,7 +572,8 @@ public class DatasetService
             BiDatasource source=datasourceProvider.getById(dataset.getDatasourceId());if(source==null||!"0".equals(source.getStatus()))throw new BiAccessException(403,"数据源不可用");
             List<BiDatasetFieldDO> fields=fieldMapper.selectByDatasetId(id);if(fields.isEmpty())throw new IllegalArgumentException("数据集没有可扫描字段");
             List<String> physicalFields=fields.stream().filter(f->!"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).toList();
-            String physicalBase=dataset.getModelJson()!=null&&!dataset.getModelJson().isBlank()?dataset.getUnionSql():catalog.savedPlan(source.getSchemaName(),dataset.getSourceCatalog(),dataset.getSourceTable(),physicalFields).sql();
+            Map<String,String> sourceMappings=physicalSourceMappings(fields);
+            String physicalBase=dataset.getModelJson()!=null&&!dataset.getModelJson().isBlank()?dataset.getUnionSql():catalog.savedPlan(source.getSchemaName(),dataset.getSourceCatalog(),dataset.getSourceTable(),physicalFields,sourceMappings).sql();
             conn=engine.borrowConnection(source.getSchemaName());
             String quote=conn.getMetaData().getIdentifierQuoteString().trim();base=DatasetQueryBaseBuilder.expand(physicalBase,fields,quote);
             Map<String,String> fieldTypes=new LinkedHashMap<>();for(BiDatasetFieldDO field:fields)fieldTypes.put(field.getOriginName(),String.valueOf(field.getOriginType()));
@@ -569,7 +598,7 @@ public class DatasetService
             aggregate.append(" FROM ").append(relation);
             long rowCount;long[] nullCounts=new long[columns.size()],distinctCounts=new long[columns.size()];
             try(java.sql.PreparedStatement statement=conn.prepareStatement(aggregate.toString())){
-                statement.setQueryTimeout(120);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){
+                statement.setQueryTimeout(timeoutSeconds);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){
                     if(!rs.next())throw new IllegalStateException("全量质量统计没有返回结果");rowCount=rs.getLong(1);int index=2;
                     for(int i=0;i<columns.size();i++){nullCounts[i]=rs.getLong(index++);distinctCounts[i]=rs.getLong(index++);}
                 }
@@ -579,7 +608,7 @@ public class DatasetService
                 String groupFields=columns.stream().map(c->qualityIdentifier(quote,c)).collect(Collectors.joining(", "));
                 String duplicateSql="SELECT COALESCE(SUM(duplicate_count - 1), 0) FROM (SELECT COUNT(*) AS duplicate_count FROM "+relation+" GROUP BY "+groupFields+" HAVING COUNT(*) > 1) duplicate_groups";
                 try(java.sql.PreparedStatement statement=conn.prepareStatement(duplicateSql)){
-                    statement.setQueryTimeout(120);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){if(!rs.next())throw new IllegalStateException("重复行统计没有返回结果");duplicateRows=rs.getLong(1);}
+                    statement.setQueryTimeout(timeoutSeconds);bindQualityParams(statement,params);try(java.sql.ResultSet rs=statement.executeQuery()){if(!rs.next())throw new IllegalStateException("重复行统计没有返回结果");duplicateRows=rs.getLong(1);}
                 }
             }
             return DatasetQuality.fullScan(columns,rowCount,nullCounts,distinctCounts,duplicateRows,System.currentTimeMillis()-started);
@@ -589,13 +618,14 @@ public class DatasetService
     private static String qualityIdentifier(String quote,String name){String end="[".equals(quote)?"]":quote;return quote+name.replace(end,end+end)+end;}
     private static boolean isTextType(String type){String normalized=type==null?"":type.toLowerCase(java.util.Locale.ROOT);return normalized.matches(".*(char|varchar|string|text).*");}
 
-    private Map<String,Object> previewJoinedTable(BiDatasetTableDO dataset, Long id, int maxRows, BiDatasource source) throws Exception
+    private Map<String,Object> previewJoinedTable(BiDatasetTableDO dataset, Long id, int maxRows, BiDatasource source,
+            int queryTimeoutSeconds) throws Exception
     {
         List<BiDatasetFieldDO> fields = fieldMapper.selectByDatasetId(id);
         String physicalBase = dataset.getModelJson()!=null && !dataset.getModelJson().isBlank()
                 ? dataset.getUnionSql()
                 : catalog.savedPlan(source.getSchemaName(),dataset.getSourceCatalog(),dataset.getSourceTable(),
-                    fields.stream().filter(f -> !"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).toList()).sql();
+                    fields.stream().filter(f -> !"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).toList(),physicalSourceMappings(fields)).sql();
         var scope = policies.resolve(id);
         Map<String, String> types = new LinkedHashMap<>();
         for (BiDatasetFieldDO f : fields)
@@ -613,7 +643,7 @@ public class DatasetService
             try (java.sql.PreparedStatement st = conn.prepareStatement(sql))
             {
                 st.setMaxRows(maxRows);
-                st.setQueryTimeout(10);
+                st.setQueryTimeout(Math.max(10, Math.min(180, queryTimeoutSeconds)));
                 for (int p = 0; p < compiled.params().size(); p++)
                 { st.setObject(p + 1, compiled.params().get(p)); }
                 try (java.sql.ResultSet rs = st.executeQuery())
@@ -643,6 +673,13 @@ public class DatasetService
                 }
             }
         }
+    }
+
+    private static Map<String,String> physicalSourceMappings(List<BiDatasetFieldDO> fields)
+    {
+        Map<String,String> mappings=new LinkedHashMap<>();
+        for(BiDatasetFieldDO field:fields) if(field.getSourceName()!=null&&!field.getSourceName().isBlank()) mappings.put(field.getOriginName(),field.getSourceName());
+        return mappings;
     }
 
     private Map<String,Object> previewSql(Long id, int maxRows)

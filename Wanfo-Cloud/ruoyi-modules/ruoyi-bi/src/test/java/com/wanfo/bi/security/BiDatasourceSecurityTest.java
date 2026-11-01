@@ -38,7 +38,7 @@ class BiDatasourceSecurityTest
         when(principals.resolve("ruoyi", "user", "42", "alice")).thenReturn(1001L);
         RuoYiIdentityAdapter adapter = new RuoYiIdentityAdapter(tokens, principals);
         mvc = MockMvcBuilders.standaloneSetup(new BiDatasourceController(
-                mock(DataSourceProvider.class), mock(CalciteQueryEngine.class), service, adapter, resources, mock(PrincipalCatalog.class)))
+                mock(DataSourceProvider.class), mock(CalciteQueryEngine.class), service, mock(com.wanfo.bi.service.CredentialKeyService.class), adapter, resources, mock(PrincipalCatalog.class)))
                 .addInterceptors(new BiSecurityInterceptor(adapter, adapter))
                 .setControllerAdvice(new RuoYiBiWebAdvice()).build();
     }
@@ -154,7 +154,7 @@ class BiDatasourceSecurityTest
             }
         };
         MockMvc alternative = MockMvcBuilders.standaloneSetup(new BiDatasourceController(
-                mock(DataSourceProvider.class), mock(CalciteQueryEngine.class), service, actors, resources, mock(PrincipalCatalog.class)))
+                mock(DataSourceProvider.class), mock(CalciteQueryEngine.class), service, mock(com.wanfo.bi.service.CredentialKeyService.class), actors, resources, mock(PrincipalCatalog.class)))
                 .addInterceptors(new BiSecurityInterceptor(actors, capabilities))
                 .setControllerAdvice(new RuoYiBiWebAdvice()).build();
         alternative.perform(put("/bi/datasource/8/status").contentType("application/json")

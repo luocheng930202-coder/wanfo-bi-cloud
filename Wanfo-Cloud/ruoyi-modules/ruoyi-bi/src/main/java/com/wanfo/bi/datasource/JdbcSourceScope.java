@@ -20,8 +20,10 @@ public record JdbcSourceScope(String catalog,String schema,String name) {
  public String relation(DatabaseMetaData metadata,String table)throws SQLException{return quote(metadata,name)+"."+quote(metadata,table);}
  public static String quote(DatabaseMetaData metadata,String name)throws SQLException{String q=metadata.getIdentifierQuoteString().trim();if(q.isEmpty())throw new IllegalArgumentException("驱动不支持标识符引用");String end=q.equals("[")?"]":q;return q+name.replace(end,end+end)+end;}
  public static String testSql(String type){return type!=null && type.equalsIgnoreCase("oracle")?"SELECT 1 FROM DUAL":"SELECT 1";}
+ /** Append/vendor-limit SQL. Callers enforce product caps (preview ≤100, bounded extract ≤ publisher max). */
  public static String limit(String product,String sql,int rows){
-  if(rows<1 || rows>100)throw new IllegalArgumentException("预览行数须在 1～100 之间");
+  int hardCap = com.wanfo.bi.warehouse.ClickHouseBatchPublisher.MAX_BATCH_ROWS;
+  if(rows<1 || rows>hardCap)throw new IllegalArgumentException("有界行数须在 1～" + hardCap + " 之间");
   String p=product.toLowerCase(Locale.ROOT);
   if(p.contains("sql server"))return sql.replaceFirst("SELECT ","SELECT TOP ("+rows+") ");
   if(p.contains("h2"))return sql+" FETCH FIRST "+rows+" ROWS ONLY";

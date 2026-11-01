@@ -100,8 +100,10 @@ public class ReportSubscriptionService {
             SubscriptionSchedule schedule=readSchedule(sub.get("schedule_json"),((Number)sub.get("interval_minutes")).intValue());Instant when=schedule.nextAfter(Instant.now());if(sub.get("schedule_json")==null)next=LocalDateTime.now().plusMinutes(schedule.intervalMinutes());else nextUtc=SubscriptionSchedule.utc(when);
         }catch(Exception ex){
             status="failed";message=ex instanceof IllegalArgumentException?clean(ex.getMessage(),500):"生成或发送失败，请检查数据权限、数据源和通知通道配置";
-            if(activeChannels.contains("inbox"))try{addInbox(sub,"报表订阅失败："+reportName,message);}catch(Exception ignored){}
-            int failures=attempt;boolean keep=failures<3;Instant retry=Instant.now().plusSeconds(failures==1?60:300);next=LocalDateTime.now().plusMinutes(failures==1?1:5);nextUtc=SubscriptionSchedule.utc(retry);Map<String,Object> done=new LinkedHashMap<>();done.put("id",id);done.put("status",status);done.put("message",message);done.put("failureCount",failures);done.put("enabled",keep?1:0);done.put("nextRun",next);done.put("nextRunUtc",nextUtc);mapper.complete(done);audit(id,sub,started,status,attempt,rows,recipientCount,message);return;
+            int failures=attempt;boolean keep=failures<3;
+            // Keep intermediate retries quiet; the owner gets one terminal in-app alert after retry exhaustion.
+            if(!keep&&activeChannels.contains("inbox"))try{addInbox(sub,"报表订阅失败："+reportName,message);}catch(Exception ignored){}
+            Instant retry=Instant.now().plusSeconds(failures==1?60:300);next=LocalDateTime.now().plusMinutes(failures==1?1:5);nextUtc=SubscriptionSchedule.utc(retry);Map<String,Object> done=new LinkedHashMap<>();done.put("id",id);done.put("status",status);done.put("message",message);done.put("failureCount",failures);done.put("enabled",keep?1:0);done.put("nextRun",next);done.put("nextRunUtc",nextUtc);mapper.complete(done);audit(id,sub,started,status,attempt,rows,recipientCount,message);return;
         }
         Map<String,Object> done=new LinkedHashMap<>();done.put("id",id);done.put("status",status);done.put("message",message);done.put("failureCount",0);done.put("enabled",1);done.put("nextRun",next);done.put("nextRunUtc",nextUtc);mapper.complete(done);audit(id,sub,started,status,attempt,rows,recipientCount,message);
     }

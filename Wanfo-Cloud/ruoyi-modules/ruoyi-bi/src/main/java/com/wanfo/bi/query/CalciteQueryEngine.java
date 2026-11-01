@@ -213,6 +213,10 @@ public class CalciteQueryEngine
      */
     public QueryResult queryWithParams(Connection conn, String sql,
                                        java.util.List<Object> params, int maxRows) throws Exception
+    { return queryWithParams(conn,sql,params,maxRows,properties.getQueryTimeoutSeconds()); }
+
+    public QueryResult queryWithParams(Connection conn, String sql,
+                                       java.util.List<Object> params, int maxRows,int timeoutSeconds) throws Exception
     {
         QueryResult result = new QueryResult();
         result.setExecutedSql(sql);
@@ -220,7 +224,7 @@ public class CalciteQueryEngine
         long start = System.currentTimeMillis();
         try (java.sql.PreparedStatement ps = conn.prepareStatement(sql))
         {
-            ps.setQueryTimeout(properties.getQueryTimeoutSeconds());
+            ps.setQueryTimeout(timeoutSeconds>0?Math.min(timeoutSeconds,properties.getQueryTimeoutSeconds()):properties.getQueryTimeoutSeconds());
             if(QueryGovernor.current()!=null)QueryGovernor.current().watch(ps);
             if (params != null)
             {

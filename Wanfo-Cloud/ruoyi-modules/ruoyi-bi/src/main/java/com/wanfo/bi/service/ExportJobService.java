@@ -132,6 +132,20 @@ public class ExportJobService {
         if (mapper.cancel(id, actors.currentActor().userId()) != 1) throw new IllegalArgumentException("任务已结束，无法取消");
         return Map.of("cancelled", true);
     }
+    /** Re-submit the immutable request snapshot for an owned failed export. */
+    public Map<String,Object> retry(Long id) {
+        caps.require("bi:export:add");
+        Map<String,Object> previous=owned(id, false);
+        if(!"failed".equalsIgnoreCase(String.valueOf(previous.get("status"))))
+            throw new IllegalArgumentException("只有失败的导出任务可以重试");
+        Object encoded=previous.get("requestJson");
+        if(!(encoded instanceof String requestJson)||requestJson.isBlank())
+            throw new IllegalArgumentException("原导出请求已不可用，请重新创建导出任务");
+        Submit request;
+        try { request=json.readValue(requestJson, Submit.class); }
+        catch(Exception invalid) { throw new IllegalArgumentException("原导出请求无法读取，请重新创建导出任务",invalid); }
+        return submit(request);
+    }
     public File download(Long id) {
         return asLive(actors.currentActor(),"bi:export:download",()->downloadCurrent(id));
     }

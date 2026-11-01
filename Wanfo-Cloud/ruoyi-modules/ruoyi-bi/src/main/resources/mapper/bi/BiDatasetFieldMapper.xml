@@ -7,6 +7,7 @@
         <id     property="id"          column="id"/>
         <result property="datasetId"   column="dataset_id"/>
         <result property="originName"  column="origin_name"/>
+        <result property="sourceName"  column="source_name"/>
         <result property="originType"  column="origin_type"/>
         <result property="showName"    column="show_name"/>
         <result property="dimFlag"     column="dim_flag"/>
@@ -22,7 +23,7 @@
     </resultMap>
 
     <sql id="cols">
-        id, dataset_id, origin_name, origin_type, show_name, dim_flag, ext_flag,
+        id, dataset_id, origin_name, source_name, origin_type, show_name, dim_flag, ext_flag,
         ext_formula, date_format, group_name, order_num, status,
         create_time, update_time, del_flag
     </sql>
@@ -36,6 +37,10 @@
     <select id="selectById" parameterType="java.lang.Long" resultMap="FieldResult">
         select <include refid="cols"/> from bi_dataset_field
         where id = #{id} and del_flag = '0'
+    </select>
+
+    <select id="selectByIdIncludingDeleted" parameterType="java.lang.Long" resultMap="FieldResult">
+        select <include refid="cols"/> from bi_dataset_field where id = #{id}
     </select>
 
     <insert id="insert" parameterType="com.wanfo.bi.domain.BiDatasetFieldDO"

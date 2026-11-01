@@ -58,6 +58,9 @@ public class QueryModel implements Serializable
 
     /** 返回行数上限 */
     private Integer limit;
+    /** Zero-based row offset for controlled page APIs. */
+    private Integer offset;
+    private Integer timeoutSeconds;
     private Pivot pivot;
     private TopN topN;
     public record TopN(int count,String metric,boolean includeOther) implements Serializable { }
@@ -108,6 +111,10 @@ public class QueryModel implements Serializable
 
     public Integer getLimit() { return limit; }
     public void setLimit(Integer limit) { this.limit = limit; }
+    public Integer getOffset() { return offset; }
+    public void setOffset(Integer offset) { this.offset = offset; }
+    public Integer getTimeoutSeconds() { return timeoutSeconds; }
+    public void setTimeoutSeconds(Integer timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
 
     /** 维度：SELECT 原始列 + GROUP BY */
     public static class Dimension implements Serializable

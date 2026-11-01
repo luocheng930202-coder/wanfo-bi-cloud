@@ -1,121 +1,175 @@
 package com.wanfo.bi.datasource;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-
 /**
- * 数据源凭据加解密。
- *
- * <p>若依自身用 jasypt 加密配置文件里的密码，但 BI 的数据源密码是<b>运行时由用户录入并落库</b>的，
- * 需要独立的加解密方案。
- *
- * <p>当前用 AES/ECB + Base64，满足"不能明文落库"的底线要求。
- * TODO(S3-T06)：ECB 相同明文产生相同密文，后续应换成 AES/GCM 或改用 KMS。
- *
- * @author zhengliang
+ * Datasource credential crypto. New writes use versioned AES-GCM ({@code encgv:{n}:}).
+ * Still decrypts legacy {@code encg:} (treated as v1) and {@code enc:} (ECB with v1).
  */
 @Component
-public class CredentialCipher
-{
+public class CredentialCipher {
     private static final Logger log = LoggerFactory.getLogger(CredentialCipher.class);
-
     private static final String ALGORITHM = "AES";
-    private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
+    private static final String ECB = "AES/ECB/PKCS5Padding";
+    private static final String GCM = "AES/GCM/NoPadding";
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_BITS = 128;
+    private static final String PREFIX_ECB = "enc:";
+    private static final String PREFIX_GCM = "encg:";
+    private static final String PREFIX_GCM_VER = "encgv:";
+    private static final Pattern VERSIONED = Pattern.compile("^encgv:(\\d+):(.+)$");
 
-    /**
-     * AES 要求密钥必须是 16/24/32 字节，而配置里的原始字符串长度是任意的
-     * （默认值 zhengliang-bi-2026-secret 就有 25 字节）。
-     * 这里统一用 SHA-256 派生出固定 32 字节（AES-256），既满足长度约束，
-     * 也让配置者不必关心字节数；同时避免弱密钥被直接使用。
-     */
-    private final byte[] key;
+    private final CredentialKeyProvider keys;
+    private final SecureRandom random = new SecureRandom();
 
-    public CredentialCipher(@Value("${bi.credential.key:zhengliang-bi-2026-secret}") String rawKey)
-    {
-        try
-        {
-            this.key = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(rawKey.getBytes(StandardCharsets.UTF_8));
-        }
-        catch (java.security.NoSuchAlgorithmException e)
-        {
-            // SHA-256 是 JDK 必备算法，走到这里说明 JRE 异常
-            throw new IllegalStateException("无法初始化凭据加密密钥", e);
-        }
+    @Autowired
+    public CredentialCipher(CredentialKeyProvider keys) {
+        this.keys = keys;
     }
 
-    /** 加密，空值原样返回 */
-    public String encrypt(String plain)
-    {
-        if (plain == null || plain.isEmpty())
-        {
-            return plain;
-        }
-        try
-        {
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, ALGORITHM));
-            byte[] enc = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
-            return "enc:" + Base64.getEncoder().encodeToString(enc);
-        }
-        catch (Exception e)
-        {
+    /** Convenience for tests / single-key bootstraps (active version = 1). */
+    public CredentialCipher(String rawKey) {
+        this(new SingleKeyCredentialKeyProvider(rawKey));
+    }
+
+    /** Encrypt with the active key version. */
+    public String encrypt(String plain) {
+        if (plain == null || plain.isEmpty()) return plain;
+        return encryptWithVersion(plain, keys.activeVersion());
+    }
+
+    public String encryptWithVersion(String plain, int version) {
+        if (plain == null || plain.isEmpty()) return plain;
+        try {
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            random.nextBytes(iv);
+            Cipher cipher = Cipher.getInstance(GCM);
+            cipher.init(Cipher.ENCRYPT_MODE, secret(version), new GCMParameterSpec(GCM_TAG_BITS, iv));
+            byte[] cipherBytes = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
+            ByteBuffer buffer = ByteBuffer.allocate(iv.length + cipherBytes.length);
+            buffer.put(iv);
+            buffer.put(cipherBytes);
+            return PREFIX_GCM_VER + version + ":" + Base64.getEncoder().encodeToString(buffer.array());
+        } catch (Exception e) {
             throw new IllegalStateException("凭据加密失败: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 解密。
-     * <p>兼容历史明文：没有 enc: 前缀的直接原样返回，
-     * 这样迁移期新旧数据混存也不会炸。
+     * Decrypt. Compatible: plaintext, {@code enc:} ECB(v1), {@code encg:} GCM(v1), {@code encgv:n:} GCM(n).
      */
-    public String decrypt(String cipherText)
-    {
-        if (cipherText == null || cipherText.isEmpty())
-        {
-            return cipherText;
+    public String decrypt(String cipherText) {
+        if (cipherText == null || cipherText.isEmpty()) return cipherText;
+        Matcher ver = VERSIONED.matcher(cipherText);
+        if (ver.matches()) return decryptGcm(ver.group(2), Integer.parseInt(ver.group(1)));
+        if (cipherText.startsWith(PREFIX_GCM)) return decryptGcm(cipherText.substring(PREFIX_GCM.length()), 1);
+        if (cipherText.startsWith(PREFIX_ECB)) return decryptEcb(cipherText.substring(PREFIX_ECB.length()));
+        return cipherText;
+    }
+
+    /** Rewrap any decryptable value to the active versioned GCM envelope. */
+    public String rewrapToActive(String cipherText) {
+        String plain = decrypt(cipherText);
+        if (plain == null || plain.isEmpty()) return plain;
+        String target = encrypt(plain);
+        if (cipherText != null && cipherText.equals(target)) return cipherText;
+        return target;
+    }
+
+    /** @deprecated use {@link #rewrapToActive(String)}; kept for callers migrating from ECB→GCM. */
+    public String rewrapToGcm(String cipherText) {
+        return rewrapToActive(cipherText);
+    }
+
+    public int activeVersion() {
+        return keys.activeVersion();
+    }
+
+    public String providerId() {
+        return keys.providerId();
+    }
+
+    public Map<String, Object> envelopeInfo(String cipherText) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        if (cipherText == null || cipherText.isEmpty()) {
+            info.put("kind", "EMPTY");
+            return info;
         }
-        if (!cipherText.startsWith("enc:"))
-        {
-            return cipherText;
+        Matcher ver = VERSIONED.matcher(cipherText);
+        if (ver.matches()) {
+            info.put("kind", "GCM_VERSIONED");
+            info.put("version", Integer.parseInt(ver.group(1)));
+            return info;
         }
-        try
-        {
-            byte[] data = Base64.getDecoder().decode(cipherText.substring(4));
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, ALGORITHM));
+        if (cipherText.startsWith(PREFIX_GCM)) {
+            info.put("kind", "GCM_LEGACY");
+            info.put("version", 1);
+            return info;
+        }
+        if (cipherText.startsWith(PREFIX_ECB)) {
+            info.put("kind", "ECB_LEGACY");
+            info.put("version", 1);
+            return info;
+        }
+        info.put("kind", "PLAINTEXT");
+        return info;
+    }
+
+    private String decryptGcm(String encoded, int version) {
+        try {
+            byte[] payload = Base64.getDecoder().decode(encoded);
+            if (payload.length <= GCM_IV_LENGTH) throw new IllegalArgumentException("GCM 密文过短");
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            byte[] body = new byte[payload.length - GCM_IV_LENGTH];
+            System.arraycopy(payload, 0, iv, 0, GCM_IV_LENGTH);
+            System.arraycopy(payload, GCM_IV_LENGTH, body, 0, body.length);
+            Cipher cipher = Cipher.getInstance(GCM);
+            cipher.init(Cipher.DECRYPT_MODE, secret(version), new GCMParameterSpec(GCM_TAG_BITS, iv));
+            return new String(cipher.doFinal(body), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.warn("GCM 凭据解密失败 version={}: {}", version, e.getMessage());
+            throw new IllegalStateException("凭据解密失败，请检查 bi.credential.key / keys." + version + " 配置", e);
+        }
+    }
+
+    private String decryptEcb(String encoded) {
+        try {
+            byte[] data = Base64.getDecoder().decode(encoded);
+            Cipher cipher = Cipher.getInstance(ECB);
+            cipher.init(Cipher.DECRYPT_MODE, secret(1));
             return new String(cipher.doFinal(data), StandardCharsets.UTF_8);
-        }
-        catch (Exception e)
-        {
-            log.warn("凭据解密失败，可能密钥已变更: {}", e.getMessage());
+        } catch (Exception e) {
+            log.warn("ECB 凭据解密失败: {}", e.getMessage());
             throw new IllegalStateException("凭据解密失败，请检查 bi.credential.key 配置", e);
         }
     }
 
-    /** 脱敏展示：138****8000 */
-    public static String mask(String value)
-    {
-        if (value == null || value.length() <= 4)
-        {
-            return value == null ? null : "****";
-        }
+    private SecretKey secret(int version) {
+        return new SecretKeySpec(keys.keyMaterial(version), ALGORITHM);
+    }
+
+    public static String mask(String value) {
+        if (value == null || value.length() <= 4) return value == null ? null : "****";
         int keep = value.length() / 4;
         StringBuilder sb = new StringBuilder();
         sb.append(value, 0, keep);
-        for (int i = 0; i < value.length() - keep * 2; i++)
-        {
-            sb.append('*');
-        }
+        for (int i = 0; i < value.length() - keep * 2; i++) sb.append('*');
         sb.append(value, value.length() - keep, value.length());
         return sb.toString();
     }
 }
-

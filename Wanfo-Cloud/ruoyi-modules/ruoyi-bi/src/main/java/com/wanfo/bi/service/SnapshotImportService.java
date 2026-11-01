@@ -20,6 +20,9 @@ public class SnapshotImportService {
     private ApiOAuthFlowService oauthFlows;
     @org.springframework.beans.factory.annotation.Autowired
     public void configureOAuthFlows(ApiOAuthFlowService oauthFlows){this.oauthFlows=oauthFlows;}
+    private DependentFieldMigrationService dependentMigrations;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    public void configureDependentMigrations(DependentFieldMigrationService dependentMigrations){this.dependentMigrations=dependentMigrations;}
     private final DbDataSourceProvider sources;
     private final BiSourceSnapshotMapper snapshots;
     private final SnapshotRegistry registry;
@@ -71,7 +74,7 @@ public class SnapshotImportService {
     private static ApiSnapshotClient.OAuth withoutAccessTokenOAuth(ApiSnapshotClient.OAuth oauth){return oauth==null?null:new ApiSnapshotClient.OAuth(oauth.tokenUrl(),oauth.clientId(),oauth.clientSecret(),oauth.scope(),oauth.tokenField(),oauth.grantType(),oauth.refreshToken(),oauth.redirectUri(),null);}
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes)throws Exception {return file(id,name,alias,filename,sheet,bytes,"replace",null);}
     public Map<String,Object> previewFile(Long id,String filename,String sheet,byte[] bytes)throws Exception {
-        var old=authorize(id,filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel");var data=SnapshotParser.file(bytes,filename,sheet);
+        var old=authorize(id,fileKind(filename));var data=SnapshotParser.file(bytes,filename,sheet);
         return Map.of("columns",data.columns(),"rows",data.rows().subList(0,Math.min(10,data.rows().size())),"rowCount",data.rows().size(),"existingColumns",old==null?List.of():registry.decode(old).columns());
     }
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes)throws Exception {return file(id,name,alias,filename,sheet,bytes,mode,columnTypes,"reject");}
@@ -79,7 +82,7 @@ public class SnapshotImportService {
         return file(id,name,alias,filename,sheet,bytes,mode,columnTypes,invalidMode,null,"none",null);
     }
     public Map<String,Object> file(Long id,String name,String alias,String filename,String sheet,byte[] bytes,String mode,String columnTypes,String invalidMode,String columnMapping,String dedupeMode,String dedupeKeys)throws Exception {
-        String kind=filename.toLowerCase(Locale.ROOT).endsWith(".csv")?"csv":"excel";
+        String kind=fileKind(filename);
         var old=authorize(id,kind);
         var data=mapColumns(SnapshotParser.file(bytes,filename,sheet),columnMapping);
         if(columnTypes!=null && !columnTypes.isBlank()){
@@ -106,7 +109,12 @@ public class SnapshotImportService {
         String safe=filename.replace('\\','/');safe=safe.substring(safe.lastIndexOf('/')+1);
         if(safe.length()>200)safe=safe.substring(safe.length()-200);
         boolean structureChange="replace-structure".equals(mode);
-        Map<String,Object> result=new LinkedHashMap<>(publish(id,name,alias,kind,data,null,safe,old,structureChange));result.put("rejectedRows",rejected);result.put("rowErrors",errors);result.put("duplicateRows",deduplicated.removed());return result;
+        Map<String,Object> result=new LinkedHashMap<>(publish(id,name,alias,kind,data,null,safe,old,structureChange));result.put("rejectedRows",rejected);result.put("rowErrors",errors);result.put("duplicateRows",deduplicated.removed());
+        if(structureChange&&id!=null&&dependentMigrations!=null){
+            try{result.put("dependentFieldMigration",dependentMigrations.applyForDatasource(id,data.columns().stream().map(SnapshotData.Column::name).toList()));}
+            catch(RuntimeException ignored){result.put("dependentFieldMigration",Map.of("applied",false,"warning","依赖字段自动迁移跳过"));}
+        }
+        return result;
     }
     private SnapshotData mapColumns(SnapshotData data,String mappingJson)throws Exception {
         if(mappingJson==null||mappingJson.isBlank())return data;
@@ -181,5 +189,11 @@ public class SnapshotImportService {
             result.put("url",config.url());result.put("dataPath",config.dataPath());result.put("headersSet",config.headers()!=null && !config.headers().isEmpty());result.put("pagination",config.pagination());result.put("method",config.method()==null?"GET":config.method());result.put("body",config.body());result.put("flatten",config.flatten());result.put("expandArrayPath",config.expandArrayPath());result.put("expandArrayPaths",config.arrayPaths());if(config.oauth()!=null)result.put("oauth",Map.of("tokenUrl",config.oauth().tokenUrl(),"clientId",config.oauth().clientId(),"scope",config.oauth().scope()==null?"":config.oauth().scope(),"tokenField",config.oauth().tokenField()==null?"access_token":config.oauth().tokenField(),"secretSet",config.oauth().clientSecret()!=null,"grantType",config.oauth().grantType()==null?"client_credentials":config.oauth().grantType(),"refreshTokenSet",config.oauth().refreshToken()!=null));if(refreshes!=null)result.put("schedule",refreshes.status(id));
         }catch(java.io.IOException e){throw new IllegalStateException("API 配置读取失败");}
         return result;
+    }
+    private static String fileKind(String filename){
+        String lower=filename==null?"":filename.toLowerCase(Locale.ROOT);
+        if(lower.endsWith(".csv"))return "csv";
+        if(lower.endsWith(".parquet"))return "parquet";
+        return "excel";
     }
 }

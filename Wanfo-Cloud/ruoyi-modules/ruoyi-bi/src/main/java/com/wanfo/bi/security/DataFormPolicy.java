@@ -10,6 +10,10 @@ public final class DataFormPolicy {
   if(!matches(values,types,scope))throw new BiAccessException(403,"填报值不符合当前数据范围，请检查受限字段");
  }
  public static boolean matches(Map<String,Object> row,Map<String,String> types,DatasetDataPolicy.Scope scope){
+  for(var entry:scope.allowedValues().entrySet()){
+   String field=entry.getKey();if(!types.containsKey(field))throw new BiAccessException(403,"数仓权限字段已失效");Object actual=row.get(field);
+   if(actual==null||!entry.getValue().contains(actual.toString()))return false;
+  }
   for(var rule:scope.rows()){
    String field=rule.fieldName(),op=rule.ruleKind();if(!types.containsKey(field))throw new BiAccessException(403,"数据范围字段已失效");Object actual=row.get(field);
    if("IS_NULL".equals(op)){if(actual!=null)return false;continue;}if("IS_NOT_NULL".equals(op)){if(actual==null)return false;continue;}if(actual==null)return false;

@@ -3,7 +3,7 @@ import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
 import type { Field, QueryModel, ChartResult } from './chart'
 
-export type MetricKind = 'scalar' | 'table'
+export type MetricKind = 'scalar' | 'table' | 'composite'
 export type MetricPublishStatus = 'draft' | 'published'
 export interface MetricDefinition {
   schemaVersion: 1
@@ -11,7 +11,16 @@ export interface MetricDefinition {
   code: string
   kind: MetricKind
   query: QueryModel
+  businessDefinition?: string
+  businessDimensions?: string
+  grain?: string
+  unit?: string
+  timeZone?: string
+  owner?: string
+  componentMetricCodes?: string[]
+  compositeExpression?: string
 }
+export interface MetricConflict { leftId: number; leftCode: string; leftName: string; rightId: number; rightCode: string; rightName: string; datasetId: number; field: string; aggregation: string; differences: string[] }
 export interface MetricSummary {
   id: number
   code: string
@@ -22,7 +31,36 @@ export interface MetricSummary {
   publishStatus: MetricPublishStatus
   publishedVersion: number
   inUse: boolean
+  pendingPublish?: boolean
   resourceActions: string[]
+}
+
+export interface MetricConsumerContext {
+  id: number
+  code: string
+  name: string
+  kind: MetricKind
+  publishStatus: MetricPublishStatus
+  publishedVersion: number
+  pinNote: string
+  businessDefinition?: string
+  businessDimensions?: string
+  grain?: string
+  unit?: string
+  timeZone?: string
+  owner?: string
+  glossaryTerms: Array<{ id: number; termCode: string; name: string; definitionText?: string; certificationStatus?: string }>
+}
+
+export interface MetricPublishRequest {
+  id: number
+  metricId: number
+  status: string
+  requestNote?: string
+  decisionNote?: string
+  requestedBy?: string
+  requestedAt?: string
+  metricVersion: number
 }
 export interface MetricDetail extends MetricSummary {
   definition: MetricDefinition
@@ -37,6 +75,12 @@ export interface MetricHistory {
   datasetId: number
   publishBy: string
   publishTime: string
+  businessDefinition?: string
+  businessDimensions?: string
+  grain?: string
+  unit?: string
+  timeZone?: string
+  owner?: string
 }
 export interface MetricUsage {
   id: number
@@ -48,6 +92,7 @@ export interface MetricUsage {
 }
 
 export const listMetrics = (): Promise<AjaxResult<MetricSummary[]>> => request({ url: '/bi/metric' })
+export const listMetricConflicts = (): Promise<AjaxResult<MetricConflict[]>> => request({ url: '/bi/metric/conflicts' })
 export const getMetric = (id: number): Promise<AjaxResult<MetricDetail>> => request({ url: `/bi/metric/${id}` })
 export const saveMetric = (definition: MetricDefinition, id?: number, version?: number): Promise<AjaxResult<{ id: number; version: number }>> =>
   request({ url: id ? `/bi/metric/${id}` : '/bi/metric', method: id ? 'put' : 'post', data: { definition, version } })
@@ -58,8 +103,14 @@ export const savedMetricData = (id: number): Promise<AjaxResult<ChartResult>> =>
   request({ url: `/bi/metric/${id}/data`, method: 'post', timeout: 60000 })
 export const metricDataByCode = (code: string): Promise<AjaxResult<ChartResult>> =>
   request({ url: `/bi/metric/code/${encodeURIComponent(code)}/data`, method: 'post', timeout: 60000 })
-export const publishMetric = (id: number, version: number): Promise<AjaxResult<{ version: number; publishedVersion: number }>> =>
-  request({ url: `/bi/metric/${id}/publish`, method: 'post', data: { version } })
+export const publishMetric = (id: number, version: number, note?: string): Promise<AjaxResult<{ publishRequestId: number; publishRequestStatus: string }>> =>
+  request({ url: `/bi/metric/${id}/publish`, method: 'post', data: { version, note } })
+export const listPendingMetricPublishRequests = (): Promise<AjaxResult<MetricPublishRequest[]>> =>
+  request({ url: '/bi/metric/publish-requests/pending' })
+export const decideMetricPublish = (requestId: number, approve: boolean, note?: string): Promise<AjaxResult<Record<string, unknown>>> =>
+  request({ url: `/bi/metric/publish-requests/${requestId}/decide`, method: 'post', data: { approve, note } })
+export const metricConsumerContext = (id: number): Promise<AjaxResult<MetricConsumerContext>> =>
+  request({ url: `/bi/metric/${id}/consumer-context` })
 export const unpublishMetric = (id: number, version: number): Promise<AjaxResult<{ version: number }>> =>
   request({ url: `/bi/metric/${id}/unpublish`, method: 'post', data: { version } })
 export const metricHistory = (id: number): Promise<AjaxResult<MetricHistory[]>> => request({ url: `/bi/metric/${id}/history` })

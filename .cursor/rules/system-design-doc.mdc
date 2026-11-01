@@ -1,0 +1,16 @@
+---
+description: New platform/BI capabilities must update docs/SYSTEM-DESIGN.md
+alwaysApply: true
+---
+
+# System design doc maintenance
+
+When you add, deepen, or materially change a Wanfo BI/platform capability (APIs, Flyway `dp_*`/`bi_*` tables, run lifecycle, warehouse write path, task-pool lanes, Data API, quality, pipeline, catalog, etc.):
+
+1. Update the matching chapter in [docs/SYSTEM-DESIGN.md](docs/SYSTEM-DESIGN.md): data flow, core tables/statuses, key services/APIs, gates/failure semantics, and known boundaries.
+2. Add one line under that doc’s appendix change log (`16.4`).
+3. Do not treat acceptance records alone as the design source of truth — acceptance stores evidence; **SYSTEM-DESIGN** stores principles.
+
+If the change is BI-consumption-only (chart/dashboard visuals), a short update to chapter 15 plus appendix is enough; link out to specialized BI docs for deep UI detail.
+
+Never invent DataWorks/S4+ scope in SYSTEM-DESIGN as if already implemented.

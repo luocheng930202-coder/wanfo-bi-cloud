@@ -7,11 +7,13 @@ import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.wanfo.bi.config.BiProperties;
 import com.wanfo.bi.security.BiResourceAuthorizer;
 import com.wanfo.bi.domain.BiDatasourceDO;
 import com.wanfo.bi.datasource.CredentialCipher;
+import com.wanfo.bi.datasource.ConnectorRegistry;
 import com.wanfo.bi.datasource.DbDataSourceProvider;
 import com.wanfo.bi.query.CalciteQueryEngine;
 import org.slf4j.Logger;
@@ -36,17 +38,20 @@ public class BiDataSourceService
 
     private final DbDataSourceProvider provider;
     private final CredentialCipher cipher;
+    private final CredentialKeyService credentialKeys;
     private final CalciteQueryEngine engine;
     private final BiProperties properties;
     private final BiResourceAuthorizer resources;
 
     public BiDataSourceService(DbDataSourceProvider provider,
                                CredentialCipher cipher,
+                               CredentialKeyService credentialKeys,
                                CalciteQueryEngine engine,
                                BiProperties properties, BiResourceAuthorizer resources)
     {
         this.provider = provider;
         this.cipher = cipher;
+        this.credentialKeys = credentialKeys;
         this.engine = engine;
         this.properties = properties;
         this.resources = resources;
@@ -84,6 +89,16 @@ public class BiDataSourceService
     public BiDatasourceDO get(Long id)
     {
         return provider.getRow(id);
+    }
+
+    /**
+     * Rewraps legacy ECB ({@code enc:}) / unversioned GCM ({@code encg:}) to active versioned GCM ({@code encgv:n:}).
+     * Delegates to {@link CredentialKeyService#rotate} semantics for the active key version.
+     */
+    @Transactional
+    public Map<String, Object> rewrapCredentialsToGcm(String operator)
+    {
+        return credentialKeys.rotate(null, "rewrap-gcm via legacy endpoint by " + operator);
     }
 
     // ------------------------------------------------------------------ 写入
@@ -220,6 +235,11 @@ public class BiDataSourceService
         BiDatasourceDO saved = form.getId() == null ? null : provider.getRow(form.getId());
         if (form.getId() != null && saved == null) { throw new IllegalArgumentException("数据源不存在"); }
         target.setType(saved == null ? form.getType() : saved.getType());
+        if (saved == null && (ConnectorRegistry.find(target.getType()) == null
+                || com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(target.getType())))
+        {
+            throw new IllegalArgumentException("不支持的数据源类型: " + target.getType());
+        }
         target.setJdbcUrl(form.getJdbcUrl());
         target.setSourceSchema(form.getSourceSchema());
         target.setUsername(form.getUsername());
@@ -377,6 +397,10 @@ public class BiDataSourceService
     private void validate(BiDatasourceDO form, boolean creating)
     {
         if (com.wanfo.bi.datasource.snapshot.SnapshotRegistry.supports(form.getType()))throw new IllegalArgumentException("API 和文件请使用数据导入入口");
+        if (creating && ConnectorRegistry.find(form.getType()) == null)
+        {
+            throw new IllegalArgumentException("不支持的数据源类型: " + form.getType());
+        }
         if(form.getSourceSchema()!=null && (form.getSourceSchema().length()>128 || form.getSourceSchema().chars().anyMatch(Character::isISOControl)))throw new IllegalArgumentException("物理 schema 无效");
         if (form.getName() == null || form.getName().isBlank())
         {
@@ -429,7 +453,7 @@ public class BiDataSourceService
             case "h2" -> "org.h2.Driver";
             case "impala" -> "com.cloudera.impala.jdbc.Driver";
             case "kingbase" -> "com.kingbase8.Driver";
-            default -> "com.mysql.cj.jdbc.Driver";
+            default -> throw new IllegalArgumentException("不支持的数据源类型: " + type);
         };
     }
 }

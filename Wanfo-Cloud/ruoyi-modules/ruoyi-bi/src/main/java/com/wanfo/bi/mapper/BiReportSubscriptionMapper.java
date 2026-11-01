@@ -6,6 +6,10 @@ import org.apache.ibatis.annotations.*;
 
 @Mapper
 public interface BiReportSubscriptionMapper {
+    @Select("SELECT id,name,source_type AS sourceType,source_id AS sourceId,enabled,next_run AS nextRun,last_run AS lastRun,last_status AS lastStatus,last_message AS lastMessage,create_time AS createTime FROM bi_report_subscription WHERE owner_principal=#{owner} ORDER BY id DESC LIMIT 100")
+    List<Map<String,Object>> recentSchedules(@Param("owner") Long owner);
+    @Select("SELECT id,subscription_id AS subscriptionId,subscription_name AS taskName,source_type AS sourceType,source_id AS sourceId,owner_principal AS ownerId,started_at AS startedAt,finished_at AS finishedAt,status,attempt,row_count AS rowCount,recipient_count AS recipientCount,message FROM bi_report_subscription_audit WHERE owner_principal=#{owner} ORDER BY id DESC LIMIT 100")
+    List<Map<String,Object>> recentHistory(@Param("owner") Long owner);
     @Select("SELECT id,name,source_type AS sourceType,source_id AS sourceId,panel_key AS panelKey,format,interval_minutes AS intervalMinutes,channels_json AS channels,schedule_json AS schedule,template_title AS templateTitle,template_body AS templateBody,enabled,COALESCE(next_run_utc,next_run) AS nextRun,last_run AS lastRun,last_status AS lastStatus,last_message AS lastMessage,JSON_LENGTH(recipients_json) AS recipientCount,create_time AS createTime FROM bi_report_subscription WHERE owner_principal=#{owner} ORDER BY id DESC")
     List<Map<String,Object>> list(@Param("owner") Long owner);
 

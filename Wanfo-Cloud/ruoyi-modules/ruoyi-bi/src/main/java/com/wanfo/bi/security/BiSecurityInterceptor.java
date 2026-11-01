@@ -21,6 +21,7 @@ public class BiSecurityInterceptor implements HandlerInterceptor
     {
         if (handler instanceof HandlerMethod method)
         {
+            if (method.getMethodAnnotation(BiApiKeyAccess.class) != null) return true;
             // All BI endpoints require a verified session, even those awaiting resource authorization.
             if (method.getMethodAnnotation(BiShareAccess.class) != null)
             {

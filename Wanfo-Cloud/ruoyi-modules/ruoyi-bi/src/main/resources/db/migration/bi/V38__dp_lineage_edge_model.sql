@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS dp_lineage_edge (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    edge_key CHAR(64) NOT NULL,
+    source_asset_id BIGINT NOT NULL,
+    target_asset_id BIGINT NOT NULL,
+    lineage_level VARCHAR(16) NOT NULL COMMENT 'TABLE or COLUMN',
+    edge_kind VARCHAR(24) NOT NULL COMMENT 'DERIVES, CONTAINS, MATERIALIZES, REFERENCES',
+    source_method VARCHAR(24) NOT NULL COMMENT 'AUTO_SQL, PIPELINE, MANUAL',
+    confidence DECIMAL(5,4) NOT NULL,
+    source_version_id BIGINT DEFAULT NULL,
+    target_version_id BIGINT DEFAULT NULL,
+    evidence_json LONGTEXT DEFAULT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE, STALE, REVOKED',
+    revision_no INT NOT NULL DEFAULT 1,
+    observed_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_by VARCHAR(64) NOT NULL DEFAULT '',
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    update_by VARCHAR(64) NOT NULL DEFAULT '',
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_dp_lineage_edge_key (edge_key),
+    KEY idx_dp_lineage_source (source_asset_id,status,lineage_level),
+    KEY idx_dp_lineage_target (target_asset_id,status,lineage_level),
+    KEY idx_dp_lineage_versions (source_version_id,target_version_id),
+    CONSTRAINT fk_dp_lineage_source_asset FOREIGN KEY (source_asset_id) REFERENCES dp_asset(id),
+    CONSTRAINT fk_dp_lineage_target_asset FOREIGN KEY (target_asset_id) REFERENCES dp_asset(id),
+    CONSTRAINT fk_dp_lineage_source_version FOREIGN KEY (source_version_id) REFERENCES dp_asset_version(id) ON DELETE SET NULL,
+    CONSTRAINT fk_dp_lineage_target_version FOREIGN KEY (target_version_id) REFERENCES dp_asset_version(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Current data lineage edges with provenance and confidence';
+
+CREATE TABLE IF NOT EXISTS dp_lineage_edge_revision (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    edge_id BIGINT NOT NULL,
+    revision_no INT NOT NULL,
+    edge_snapshot_json LONGTEXT NOT NULL,
+    change_kind VARCHAR(24) NOT NULL COMMENT 'CREATED, UPDATED, INVALIDATED, RECOMPUTED',
+    changed_by VARCHAR(64) NOT NULL DEFAULT '',
+    changed_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_dp_lineage_revision (edge_id,revision_no),
+    KEY idx_dp_lineage_revision_changed (changed_at),
+    CONSTRAINT fk_dp_lineage_revision_edge FOREIGN KEY (edge_id) REFERENCES dp_lineage_edge(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Auditable revisions for lineage edge changes';

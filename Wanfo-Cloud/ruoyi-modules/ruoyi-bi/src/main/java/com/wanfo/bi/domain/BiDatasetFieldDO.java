@@ -13,6 +13,8 @@ public class BiDatasetFieldDO
     private Long datasetId;
     /** 原始字段名（SQL 里引用这个） */
     private String originName;
+    /** Physical source field when the stable BI field was renamed. */
+    private String sourceName;
     /** 原始数据类型 */
     private String originType;
     /** 前端显示名 */
@@ -41,6 +43,9 @@ public class BiDatasetFieldDO
 
     public String getOriginName() { return originName; }
     public void setOriginName(String originName) { this.originName = originName; }
+
+    public String getSourceName() { return sourceName; }
+    public void setSourceName(String sourceName) { this.sourceName = sourceName; }
 
     public String getOriginType() { return originType; }
     public void setOriginType(String originType) { this.originType = originType; }

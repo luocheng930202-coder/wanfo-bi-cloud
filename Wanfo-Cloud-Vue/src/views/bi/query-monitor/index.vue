@@ -1,5 +1,5 @@
 <template>
-  <main class="query-monitor">
+  <main class="query-monitor bi-page">
     <el-result v-if="!authorized" icon="warning" title="无查询监控权限" sub-title="仅 BI 资源管理员可查看和停止查询"/>
     <template v-else>
       <header><div><h1>查询监控</h1><p>查看查询负载与慢查询记录，通过排查编号定位问题。</p></div><div class="actions"><el-switch v-model="autoRefresh" aria-label="每5秒自动刷新" active-text="每 5 秒刷新"/><el-button :loading="loading" @click="load">刷新</el-button></div></header>

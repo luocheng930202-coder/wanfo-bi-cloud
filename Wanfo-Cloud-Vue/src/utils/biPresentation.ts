@@ -13,6 +13,7 @@ export function normalizeDashboard(d: DashboardDefinition): DashboardDefinition 
   }
   if(d.kind==='screen' && (!Number.isInteger(d.scene?.width) || !Number.isInteger(d.scene?.height) || d.scene!.width<320 || d.scene!.width>8192 || d.scene!.height<240 || d.scene!.height>8192 || !['contain','width','none'].includes(d.scene!.fit)))throw new Error('大屏尺寸或适配方式无效')
   for(const p of d.panels)if(p.componentType==='border' || p.componentType==='line'){if(d.kind!=='screen' || p.content?.text!=null || p.content?.image!=null)throw new Error('装饰组件仅支持大屏且不能携带文本或图片');normalizeDecoration(p.content?.decoration)}
+  for(const p of d.panels)if(p.componentType==='scene3d' && (!p.content?.scene3d || !['map','building','chart'].includes(p.content.scene3d.mode) || p.content.text!=null || p.content.image!=null))throw new Error('3D 场景类型无效')
   validateContainerLayout(d.panels,d.kind)
   const hidden=new Set(d.panels.filter(p=>p.hidden).map(p=>p.key)),visibility=new Map<string,boolean>()
   for(const p of d.panels){if(p.hidden!=null && typeof p.hidden!=='boolean')throw new Error('隐藏状态无效');if(p.hidden && d.kind!=='screen')throw new Error('仅大屏支持隐藏图层');if(p.groupKey){if(visibility.has(p.groupKey) && visibility.get(p.groupKey)!==!!p.hidden)throw new Error('组合须整体隐藏或显示');visibility.set(p.groupKey,!!p.hidden)}}
@@ -22,7 +23,7 @@ export function normalizeDashboard(d: DashboardDefinition): DashboardDefinition 
   if([...groups.values()].some(n=>n<2))throw new Error('组合须至少包含两个组件')
   const seconds=d.scene?.refreshSeconds ?? 0
   if(d.kind==='screen' && (!Number.isInteger(seconds) || (seconds!==0 && (seconds<10 || seconds>3600))))throw new Error('刷新间隔须为0或10至3600秒')
-  if (d.panels.some(p => p.componentType && !['chart','kpi','text','image','border','line','container'].includes(p.componentType))) throw new Error('存在不支持的看板组件')
+  if (d.panels.some(p => p.componentType && !['chart','kpi','scene3d','text','image','border','line','container'].includes(p.componentType))) throw new Error('存在不支持的看板组件')
   return { ...d, interaction: {controls: [], links: [], ...d.interaction}, kind: d.kind || 'dashboard', layout: d.kind==='screen'?'absolute':'grid', scene:d.kind==='screen'?{...d.scene!}:undefined, appearance: { ...defaultAppearance(d.appearance?.theme), ...d.appearance },
     panels: d.panels.map(p => ({ ...p, componentType: p.componentType || 'chart', locked: p.locked ?? false, hidden:p.hidden ?? false, style: { showTitle: true, titleAlign: 'left', ...p.style } })) }
 }

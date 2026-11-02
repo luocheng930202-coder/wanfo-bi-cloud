@@ -34,6 +34,7 @@ export const constantRoutes = [
       { path: 'workbench', name: 'BiWorkbench', component: () => import('@/views/bi/workbench/index.vue'), meta: { title: '工作台', noCache: true, activeMenu: '/bi-admin/workbench' } },
       { path: 'query-monitor', name: 'BiQueryMonitor', component: () => import('@/views/bi/query-monitor/index.vue'), meta: { title: '查询监控', noCache: true, activeMenu: '/bi-admin/query-monitor' } },
       { path: 'catalog', name: 'BiCatalog', component: () => import('@/views/bi/catalog/index.vue'), meta: { title: '数据资产目录', noCache: true, activeMenu: '/bi-admin/catalog' } },
+      { path: 'screen-lab', name: 'BiCanteen3DScreenLab', component: () => import('@/views/bi/dashboard/SmartCanteenScreen.vue'), meta: { title: '智慧食堂大屏原型', noCache: true, activeMenu: '/bi-admin/dashboard' } },
       { path: 'pipeline', name: 'BiPipeline', component: () => import('@/views/bi/pipeline/index.vue'), meta: { title: '数据加工流程', noCache: true, activeMenu: '/bi-admin/pipeline' } },
       { path: 'warehouse', name: 'BiWarehouse', component: () => import('@/views/bi/warehouse/index.vue'), meta: { title: '数仓装载', noCache: true, activeMenu: '/bi-admin/warehouse' } },
       { path: 'lineage', name: 'BiLineage', component: () => import('@/views/bi/lineage/index.vue'), meta: { title: '数据血缘', noCache: true, activeMenu: '/bi-admin/lineage' } },

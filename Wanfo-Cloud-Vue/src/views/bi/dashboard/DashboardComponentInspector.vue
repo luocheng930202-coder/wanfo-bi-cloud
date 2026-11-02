@@ -35,6 +35,11 @@
             <el-radio-group :model-value="panel.style!.titleAlign" class="title-align-control" aria-label="标题对齐" @update:model-value="v => patchStyle({ titleAlign: v })"><el-radio-button value="left">左对齐</el-radio-button><el-radio-button value="center">居中</el-radio-button><el-radio-button value="right">右对齐</el-radio-button></el-radio-group>
           </el-form-item>
           <el-form-item v-if="panel.componentType === 'text'" label="文本内容"><el-input :model-value="panel.content!.text" type="textarea" :rows="7" maxlength="2000" show-word-limit @update:model-value="v => patchContent({ text: v })"/></el-form-item>
+          <template v-if="panel.componentType === 'scene3d'">
+            <div class="property-section">3D 场景</div>
+            <el-form-item label="场景类型"><el-select :model-value="panel.content?.scene3d?.mode || 'building'" aria-label="3D 场景类型" @update:model-value="v => patchSceneMode(v)"><el-option label="食堂建筑" value="building"/><el-option label="区域分布" value="map"/><el-option label="数据柱图" value="chart"/></el-select></el-form-item>
+            <p class="property-help">场景可在大屏画布中拖动、缩放并随版本保存。区域分布当前为示意布局。</p>
+          </template>
           <template v-if="panel.content?.decoration">
             <div class="property-section">装饰样式</div>
             <el-form-item label="颜色"><el-color-picker :model-value="panel.content.decoration.color" color-format="hex" @update:model-value="v => patchDecoration({ color: v })"/></el-form-item>
@@ -57,9 +62,11 @@
             <div class="property-section">数据绑定</div>
             <p class="source-name">{{ chartName }}</p>
             <p v-if="panel.componentType === 'kpi'" class="property-help">取当前组件第一个聚合度量，按当前权限与筛选汇总。</p>
+            <p v-if="panel.componentType === 'scene3d'" class="property-help">3D 柱图使用绑定图表的第一个维度和第一个度量；发布后按看板权限查询。</p>
             <el-button :disabled="disabled" @click="emit('replace-chart')">更换图表</el-button>
             <DashboardChartEditor :kind="kind" :layout="layout" :scene="scene" :panel="panel" :id="dashboardId" :version="version" :disabled="disabled" @apply="(_key, config, payload) => emit('chart-config', config, payload)"/>
           </template>
+          <template v-else-if="panel.componentType==='scene3d'"><div class="property-section">数据绑定</div><p class="property-help">为“数据柱图”绑定一个已有图表，预览和发布时会使用该图表的数据及权限。</p><el-button type="primary" plain :disabled="disabled" @click="emit('replace-chart')">绑定图表数据</el-button></template>
           <p v-else class="property-help">文本、图片与装饰组件不取数；图表与指标卡请从左侧添加并绑定已保存图表。</p>
         </div>
       </el-tab-pane>
@@ -124,6 +131,9 @@ function patchStyle(p: Record<string, unknown>) { patch({ style: { ...props.pane
 function patchContent(p: Record<string, unknown>) { patch({ content: { ...props.panel.content, ...p } }) }
 function patchDecoration(p: Record<string, unknown>) {
   patch({ content: { decoration: { ...props.panel.content!.decoration!, ...p } } })
+}
+function patchSceneMode(mode: 'map'|'building'|'chart') {
+  patch({ content: { ...props.panel.content, scene3d: { ...props.panel.content?.scene3d, mode } } })
 }
 </script>
 <style scoped>

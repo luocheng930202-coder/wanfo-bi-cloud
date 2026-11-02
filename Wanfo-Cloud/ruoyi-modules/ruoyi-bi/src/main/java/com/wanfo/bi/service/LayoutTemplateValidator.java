@@ -21,7 +21,7 @@ final class LayoutTemplateValidator {
         for(Object item:panels){
             var p=object(item,screen?"key title componentType x y w h style content locked hidden groupKey parentKey chartType":"key title componentType x y w h style content locked chartType");
             String key=key(p.get("key"));if(keys.putIfAbsent(key,p)!=null)throw invalid("组件标识重复");entries.add(p);
-            text(p.get("title"),200,true);String type=choice(p.get("componentType"),screen?Set.of("chart","kpi","text","image","border","line","container"):Set.of("chart","kpi","text","image"));
+            text(p.get("title"),200,true);String type=choice(p.get("componentType"),screen?Set.of("chart","kpi","scene3d","text","image","border","line","container"):Set.of("chart","kpi","scene3d","text","image"));
             int x=number(p.get("x"),0,screen?width:10),y=number(p.get("y"),0,screen?height:118),w=number(p.get("w"),screen?20:2,width),h=number(p.get("h"),screen?20:2,screen?height:12);
             if(x+w>width||y+h>height)throw invalid("组件超出布局边界");
             bool(p.get("locked"));if(screen)bool(p.get("hidden"));style(p.get("style"));
@@ -29,6 +29,10 @@ final class LayoutTemplateValidator {
             if(Set.of("chart","kpi").contains(type)){
                 choice(p.get("chartType"),ChartTypes.ALL);if("kpi".equals(type)&&!"table".equals(p.get("chartType")))throw invalid("指标卡须使用单值表格槽");
                 if(p.get("content")!=null)throw invalid("数据槽不能携带静态内容");
+            }else if("scene3d".equals(type)){
+                if(p.get("chartType")!=null)throw invalid("3D 场景不能携带图表类型");
+                var scene3d=object(object(p.get("content"),"scene3d").get("scene3d"),"mode");
+                choice(scene3d.get("mode"),Set.of("map","building","chart"));
             }else{
                 if(p.get("chartType")!=null)throw invalid("静态组件不能携带图表类型");
                 switch(type){

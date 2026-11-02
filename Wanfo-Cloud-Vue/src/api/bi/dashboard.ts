@@ -9,10 +9,11 @@ export interface NumberFormat {mode:'number'|'percent';scale:'none'|'thousand'|'
 export interface Threshold {op:'GT'|'GTE'|'LT'|'LTE'|'EQ'|'NE';value:string;color:string}
 export interface MetricStyle {key:string;format?:NumberFormat|null;rules:Threshold[]}
 export interface PanelStyle {metrics?:MetricStyle[];numberFormat?:NumberFormat|null;showTitle:boolean;titleAlign:'left'|'center'|'right'}
-export type ComponentType = 'chart'|'kpi'|'text'|'image'|'border'|'line'|'container'
+export type ComponentType = 'chart'|'kpi'|'scene3d'|'text'|'image'|'border'|'line'|'container'
 export interface Decoration {color:string;stroke:number;pattern:'solid'|'dashed'|'dotted';radius:number;direction:'horizontal'|'vertical'}
 export interface ContainerStyle {background:string;borderColor:string;stroke:number;radius:number;padding:number}
-export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;text?:string|null;image?:string|null}
+export interface Scene3DConfig {mode:'map'|'building'|'chart'}
+export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;scene3d?:Scene3DConfig;text?:string|null;image?:string|null}
 export type PanelChartConfig = Pick<QueryModel,'dimensions'|'metrics'> & {type:ChartDefinition['type'];orderBys:NonNullable<QueryModel['orderBys']>;limit:number;filterTree?:QueryModel['filterTree']}
 export interface Panel { parentKey?:string;hidden?:boolean;groupKey?:string;key:string;chartId?:number|null;title:string;x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;locked?:boolean;chartConfig?:PanelChartConfig }
 export type PanelLayout = Pick<Panel,'key'|'x'|'y'|'w'|'h'|'locked'|'componentType'|'groupKey'|'hidden'|'parentKey'|'content'>
@@ -27,7 +28,7 @@ export interface ViewControl {key:string;label:string;type:FilterControl['type']
 export interface ScreenScene {width:number;height:number;fit:'contain'|'width'|'none';refreshSeconds?:number}
 export interface DashboardDefinition {schemaVersion:1;name:string;panels:Panel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;interaction?:DashboardInteraction}
 export interface DashboardSummary {id:number;name:string;version:number;published:boolean;resourceActions:string[]}
-export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
+export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;dataBound?:boolean;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
 export interface DashboardView {id:number;name:string;revision:number;panels:ViewPanel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;controls?:ViewControl[];links?:{key:string;sourcePanel:string}[]}
 export interface PanelResult {data:ChartResult;presentation:{style?:ChartDefinition['style'];advanced?:ChartDefinition['advanced'];type:ChartDefinition['type'];dimensions:string[];metrics:string[];fieldLabels?:Record<string,string>;queryDimensions?:QueryModel['dimensions'];queryMetrics?:QueryModel['metrics'];pivotRowFields?:string[];pivotColFields?:string[];drillFields?:string[];drillPath?:DrillPathSegment[];drillLevel?:number;canDrillDown?:boolean}}
 export const listDashboards=():Promise<AjaxResult<DashboardSummary[]>>=>request({url:'/bi/dashboard'})

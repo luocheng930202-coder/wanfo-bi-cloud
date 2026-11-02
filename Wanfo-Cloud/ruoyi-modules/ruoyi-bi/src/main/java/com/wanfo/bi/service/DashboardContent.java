@@ -7,9 +7,11 @@ public final class DashboardContent {
     private DashboardContent() {}
     public record Decoration(String color,Integer stroke,String pattern,Integer radius,String direction) {}
     public record ContainerStyle(String background,String borderColor,Integer stroke,Integer radius,Integer padding) {}
-    public record Content(String text,String image,Decoration decoration,ContainerStyle container) {
-        public Content(String text,String image){this(text,image,null,null);}
-        public Content(String text,String image,Decoration decoration){this(text,image,decoration,null);}
+    public record Scene3D(String mode) {}
+    public record Content(String text,String image,Decoration decoration,ContainerStyle container,Scene3D scene3d) {
+        public Content(String text,String image){this(text,image,null,null,null);}
+        public Content(String text,String image,Decoration decoration){this(text,image,decoration,null,null);}
+        public Content(String text,String image,Decoration decoration,ContainerStyle container){this(text,image,decoration,container,null);}
     }
     public static ContainerStyle container(ContainerStyle c){
         String bg=c==null || c.background()==null?"#16243A":c.background(),border=c==null || c.borderColor()==null?"#38BDF8":c.borderColor();int stroke=c==null || c.stroke()==null?1:c.stroke(),radius=c==null || c.radius()==null?8:c.radius(),padding=c==null || c.padding()==null?12:c.padding();
@@ -22,10 +24,15 @@ public final class DashboardContent {
         return new Decoration(color,stroke,pattern,radius,direction);
     }
     public static Content normalize(String type,Content c) {
-        if(type.equals("container")){if(c!=null && (c.text()!=null || c.image()!=null || c.decoration()!=null))throw new IllegalArgumentException("容器不能混用其他内容");return new Content(null,null,null,container(c==null?null:c.container()));}
+        if(type.equals("container")){if(c!=null && (c.text()!=null || c.image()!=null || c.decoration()!=null || c.scene3d()!=null))throw new IllegalArgumentException("容器不能混用其他内容");return new Content(null,null,null,container(c==null?null:c.container()),null);}
         if(c!=null && c.container()!=null)throw new IllegalArgumentException("当前组件不支持容器样式");
-        if(type.equals("border") || type.equals("line")){if(c!=null && (c.text()!=null || c.image()!=null))throw new IllegalArgumentException("装饰组件不能携带文本或图片");return new Content(null,null,decoration(c==null?null:c.decoration()));}
+        if(type.equals("border") || type.equals("line")){if(c!=null && (c.text()!=null || c.image()!=null || c.scene3d()!=null))throw new IllegalArgumentException("装饰组件不能携带文本、图片或 3D 场景");return new Content(null,null,decoration(c==null?null:c.decoration()));}
         if(c!=null && c.decoration()!=null)throw new IllegalArgumentException("当前组件不支持装饰内容");
+        if(type.equals("scene3d")){
+            if(c==null || c.scene3d()==null || !java.util.Set.of("map","building","chart").contains(c.scene3d().mode()) || c.text()!=null || c.image()!=null || c.container()!=null)throw new IllegalArgumentException("3D 场景类型无效");
+            return new Content(null,null,null,null,new Scene3D(c.scene3d().mode()));
+        }
+        if(c!=null && c.scene3d()!=null)throw new IllegalArgumentException("当前组件不支持 3D 场景内容");
         if(type.equals("chart") || type.equals("kpi")){if(c!=null)throw new IllegalArgumentException("数据组件不能携带静态内容");return null;}
         if(type.equals("text")){
             if(c!=null && c.image()!=null)throw new IllegalArgumentException("文本不能包含图片内容");

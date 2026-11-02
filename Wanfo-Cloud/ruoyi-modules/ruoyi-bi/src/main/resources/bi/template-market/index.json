@@ -16,6 +16,14 @@
       "description": "深色画布与四数据槽，适合指挥中心日常监测。",
       "kind": "screen",
       "resource": "classpath:bi/template-market/market-screen-ops.json"
+    },
+    {
+      "id": "market-screen-school-canteen-2d",
+      "name": "智慧校园食堂驾驶舱（二维）",
+      "category": "校园餐饮",
+      "description": "科技风二维驾驶舱布局，覆盖采购、费用、用餐、区域和验收明细；使用前绑定真实数据。",
+      "kind": "screen",
+      "resource": "classpath:bi/template-market/market-screen-school-canteen-2d.json"
     }
   ]
 }

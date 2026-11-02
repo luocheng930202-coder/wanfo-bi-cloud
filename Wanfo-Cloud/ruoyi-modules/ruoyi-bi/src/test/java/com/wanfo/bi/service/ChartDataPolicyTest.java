@@ -99,6 +99,18 @@ class ChartDataPolicyTest {
         when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","Shanghai","a")),Set.of(),Set.of()));
         String sql=service.compileOnly(model("city"));assertTrue(sql.contains("WHERE \"city\" = ?"));assertTrue(sql.indexOf("WHERE")<sql.indexOf("GROUP BY"));assertFalse(sql.contains("Shanghai"));
     }
+    @Test void sqlDatasetRewritesMySqlIdentifiersBeforeCalciteCompilation() {
+        var dataset=datasets.selectById(9L);dataset.setType("sql");dataset.setSourceCatalog("bi_phase_a_test");
+        dataset.setSqlText("SELECT t0.`qty` FROM `bi_phase_a_test`.`fact_order` t0;");
+        var source=sources.getById(7L);source.setSchemaName("phase_a_mysql");
+        var qty=new BiDatasetFieldDO();qty.setOriginName("qty");qty.setOriginType("INT");when(fields.selectByDatasetId(9L)).thenReturn(List.of(qty));
+        when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());
+
+        String sql=service.compileOnly(model("qty"));
+
+        assertFalse(sql.contains("`"),sql);
+        assertTrue(sql.contains("\"phase_a_mysql\".\"fact_order\""),sql);
+    }
     @Test void authorizationFailurePreventsDefinitionAndQueryAccess() throws Exception {
         doThrow(new BiAccessException(403,"denied")).when(resources).require("dataset",9L,"query");
         assertThrows(BiAccessException.class,()->service.query(model("city")));verifyNoInteractions(engine,policies,fields);

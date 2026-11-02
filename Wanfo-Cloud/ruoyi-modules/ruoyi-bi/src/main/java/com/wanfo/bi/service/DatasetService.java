@@ -233,6 +233,7 @@ public class DatasetService
             m.put("name", row.getName());
             m.put("type", row.getType());
             m.put("datasourceId", row.getDatasourceId());
+            m.put("warehouseModelId", row.getWarehouseModelId());
             m.put("sourceTable", row.getSourceTable());
             m.put("sourceCatalog", row.getSourceCatalog());
             m.put("resourceActions", java.util.stream.Stream.of("query", "remove", "grant")
@@ -260,6 +261,7 @@ public class DatasetService
         m.put("name", row.getName());
         m.put("type", row.getType());
         m.put("datasourceId", row.getDatasourceId());
+        m.put("warehouseModelId", row.getWarehouseModelId());
         m.put("sourceTable", row.getSourceTable());
         m.put("sourceCatalog", row.getSourceCatalog());
         m.put("sqlText", row.getSqlText());

@@ -9,6 +9,7 @@
         <result property="name"         column="name"/>
         <result property="type"         column="type"/>
         <result property="datasourceId" column="datasource_id"/>
+        <result property="warehouseModelId" column="warehouse_model_id"/>
         <result property="sourceTable"  column="source_table"/>
         <result property="sourceCatalog" column="source_catalog"/>
         <result property="sqlText"      column="sql_text" jdbcType="LONGVARCHAR"/>
@@ -25,7 +26,7 @@
     </resultMap>
 
     <sql id="cols">
-        id, group_id, name, type, datasource_id, source_table, source_catalog, sql_text, union_sql,
+        id, group_id, name, type, datasource_id, warehouse_model_id, source_table, source_catalog, sql_text, union_sql,
         model_json, cache_enabled, cache_ttl, remark, create_by, create_time, update_by, update_time, del_flag
     </sql>
 
@@ -66,10 +67,10 @@
             useGeneratedKeys="true" keyProperty="id">
         insert into bi_dataset_table
         (group_id, name, type, datasource_id, source_table, source_catalog, sql_text, union_sql,
-         cache_enabled, cache_ttl, remark, create_by, update_by, del_flag)
+         cache_enabled, cache_ttl, remark, create_by, update_by, del_flag, warehouse_model_id)
         values (#{groupId}, #{name}, #{type}, #{datasourceId}, #{sourceTable}, #{sourceCatalog},
                 #{sqlText}, #{unionSql}, #{cacheEnabled}, #{cacheTtl}, #{remark},
-                #{createBy}, #{createBy}, '0')
+                #{createBy}, #{createBy}, '0', #{warehouseModelId})
     </insert>
 
     <update id="update" parameterType="com.wanfo.bi.domain.BiDatasetTableDO">

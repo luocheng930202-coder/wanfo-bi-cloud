@@ -106,6 +106,7 @@ public class DatasetController
         form.setName((String) body.get("name"));
         form.setGroupId(toLong(body.get("groupId")));
         form.setDatasourceId(toLong(body.get("datasourceId")));
+        form.setWarehouseModelId(toLong(body.get("warehouseModelId")));
         form.setSourceTable((String) body.get("sourceTable"));
         form.setSourceCatalog((String) body.get("sourceCatalog"));
         form.setCacheEnabled((String) body.get("cacheEnabled"));

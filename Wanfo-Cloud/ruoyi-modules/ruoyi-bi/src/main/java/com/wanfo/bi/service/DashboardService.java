@@ -83,7 +83,7 @@ public class DashboardService {
     private Panel normalize(Panel p) {
         if(p==null)throw new IllegalArgumentException("看板组件不能为空");
         String type=p.componentType()==null?"chart":p.componentType();
-        if(!Set.of("chart","kpi","text","image","border","line","container").contains(type))throw new IllegalArgumentException("不支持的组件类型");
+        if(!Set.of("chart","kpi","scene3d","text","image","border","line","container").contains(type))throw new IllegalArgumentException("不支持的组件类型");
         return new Panel(p.key(),p.chartId(),p.title(),p.x(),p.y(),p.w(),p.h(),type,DashboardPresentation.normalize(p.style()),DashboardContent.normalize(type,p.content()),p.locked(),p.chartConfig(),p.groupKey(),p.hidden(),p.parentKey());
     }
     private Definition normalize(Definition d) {
@@ -121,7 +121,7 @@ public class DashboardService {
                 var o=other.layout();if(p.x()<o.x()+o.w() && p.x()+p.w()>o.x() && p.y()<o.y()+o.h() && p.y()+p.h()>o.y())throw new IllegalArgumentException("图表组件不能重叠");
             }
             // Revalidate every reference at save/publish time, including unchanged panels.
-            boolean data=Set.of("chart","kpi").contains(p.componentType());
+            boolean data=Set.of("chart","kpi").contains(p.componentType()) || p.componentType().equals("scene3d") && p.chartId()!=null;
             if(data && (p.chartId()==null || p.chartId()<1))throw new IllegalArgumentException("数据组件须绑定图表");
             if(!data && p.chartId()!=null)throw new IllegalArgumentException("静态组件不能引用图表");
             if(!data && p.chartConfig()!=null)throw new IllegalArgumentException("静态组件不能配置图表字段");
@@ -212,7 +212,7 @@ public class DashboardService {
         Map<String,Object> result=new LinkedHashMap<>();
         result.put("id",id);result.put("name",snapshot.name());result.put("revision",revision);result.put("kind",snapshot.kind());result.put("layout",snapshot.layout());result.put("appearance",snapshot.appearance());
         if(snapshot.scene()!=null)result.put("scene",snapshot.scene());
-        result.put("panels",snapshot.panels().stream().filter(p->!Boolean.TRUE.equals(p.layout().hidden())).map(p->{var l=p.layout();Map<String,Object> item=new LinkedHashMap<>();item.put("key",l.key());item.put("title",l.title());item.put("type",p.chart()==null?"table":p.chart().type());item.put("x",l.x());item.put("y",l.y());item.put("w",l.w());item.put("h",l.h());item.put("componentType",l.componentType());if(l.parentKey()!=null)item.put("parentKey",l.parentKey());item.put("style",l.style());if(l.content()!=null)item.put("content",l.content());var drill=ChartDrill.fields(p.chart());if(!drill.isEmpty())item.put("drillFields",drill);return item;}).toList());
+        result.put("panels",snapshot.panels().stream().filter(p->!Boolean.TRUE.equals(p.layout().hidden())).map(p->{var l=p.layout();Map<String,Object> item=new LinkedHashMap<>();item.put("key",l.key());item.put("title",l.title());item.put("type",p.chart()==null?"table":p.chart().type());item.put("x",l.x());item.put("y",l.y());item.put("w",l.w());item.put("h",l.h());item.put("componentType",l.componentType());item.put("dataBound",p.chart()!=null);if(l.parentKey()!=null)item.put("parentKey",l.parentKey());item.put("style",l.style());if(l.content()!=null)item.put("content",l.content());var drill=ChartDrill.fields(p.chart());if(!drill.isEmpty())item.put("drillFields",drill);return item;}).toList());
         result.put("controls",snapshot.interaction().controls().stream().map(c->{Map<String,Object> v=new LinkedHashMap<>();v.put("key",c.key());v.put("label",c.label());v.put("type",c.type());v.put("defaultValue",c.defaultValue());return v;}).toList());
         result.put("links",snapshot.interaction().links().stream().map(l->Map.of("key",l.key(),"sourcePanel",l.sourcePanel())).toList());
         return result;

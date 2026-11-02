@@ -21,6 +21,7 @@ public class BiDatasetTableDO
     /** table / sql */
     private String type;
     private Long datasourceId;
+    private Long warehouseModelId;
     /** type=table 时的物理表名 */
     private String sourceTable;
     private String sourceCatalog;
@@ -56,6 +57,8 @@ public class BiDatasetTableDO
 
     public Long getDatasourceId() { return datasourceId; }
     public void setDatasourceId(Long datasourceId) { this.datasourceId = datasourceId; }
+    public Long getWarehouseModelId() { return warehouseModelId; }
+    public void setWarehouseModelId(Long warehouseModelId) { this.warehouseModelId = warehouseModelId; }
 
     public String getSourceTable() { return sourceTable; }
     public void setSourceTable(String sourceTable) { this.sourceTable = sourceTable; }

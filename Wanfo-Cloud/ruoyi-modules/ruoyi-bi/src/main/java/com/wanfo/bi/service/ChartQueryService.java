@@ -52,6 +52,9 @@ public class ChartQueryService
     private final BiResourceAuthorizer resources;
     private final CapabilityProvider caps;
     private com.wanfo.bi.query.QueryGovernor governor;
+    private WarehouseConsumerGateService warehouseConsumerGate;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void configureWarehouseConsumerGate(WarehouseConsumerGateService gate){this.warehouseConsumerGate=gate;}
     @org.springframework.beans.factory.annotation.Autowired
     public void configureGovernor(com.wanfo.bi.query.QueryGovernor governor){this.governor=governor;}
 
@@ -104,6 +107,7 @@ public class ChartQueryService
         {
             throw new IllegalArgumentException("数据集不存在: " + model.getDatasetId());
         }
+        if (warehouseConsumerGate != null) warehouseConsumerGate.requireConsumable(ds);
         if(model.getPivot()!=null && !"table".equals(ds.getType()))throw new IllegalArgumentException("完整透视汇总仅支持表数据集");
         if(model.getTimeComparison()!=null && !"table".equals(ds.getType()))throw new IllegalArgumentException("时间比较仅支持表数据集");
         if (datasourceProvider.getById(ds.getDatasourceId()) == null)
@@ -125,11 +129,11 @@ public class ChartQueryService
         String unionSql = "sql".equals(ds.getType())
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
+        var boundSource = datasourceProvider.getById(ds.getDatasourceId());
+        unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
+                unionSql, boundSource == null ? null : boundSource.getSchemaName(), ds.getSourceCatalog());
         if (!"sql".equals(ds.getType()))
         {
-            var source = datasourceProvider.getById(ds.getDatasourceId());
-            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
-                    unionSql, source == null ? null : source.getSchemaName(), ds.getSourceCatalog());
             unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, fields);
         }
 
@@ -272,11 +276,11 @@ public class ChartQueryService
         String unionSql = "sql".equals(ds.getType())
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
+        var boundSource = datasourceProvider.getById(ds.getDatasourceId());
+        unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
+                unionSql, boundSource == null ? null : boundSource.getSchemaName(), ds.getSourceCatalog());
         if (!"sql".equals(ds.getType()))
         {
-            var source = datasourceProvider.getById(ds.getDatasourceId());
-            unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
-                    unionSql, source == null ? null : source.getSchemaName(), ds.getSourceCatalog());
             unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, compileFields);
         }
         var scope=policies.resolve(model.getDatasetId());

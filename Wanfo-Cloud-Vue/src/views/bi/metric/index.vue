@@ -227,13 +227,21 @@
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="编码">{{ consumer.code }}</el-descriptions-item>
           <el-descriptions-item label="名称">{{ consumer.name }}</el-descriptions-item>
+          <el-descriptions-item label="指标类型">{{ kindLabel(consumer.kind) }}</el-descriptions-item>
           <el-descriptions-item label="发布版本">{{ consumer.publishedVersion || '—' }}</el-descriptions-item>
           <el-descriptions-item label="业务定义">{{ consumer.businessDefinition || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="计算方式">{{ consumerCalculation(consumer) }}</el-descriptions-item>
+          <el-descriptions-item label="固定过滤" v-if="consumer.fixedFilterSummary?.length">
+            {{ consumer.fixedFilterSummary.map(item => `${fieldLabel(item.field)} · ${filterOpLabel(item.op)}`).join('；') }}
+          </el-descriptions-item>
           <el-descriptions-item label="允许维度">{{ (consumer.allowedDimensions || []).join(', ') || consumer.businessDimensions || '—' }}</el-descriptions-item>
           <el-descriptions-item label="粒度">{{ consumer.grain || '—' }}</el-descriptions-item>
           <el-descriptions-item label="单位">{{ consumer.unit || '—' }}</el-descriptions-item>
           <el-descriptions-item label="时区">{{ consumer.timeZone || '—' }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{ consumer.owner || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="业务术语" v-if="consumer.glossaryTerms?.length">
+            {{ consumer.glossaryTerms.map(term => `${term.name}${term.definitionText ? `：${term.definitionText}` : ''}`).join('；') }}
+          </el-descriptions-item>
         </el-descriptions>
       </template>
     </el-drawer>
@@ -305,6 +313,12 @@ const measureAgg = computed({
   set: (v: string) => { if (!definition.measure) definition.measure = { field: '', agg: v }; else definition.measure.agg = v }
 })
 const fieldLabel = (name: string) => { const f = fields.value.find(item => item.name === name); return f?.showName?.trim() || name }
+const filterOpLabel = (op: string) => ({ EQ: '等于', NE: '不等于', IN: '包含' }[op] || op)
+function consumerCalculation(metric: MetricConsumerContext) {
+  if (metric.kind === 'atomic') return metric.measure ? `${metric.measure.field} · ${aggregations[metric.measure.agg] || metric.measure.agg}` : '原子指标'
+  if (metric.kind === 'derived') return `${(metric.components || []).map(item => `${item.alias}=${item.code}`).join('，')}；表达式：${metric.expression || '—'}`
+  return `复合指标；表达式：${metric.compositeExpression || '—'}`
+}
 const isScalarPreview = computed(() => !(runtimeDimensions.value?.length) || definition.kind === 'composite')
 const scalarValue = computed(() => {
   const row = result.value?.rows?.[0]
@@ -533,7 +547,11 @@ async function decidePublish(requestId: number, approve: boolean) {
 const consumerVisible = ref(false)
 const consumer = ref<MetricConsumerContext | null>(null)
 async function openConsumer(row: MetricSummary) {
-  consumer.value = (await metricConsumerContext(row.id)).data || null
+  const context = (await metricConsumerContext(row.id)).data || null
+  if (context?.datasetId) {
+    try { fields.value = (await metricFields(context.datasetId)).data || [] } catch { fields.value = [] }
+  }
+  consumer.value = context
   consumerVisible.value = true
 }
 async function removeMetric(row: MetricSummary) {

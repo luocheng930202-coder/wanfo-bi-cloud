@@ -9,10 +9,32 @@ export interface NumberFormat {mode:'number'|'percent';scale:'none'|'thousand'|'
 export interface Threshold {op:'GT'|'GTE'|'LT'|'LTE'|'EQ'|'NE';value:string;color:string}
 export interface MetricStyle {key:string;format?:NumberFormat|null;rules:Threshold[]}
 export interface PanelStyle {metrics?:MetricStyle[];numberFormat?:NumberFormat|null;showTitle:boolean;titleAlign:'left'|'center'|'right'}
-export type ComponentType = 'chart'|'kpi'|'text'|'image'|'border'|'line'|'container'
+export type ComponentType = 'chart'|'kpi'|'scene3d'|'text'|'image'|'border'|'line'|'container'
 export interface Decoration {color:string;stroke:number;pattern:'solid'|'dashed'|'dotted';radius:number;direction:'horizontal'|'vertical'}
 export interface ContainerStyle {background:string;borderColor:string;stroke:number;radius:number;padding:number}
-export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;text?:string|null;image?:string|null}
+export interface Scene3DConfig {
+  /** Missing version is accepted as the legacy mode-only payload (v1). */
+  schemaVersion?:number
+  mode:'map'|'building'|'chart'
+  cameraPreset?:'orbit'|'top'|'front'
+  fallbackMode?:'poster'
+  rotateEnabled?:boolean
+  zoomEnabled?:boolean
+  /** Server sets enabled=false when it safely degrades an unknown/invalid scene. */
+  enabled?:boolean
+  fallbackReason?:string|null
+}
+export interface ResolvedScene3DConfig extends Scene3DConfig {schemaVersion:1;cameraPreset:'orbit'|'top'|'front';fallbackMode:'poster';rotateEnabled:boolean;zoomEnabled:boolean;enabled:boolean}
+export function resolveScene3DConfig(value?:Partial<Scene3DConfig>|null):ResolvedScene3DConfig {
+  const safeFallback=(fallbackReason:string):ResolvedScene3DConfig=>({schemaVersion:1,mode:'building',cameraPreset:'orbit',fallbackMode:'poster',rotateEnabled:false,zoomEnabled:false,enabled:false,fallbackReason})
+  if(!value)return {schemaVersion:1,mode:'building',cameraPreset:'orbit',fallbackMode:'poster',rotateEnabled:true,zoomEnabled:true,enabled:true}
+  if(value.schemaVersion!=null && value.schemaVersion!==1)return safeFallback('场景配置版本暂不支持，已显示安全预览')
+  if(!['map','building','chart'].includes(String(value.mode)))return safeFallback('场景类型无效，已显示安全预览')
+  if(value.cameraPreset!=null && !['orbit','top','front'].includes(value.cameraPreset))return safeFallback('场景视角无效，已显示安全预览')
+  if(value.fallbackMode!=null && value.fallbackMode!=='poster')return safeFallback('场景降级策略不受支持，已显示安全预览')
+  return {schemaVersion:1,mode:value.mode as Scene3DConfig['mode'],cameraPreset:value.cameraPreset || 'orbit',fallbackMode:'poster',rotateEnabled:value.rotateEnabled!==false,zoomEnabled:value.zoomEnabled!==false,enabled:value.enabled!==false,fallbackReason:value.fallbackReason || undefined}
+}
+export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;scene3d?:Scene3DConfig;text?:string|null;image?:string|null}
 export type PanelChartConfig = Pick<QueryModel,'dimensions'|'metrics'> & {type:ChartDefinition['type'];orderBys:NonNullable<QueryModel['orderBys']>;limit:number;filterTree?:QueryModel['filterTree']}
 export interface Panel { parentKey?:string;hidden?:boolean;groupKey?:string;key:string;chartId?:number|null;title:string;x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;locked?:boolean;chartConfig?:PanelChartConfig }
 export type PanelLayout = Pick<Panel,'key'|'x'|'y'|'w'|'h'|'locked'|'componentType'|'groupKey'|'hidden'|'parentKey'|'content'>
@@ -27,7 +49,7 @@ export interface ViewControl {key:string;label:string;type:FilterControl['type']
 export interface ScreenScene {width:number;height:number;fit:'contain'|'width'|'none';refreshSeconds?:number}
 export interface DashboardDefinition {schemaVersion:1;name:string;panels:Panel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;interaction?:DashboardInteraction}
 export interface DashboardSummary {id:number;name:string;version:number;published:boolean;resourceActions:string[]}
-export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
+export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;dataBound?:boolean;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
 export interface DashboardView {id:number;name:string;revision:number;panels:ViewPanel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;controls?:ViewControl[];links?:{key:string;sourcePanel:string}[]}
 export interface PanelResult {data:ChartResult;presentation:{style?:ChartDefinition['style'];advanced?:ChartDefinition['advanced'];type:ChartDefinition['type'];dimensions:string[];metrics:string[];fieldLabels?:Record<string,string>;queryDimensions?:QueryModel['dimensions'];queryMetrics?:QueryModel['metrics'];pivotRowFields?:string[];pivotColFields?:string[];drillFields?:string[];drillPath?:DrillPathSegment[];drillLevel?:number;canDrillDown?:boolean}}
 export const listDashboards=():Promise<AjaxResult<DashboardSummary[]>>=>request({url:'/bi/dashboard'})

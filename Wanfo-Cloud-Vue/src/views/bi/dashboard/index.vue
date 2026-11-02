@@ -20,6 +20,7 @@
         </div>
         <el-button v-hasPermi="['bi:dashboard:add']" type="primary" :icon="Plus" :disabled="busy" @click="openTemplate('dashboard')">新建看板</el-button>
         <el-button v-hasPermi="['bi:dashboard:add']" :icon="Monitor" :disabled="busy" class="new-screen-button" @click="openTemplate('screen')">新建数据大屏</el-button>
+        <el-button :icon="Monitor" :disabled="busy" @click="router.push('/bi-admin/screen-lab')">智慧食堂 3D 原型</el-button>
       </div>
     </section>
     <el-alert v-if="listError" type="error" :title="listError" :closable="false" show-icon class="library-list-error">
@@ -202,7 +203,7 @@ const optionSequences:Record<string,number>=Object.create(null)
 function clearOptionCache(){for(const key of Object.keys(optionSequences))optionSequences[key]++;replaceMap(filterOptions,{});replaceMap(optionErrors,{});replaceMap(optionLoading,{})}
 async function loadOptions(key:string){const current=view.value;if(!current)return;const e=epoch,v=(optionSequences[key]||0)+1;optionSequences[key]=v;optionLoading[key]=true;optionErrors[key]='';inFlight.value++;try{const r=await dashboardControlOptions(current.id,key,current.revision,runtimeInput());if(e!==epoch || v!==optionSequences[key])return;filterOptions[key]=r.data.values;optionErrors[key]=r.data.truncated?'候选值超过100项，仅显示前100项':''}catch{if(e===epoch && v===optionSequences[key]){filterOptions[key]=[];optionErrors[key]='候选值加载失败，请检查权限或刷新发布版本'}}finally{inFlight.value--;if(e===epoch && v===optionSequences[key])optionLoading[key]=false}}
 async function refreshAppliedPanels(){if(mode.value!=='view' || !view.value)return;clearOptionCache();invalidate();const e=epoch;loading.value=true;const keys=view.value.panels.map(p=>p.key);try{await runPanelQueue(keys,key=>refreshViewPanel(key,true),()=>e===epoch && (!refreshSeconds.value || available.value))}finally{if(e===epoch)loading.value=false}}
-const queryPanels=computed(()=>view.value?.panels.filter(p=>!p.componentType || ['chart','kpi'].includes(p.componentType)) || [])
+const queryPanels=computed(()=>view.value?.panels.filter(p=>!p.componentType || ['chart','kpi'].includes(p.componentType) || p.componentType==='scene3d' && p.dataBound) || [])
 const failedKeys=computed(()=>queryPanels.value.filter(p=>!!panelErrors[p.key]).map(p=>p.key))
 const retryKeys=computed(()=>queryPanels.value.filter(p=>!!panelErrors[p.key] || panelStopped[p.key]).map(p=>p.key))
 const loadedCount=computed(()=>queryPanels.value.filter(p=>!!payloads[p.key]).length)
@@ -258,7 +259,7 @@ async function openView(id:number,force=false){
 }
 async function refreshViewPanel(key:string,internal=false,preserve=false){
   if(!internal && (loading.value || panelLoading[key]))return
-  const type=view.value?.panels.find(p=>p.key===key)?.componentType;if(type && !['chart','kpi'].includes(type))return
+  const panel=view.value?.panels.find(p=>p.key===key);const type=panel?.componentType;if(type && !['chart','kpi'].includes(type) && !(type==='scene3d' && panel?.dataBound))return
   const current=view.value;if(mode.value!=='view' || !current)return
   const controller=panelRuns.begin(key);if(!controller)return;syncQueryClock();panelStopped[key]=false
   const e=epoch,v=(panelRequests[key]||0)+1;panelRequests[key]=v;panelLoading[key]=true;if(!preserve)delete payloads[key];delete panelErrors[key]

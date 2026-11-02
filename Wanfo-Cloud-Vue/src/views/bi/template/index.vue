@@ -102,7 +102,7 @@ import {
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
 
 const router = useRouter()
-const tab = ref<'local' | 'market'>('local')
+const tab = ref<'local' | 'market'>('market')
 const loading = ref(false)
 const localRows = ref<TemplateSummary[]>([])
 const marketRows = ref<MarketTemplateEntry[]>([])

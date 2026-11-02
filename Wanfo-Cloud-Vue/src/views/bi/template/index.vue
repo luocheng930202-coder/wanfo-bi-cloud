@@ -48,7 +48,7 @@
                 </div>
                 <p class="market-meta">{{ item.category }} · {{ item.provider === 'remote' ? '远程' : '内置' }}</p>
                 <p class="market-desc">{{ item.description }}</p>
-                <el-button v-hasPermi="['bi:dashboard:add']" type="primary" link @click="applyMarket(item)">用于新建 →</el-button>
+                <el-button type="primary" link @click="previewMarket(item)">预览模板 →</el-button>
               </el-card>
             </el-col>
           </el-row>
@@ -66,6 +66,25 @@
       <template #footer>
         <el-button @click="editor.visible = false">取消</el-button>
         <el-button type="primary" :loading="editor.saving" @click="saveEdit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="marketPreview.visible" :title="marketPreview.row?.name || '模板预览'" width="min(1000px, calc(100vw - 24px))" destroy-on-close>
+      <template v-if="marketPreview.row">
+        <div class="market-preview-meta">
+          <el-tag>{{ marketPreview.row.kind === 'dashboard' ? '看板' : '大屏' }}</el-tag>
+          <el-tag type="info">{{ marketPreview.row.category }}</el-tag>
+          <span>{{ marketPreview.row.provider === 'remote' ? '远程模板' : '内置模板' }}</span>
+        </div>
+        <p class="market-preview-desc">{{ marketPreview.row.description }}</p>
+        <DashboardTemplatePreview v-if="marketPreview.template && marketPreview.file" :template="marketPreview.template" :file="marketPreview.file" />
+        <el-skeleton v-else-if="marketPreview.loading" :rows="5" animated />
+        <el-alert v-else :title="marketPreview.error || '模板预览加载失败，请重试'" type="error" :closable="false" />
+        <el-alert class="market-preview-hint" type="info" :closable="false" title="预览仅展示布局示意，不含业务数据。继续后将进入数据绑定与确认步骤，不会直接创建或发布。" />
+      </template>
+      <template #footer>
+        <el-button @click="marketPreview.visible = false">返回</el-button>
+        <el-button v-hasPermi="['bi:dashboard:add']" type="primary" :disabled="!marketPreview.template || marketPreview.loading" @click="useMarketTemplate">选择此模板并绑定数据</el-button>
       </template>
     </el-dialog>
 
@@ -100,6 +119,9 @@ import {
   type TemplateSummary, type MarketTemplateEntry
 } from '@/api/bi/template'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
+import DashboardTemplatePreview from '@/views/bi/dashboard/DashboardTemplatePreview.vue'
+import { importedTemplate, parseLayoutTemplate, type LayoutTemplateFile } from '@/utils/biTemplateFiles'
+import type { ScreenTemplate } from '@/utils/biTemplates'
 
 const router = useRouter()
 const tab = ref<'local' | 'market'>('market')
@@ -108,6 +130,14 @@ const localRows = ref<TemplateSummary[]>([])
 const marketRows = ref<MarketTemplateEntry[]>([])
 const marketSearch = ref('')
 const marketKind = ref<'' | 'screen' | 'dashboard'>('')
+const marketPreview = reactive<{
+  visible: boolean
+  loading: boolean
+  error: string
+  row?: MarketTemplateEntry
+  file?: LayoutTemplateFile
+  template?: ScreenTemplate
+}>({ visible: false, loading: false, error: '' })
 
 const filteredMarket = computed(() => marketRows.value.filter(row => {
   const q = marketSearch.value.trim()
@@ -134,6 +164,40 @@ function applyLocal(row: TemplateSummary) {
 
 function applyMarket(row: MarketTemplateEntry) {
   router.push({ path: '/bi/dashboard', query: { openTemplate: row.kind, templateId: 'market-' + row.id } })
+}
+
+async function previewMarket(row: MarketTemplateEntry) {
+  marketPreview.visible = true
+  marketPreview.loading = true
+  marketPreview.error = ''
+  marketPreview.row = row
+  marketPreview.file = undefined
+  marketPreview.template = undefined
+  try {
+    const detail = (await getMarketTemplate(row.id)).data
+    const file = parseLayoutTemplate(JSON.stringify(detail.content))
+    const isDashboard = file.format === 'datacenter-dashboard-template'
+    if ((row.kind === 'dashboard') !== isDashboard) throw new Error('模板类型与目录信息不一致')
+    marketPreview.file = file
+    marketPreview.template = {
+      ...importedTemplate(file),
+      id: 'market-' + row.id,
+      name: row.name,
+      category: row.category,
+      description: row.description
+    }
+  } catch {
+    marketPreview.error = '模板预览加载失败，请检查权限或稍后重试'
+  } finally {
+    marketPreview.loading = false
+  }
+}
+
+function useMarketTemplate() {
+  if (!marketPreview.row || !marketPreview.template || marketPreview.loading) return
+  const row = marketPreview.row
+  marketPreview.visible = false
+  applyMarket(row)
 }
 
 async function downloadLocal(row: TemplateSummary) {
@@ -247,4 +311,7 @@ onMounted(refresh)
 .market-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .market-meta { font-size: 12px; color: #94a3b8; margin: 8px 0; }
 .market-desc { font-size: 13px; color: #64748b; line-height: 1.6; min-height: 48px; }
+.market-preview-meta { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 13px; }
+.market-preview-desc { margin: 12px 0 16px; color: #475569; line-height: 1.7; }
+.market-preview-hint { margin-top: 14px; }
 </style>

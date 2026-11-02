@@ -31,8 +31,19 @@ final class LayoutTemplateValidator {
                 if(p.get("content")!=null)throw invalid("数据槽不能携带静态内容");
             }else if("scene3d".equals(type)){
                 if(p.get("chartType")!=null)throw invalid("3D 场景不能携带图表类型");
-                var scene3d=object(object(p.get("content"),"scene3d").get("scene3d"),"mode");
-                choice(scene3d.get("mode"),Set.of("map","building","chart"));
+                var scene3d=object(object(p.get("content"),"scene3d").get("scene3d"),"schemaVersion mode cameraPreset fallbackMode rotateEnabled zoomEnabled enabled fallbackReason");
+                Object version=scene3d.get("schemaVersion");
+                if(version!=null && number(version,1,Integer.MAX_VALUE)!=1){
+                    // Future versions are inert until this server understands them; the viewer renders a safe poster.
+                }else{
+                    choice(scene3d.get("mode"),Set.of("map","building","chart"));
+                    if(scene3d.get("cameraPreset")!=null)choice(scene3d.get("cameraPreset"),Set.of("orbit","top","front"));
+                    if(scene3d.get("fallbackMode")!=null)choice(scene3d.get("fallbackMode"),Set.of("poster"));
+                    if(scene3d.get("rotateEnabled")!=null)bool(scene3d.get("rotateEnabled"));
+                    if(scene3d.get("zoomEnabled")!=null)bool(scene3d.get("zoomEnabled"));
+                    if(scene3d.get("enabled")!=null)bool(scene3d.get("enabled"));
+                    if(scene3d.get("fallbackReason")!=null)text(scene3d.get("fallbackReason"),200,true);
+                }
             }else{
                 if(p.get("chartType")!=null)throw invalid("静态组件不能携带图表类型");
                 switch(type){

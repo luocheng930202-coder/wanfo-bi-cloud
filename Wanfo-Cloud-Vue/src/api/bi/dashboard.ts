@@ -12,7 +12,28 @@ export interface PanelStyle {metrics?:MetricStyle[];numberFormat?:NumberFormat|n
 export type ComponentType = 'chart'|'kpi'|'scene3d'|'text'|'image'|'border'|'line'|'container'
 export interface Decoration {color:string;stroke:number;pattern:'solid'|'dashed'|'dotted';radius:number;direction:'horizontal'|'vertical'}
 export interface ContainerStyle {background:string;borderColor:string;stroke:number;radius:number;padding:number}
-export interface Scene3DConfig {mode:'map'|'building'|'chart'}
+export interface Scene3DConfig {
+  /** Missing version is accepted as the legacy mode-only payload (v1). */
+  schemaVersion?:number
+  mode:'map'|'building'|'chart'
+  cameraPreset?:'orbit'|'top'|'front'
+  fallbackMode?:'poster'
+  rotateEnabled?:boolean
+  zoomEnabled?:boolean
+  /** Server sets enabled=false when it safely degrades an unknown/invalid scene. */
+  enabled?:boolean
+  fallbackReason?:string|null
+}
+export interface ResolvedScene3DConfig extends Scene3DConfig {schemaVersion:1;cameraPreset:'orbit'|'top'|'front';fallbackMode:'poster';rotateEnabled:boolean;zoomEnabled:boolean;enabled:boolean}
+export function resolveScene3DConfig(value?:Partial<Scene3DConfig>|null):ResolvedScene3DConfig {
+  const safeFallback=(fallbackReason:string):ResolvedScene3DConfig=>({schemaVersion:1,mode:'building',cameraPreset:'orbit',fallbackMode:'poster',rotateEnabled:false,zoomEnabled:false,enabled:false,fallbackReason})
+  if(!value)return {schemaVersion:1,mode:'building',cameraPreset:'orbit',fallbackMode:'poster',rotateEnabled:true,zoomEnabled:true,enabled:true}
+  if(value.schemaVersion!=null && value.schemaVersion!==1)return safeFallback('场景配置版本暂不支持，已显示安全预览')
+  if(!['map','building','chart'].includes(String(value.mode)))return safeFallback('场景类型无效，已显示安全预览')
+  if(value.cameraPreset!=null && !['orbit','top','front'].includes(value.cameraPreset))return safeFallback('场景视角无效，已显示安全预览')
+  if(value.fallbackMode!=null && value.fallbackMode!=='poster')return safeFallback('场景降级策略不受支持，已显示安全预览')
+  return {schemaVersion:1,mode:value.mode as Scene3DConfig['mode'],cameraPreset:value.cameraPreset || 'orbit',fallbackMode:'poster',rotateEnabled:value.rotateEnabled!==false,zoomEnabled:value.zoomEnabled!==false,enabled:value.enabled!==false,fallbackReason:value.fallbackReason || undefined}
+}
 export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;scene3d?:Scene3DConfig;text?:string|null;image?:string|null}
 export type PanelChartConfig = Pick<QueryModel,'dimensions'|'metrics'> & {type:ChartDefinition['type'];orderBys:NonNullable<QueryModel['orderBys']>;limit:number;filterTree?:QueryModel['filterTree']}
 export interface Panel { parentKey?:string;hidden?:boolean;groupKey?:string;key:string;chartId?:number|null;title:string;x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;locked?:boolean;chartConfig?:PanelChartConfig }

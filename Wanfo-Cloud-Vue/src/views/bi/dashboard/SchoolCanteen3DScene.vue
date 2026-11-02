@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js'
 
 type SceneRow=Record<string,unknown>
-const props=defineProps<{mode:'map'|'building'|'chart';region:string;rows?:SceneRow[];dimension?:string;metric?:string;dataBound?:boolean}>()
+const props=withDefaults(defineProps<{mode:'map'|'building'|'chart';region:string;rows?:SceneRow[];dimension?:string;metric?:string;dataBound?:boolean;cameraPreset?:'orbit'|'top'|'front';rotateEnabled?:boolean;zoomEnabled?:boolean}>(),{cameraPreset:'orbit',rotateEnabled:true,zoomEnabled:true})
 const host=ref<HTMLElement>(),webgl=ref(true)
 const sceneLabel=computed(()=>props.mode==='map'?'区域学校分布':props.mode==='chart'?'食堂采购量 3D 对比':'学校食堂建筑与设备')
 let renderer:THREE.WebGLRenderer|undefined,scene:THREE.Scene,camera:THREE.PerspectiveCamera,controls:OrbitControls,observer:ResizeObserver,frame=0,root:THREE.Group
@@ -82,6 +82,17 @@ function buildChart(){
   const heading=label(props.dataBound && !values.length?'当前筛选下暂无数据':props.metric || '食堂采购量 3D 对比','#bfefff',30);heading.position.set(0,5.2,-1.6);root.add(heading)
 }
 function rebuild(){if(!scene || !root)return;clearRoot();if(props.mode==='map')buildMap();else if(props.mode==='chart')buildChart();else buildBuilding()}
+function applyControls(){
+  if(!camera || !controls)return
+  controls.enableRotate=props.rotateEnabled
+  controls.enableZoom=props.zoomEnabled
+  controls.target.set(0,.7,0)
+  if(props.cameraPreset==='top')camera.position.set(0,17,.01)
+  else if(props.cameraPreset==='front')camera.position.set(0,5,17)
+  else camera.position.set(10,8,11)
+  camera.lookAt(controls.target)
+  controls.update()
+}
 function render(){if(!renderer||!scene||!camera)return;frame=requestAnimationFrame(render);controls?.update();renderer.render(scene,camera)}
 function resize(){if(!host.value||!renderer||!camera)return;const width=host.value.clientWidth,height=host.value.clientHeight;if(!width||!height)return;renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix()}
 onMounted(()=>{
@@ -91,10 +102,10 @@ onMounted(()=>{
   scene.add(new THREE.HemisphereLight('#8bdfff','#102239',2))
   const key=new THREE.DirectionalLight('#a9efff',3);key.position.set(-5,12,8);key.castShadow=true;scene.add(key)
   const rim=new THREE.PointLight('#16c9ff',30,18);rim.position.set(4,5,-5);scene.add(rim)
-  root=new THREE.Group();scene.add(root);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=7;controls.maxDistance=22;controls.maxPolarAngle=Math.PI*.46;controls.target.set(0,.7,0)
-  observer=new ResizeObserver(resize);if(host.value)observer.observe(host.value);rebuild();resize();render()
+  root=new THREE.Group();scene.add(root);controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=7;controls.maxDistance=22;controls.maxPolarAngle=Math.PI*.49
+  observer=new ResizeObserver(resize);if(host.value)observer.observe(host.value);applyControls();rebuild();resize();render()
 })
-watch(()=>[props.mode,props.region,props.rows,props.dimension,props.metric,props.dataBound],rebuild)
+watch(()=>[props.mode,props.region,props.rows,props.dimension,props.metric,props.dataBound,props.cameraPreset,props.rotateEnabled,props.zoomEnabled],()=>{applyControls();rebuild()})
 onBeforeUnmount(()=>{cancelAnimationFrame(frame);observer?.disconnect();controls?.dispose();scene?.traverse(object=>{if(object instanceof THREE.Mesh){object.geometry.dispose();const materials=Array.isArray(object.material)?object.material:[object.material];materials.forEach(m=>m.dispose())}});renderer?.dispose();renderer?.domElement.remove()})
 </script>
 

@@ -37,6 +37,7 @@
           <el-form-item v-if="panel.componentType === 'text'" label="文本内容"><el-input :model-value="panel.content!.text" type="textarea" :rows="7" maxlength="2000" show-word-limit @update:model-value="v => patchContent({ text: v })"/></el-form-item>
           <template v-if="panel.componentType === 'scene3d'">
             <div class="property-section">3D 场景</div>
+            <el-alert v-if="panel.content?.scene3d?.enabled===false" type="warning" :closable="false" :title="panel.content.scene3d.fallbackReason || '场景配置不受支持，当前显示静态预览'" show-icon><template #default><el-button link type="primary" @click="restoreSceneDefaults">恢复默认场景</el-button></template></el-alert>
             <el-form-item label="场景类型"><el-select :model-value="panel.content?.scene3d?.mode || 'building'" aria-label="3D 场景类型" @update:model-value="v => patchSceneMode(v)"><el-option label="食堂建筑" value="building"/><el-option label="区域分布" value="map"/><el-option label="数据柱图" value="chart"/></el-select></el-form-item>
             <p class="property-help">场景可在大屏画布中拖动、缩放并随版本保存。区域分布当前为示意布局。</p>
           </template>
@@ -133,7 +134,10 @@ function patchDecoration(p: Record<string, unknown>) {
   patch({ content: { decoration: { ...props.panel.content!.decoration!, ...p } } })
 }
 function patchSceneMode(mode: 'map'|'building'|'chart') {
-  patch({ content: { ...props.panel.content, scene3d: { ...props.panel.content?.scene3d, mode } } })
+  patch({ content: { ...props.panel.content, scene3d: { ...props.panel.content?.scene3d, schemaVersion:1, mode, enabled:true, fallbackReason:null } } })
+}
+function restoreSceneDefaults() {
+  patch({ content: { ...props.panel.content, scene3d: { schemaVersion:1,mode:'building',cameraPreset:'orbit',fallbackMode:'poster',rotateEnabled:true,zoomEnabled:true,enabled:true } } })
 }
 </script>
 <style scoped>

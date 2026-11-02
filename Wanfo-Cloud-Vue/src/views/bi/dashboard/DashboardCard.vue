@@ -10,14 +10,14 @@
     <div v-else-if="componentType==='text'" class="static-text">{{ content?.text || '在右侧填写文本内容' }}</div>
     <div v-else-if="componentType==='image'" class="static-image"><img v-if="content?.image" :src="content.image" :alt="title || '看板图片'"/><el-empty v-else description="在右侧选择图片" :image-size="56"/></div>
     <div v-else-if="componentType==='kpi'" class="kpi-content"><span class="kpi-label">{{ kpiMetricLabel }}</span><strong :style="{color:kpiColor}">{{ kpiValue }}</strong><span class="kpi-caption">{{ payload?(payload.data.rows.length?'当前筛选与权限范围内的聚合值':'查询成功，当前筛选与权限范围内没有数据；请检查筛选范围'):'点击预览加载数据' }}</span></div>
-    <div v-else-if="componentType==='scene3d' && thumbnail" class="scene-thumbnail"><span>3D</span><strong>{{ content?.scene3d?.mode==='map'?'区域分布':content?.scene3d?.mode==='chart'?'数据柱图':'食堂建筑' }}</strong><small>科技大屏场景</small></div>
-    <div v-else-if="componentType==='scene3d'" class="scene-panel"><SchoolCanteen3DScene :mode="content?.scene3d?.mode || 'building'" region="示范市" :rows="payload?.data.rows" :dimension="payload?.presentation.dimensions[0]" :metric="payload?.presentation.metrics[0]" :data-bound="!!payload"/></div>
+    <div v-else-if="componentType==='scene3d' && (thumbnail || !sceneConfig.enabled)" class="scene-thumbnail" role="img" :aria-label="sceneConfig.enabled?'3D 场景缩略图':'3D 场景安全预览'"><span>3D</span><strong>{{ sceneConfig.enabled?(sceneConfig.mode==='map'?'区域分布':sceneConfig.mode==='chart'?'数据柱图':'食堂建筑'):'场景静态预览' }}</strong><small>{{ sceneConfig.enabled?'科技大屏场景':sceneConfig.fallbackReason || '不支持此配置，已安全降级' }}</small></div>
+    <div v-else-if="componentType==='scene3d'" class="scene-panel"><SchoolCanteen3DScene :mode="sceneConfig.mode" region="示范市" :rows="payload?.data.rows" :dimension="payload?.presentation.dimensions[0]" :metric="payload?.presentation.metrics[0]" :data-bound="!!payload" :camera-preset="sceneConfig.cameraPreset" :rotate-enabled="sceneConfig.rotateEnabled" :zoom-enabled="sceneConfig.zoomEnabled"/></div>
     <div v-else-if="loading && !payload" class="panel-loading" role="status" aria-live="polite">正在加载图表数据…</div>
     <ChartPreview v-else :loading="loading" :thumbnail="thumbnail" :result="payload?.data || null" :definition="definition" :labels="labels" :appearance="appearance" :number-format="panelStyle?.numberFormat" :metric-styles="panelStyle?.metrics" :linkable="linkable" :drillable="!!drillFields?.length" :can-drill-down="payload?.presentation?.canDrillDown" @select="v=>emit('select',v)" @drill="p=>emit('drill',p)"/>
   </div>
 </template>
 <script setup lang="ts">
-import type { PanelResult, PanelStyle, DashboardAppearance, ComponentType, PanelContent, DrillPathSegment } from '@/api/bi/dashboard'
+import { resolveScene3DConfig, type PanelResult, type PanelStyle, type DashboardAppearance, type ComponentType, type PanelContent, type DrillPathSegment } from '@/api/bi/dashboard'
 import type { ChartDefinition } from '@/api/bi/chart'
 import ChartPreview from '../chart/ChartPreview.vue'
 import {queryWaitMessage} from '@/utils/biQueryRun'
@@ -43,6 +43,7 @@ const definition=computed<ChartDefinition>(()=>{
   return {schemaVersion:1,name:props.title,type:p?.type || 'table',style:p?.style,query:{datasetId:0,timeComparison:props.payload?.data.timeComparison?.mode,dimensions:dims,metrics:p?.queryMetrics?.length?p.queryMetrics:(p?.metrics||[]).map(f=>({field:f,alias:f,agg:'NONE'}))},advanced:p?.advanced || (p?.pivotRowFields?{pivotRowFields:p.pivotRowFields,pivotColFields:p.pivotColFields||[]}:undefined)}
 })
 const container=computed(()=>props.componentType==='container')
+const sceneConfig=computed(()=>resolveScene3DConfig(props.content?.scene3d))
 const containerStyle=computed(()=>{let c:ReturnType<typeof normalizeContainer>;try{c=normalizeContainer(props.content?.container)}catch{c=normalizeContainer()}return {inset:'0',background:c.background,border:`${c.stroke}px solid ${c.borderColor}`,borderRadius:c.radius+'px'}})
 const decoration=computed(()=>props.componentType==='border' || props.componentType==='line')
 const decorationStyle=computed(()=>{if(!decoration.value)return {};let d:ReturnType<typeof normalizeDecoration>;try{d=normalizeDecoration(props.content?.decoration)}catch{d=normalizeDecoration()}const stroke=`${d.stroke}px ${d.pattern} ${d.color}`;return props.componentType==='border'?{inset:'0',border:stroke,borderRadius:d.radius+'px'}:d.direction==='vertical'?{left:'50%',top:'0',height:'100%',borderLeft:stroke}:{top:'50%',left:'0',width:'100%',borderTop:stroke}})

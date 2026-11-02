@@ -22,6 +22,7 @@
             <el-table-column prop="name" label="名称" min-width="150" />
             <el-table-column prop="sourceCatalog" label="数据库" min-width="110" />
             <el-table-column prop="sourceTable" label="来源表" min-width="120" />
+            <el-table-column label="消费门禁" width="130"><template #default="{row}">{{ row.warehouseModelId ? `模型 #${row.warehouseModelId}` : '未绑定' }}</template></el-table-column>
             <el-table-column prop="fieldCount" label="字段数" width="85" />
             <el-table-column label="操作" width="510" fixed="right"><template #default="{row}">
               <el-button v-if="row.type==='table' && checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" link type="primary" @click="openModel(row)">建模</el-button>
@@ -58,6 +59,12 @@
             <el-select v-model="form.sourceTable" filterable :loading="modelLoading" :disabled="!form.sourceCatalog" placeholder="选择表或视图" @change="tableChanged" style="width:100%">
               <el-option v-for="table in tables" :key="table.name" :value="table.name" :label="table.comment ? `${table.name} · ${table.comment}` : table.name" />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="checkPermi(['bi:resource:admin'])" label="数仓模型">
+            <el-select v-model="form.warehouseModelId" clearable filterable style="width:100%" placeholder="可选：绑定已启用的数仓模型">
+              <el-option v-for="model in warehouseModels.filter(m => m.status === 'ACTIVE' && m.tableName.toLowerCase() === (form.sourceTable || '').toLowerCase())" :key="model.id" :value="model.id" :label="`${model.name} · ${model.modelCode} · ${model.consumerGate === 'REQUIRE_PASS_RECON' ? '对账/新鲜度门禁' : '开放消费'}`" />
+            </el-select>
+            <div class="hint">只显示与当前物理表同名的启用模型；强制门禁会在图表和看板查询时检查。</div>
           </el-form-item>
           <el-form-item label="字段选择">
             <div style="width:100%">
@@ -129,7 +136,7 @@ import DatasetModelDialog from './DatasetModelDialog.vue'
 const policyDialog=reactive({visible:false,id:0,name:''})
 const warehouseScopeDialog=reactive({visible:false,id:0,name:''})
 const modelDialog=reactive({visible:false,id:0,name:''})
-import { getGroupTree, createGroup, deleteGroup, listDatasets, getDataset, listCatalogs, listTables, listColumns, listModelSources, previewTable, createTableDataset, createSqlDataset, previewDataset, deleteDataset, searchDatasetPrincipals, listDatasetGrants, grantDataset, revokeDatasetGrant, type DatasetGroupNode, type DatasetSummary, type ModelDatasource, type CatalogTable, type CatalogColumn, type PreviewResult, type DatasetField } from '@/api/bi/dataset'
+import { getGroupTree, createGroup, deleteGroup, listDatasets, getDataset, listCatalogs, listTables, listColumns, listModelSources, listWarehouseTableModels, previewTable, createTableDataset, createSqlDataset, previewDataset, deleteDataset, searchDatasetPrincipals, listDatasetGrants, grantDataset, revokeDatasetGrant, type DatasetGroupNode, type DatasetSummary, type ModelDatasource, type WarehouseTableModelOption, type CatalogTable, type CatalogColumn, type PreviewResult, type DatasetField } from '@/api/bi/dataset'
 import { previewColumnLabel } from '@/utils/biFieldLabels'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
 
@@ -149,7 +156,8 @@ const modelLoading = ref(false)
 const previewLoading = ref(false)
 const saving = ref(false)
 const createDialog = reactive({ visible:false, mode:'table' as 'table' | 'sql' })
-const form = reactive({ name:'', datasourceId:undefined as number | undefined, sourceCatalog:'', sourceTable:'', fields:[] as string[], sqlText:'', remark:'' })
+const form = reactive({ name:'', datasourceId:undefined as number | undefined, warehouseModelId:undefined as number | undefined, sourceCatalog:'', sourceTable:'', fields:[] as string[], sqlText:'', remark:'' })
+const warehouseModels=ref<WarehouseTableModelOption[]>([])
 const draftPreview = ref<PreviewResult | null>(null)
 let modelVersion=0, draftVersion=0, savedPreviewVersion=0, datasetListVersion=0
 const fingerprint = () => JSON.stringify([form.datasourceId, form.sourceCatalog, form.sourceTable, form.fields])
@@ -178,7 +186,7 @@ async function removeGroup() {
 function invalidateModel() { modelVersion++; draftVersion++; previewLoading.value=false; draftPreview.value=null; modelLoading.value=false }
 async function openCreate(mode:'table'|'sql', sourceId?:number) {
   invalidateModel()
-  Object.assign(form,{name:'',datasourceId:undefined,sourceCatalog:'',sourceTable:'',fields:[],sqlText:'',remark:''})
+  Object.assign(form,{name:'',datasourceId:undefined,warehouseModelId:undefined,sourceCatalog:'',sourceTable:'',fields:[],sqlText:'',remark:''})
   catalogs.value=[]; tables.value=[]; columns.value=[]; sources.value=[]
   createDialog.mode=mode; createDialog.visible=true
   const version=modelVersion
@@ -186,6 +194,7 @@ async function openCreate(mode:'table'|'sql', sourceId?:number) {
     const res=await listModelSources()
     if(version!==modelVersion || !createDialog.visible) return
     sources.value=res.data || []
+    if(checkPermi(['bi:resource:admin'])) { try { warehouseModels.value=(await listWarehouseTableModels()).data || [] } catch { warehouseModels.value=[] } }
     if(sourceId && sources.value.some(s=>s.id===sourceId)) { form.datasourceId=sourceId; await sourceChanged(sourceId) }
   } catch { }
 }
@@ -244,7 +253,7 @@ async function saveDataset() {
     if(createDialog.mode==='table') {
       const picked=new Set(form.fields)
       const fieldPayload=columns.value.filter(c=>picked.has(c.name)).map(c=>({name:c.name,showName:c.showName?.trim()||c.name,dimFlag:c.dimFlag}))
-      await createTableDataset({name:form.name.trim(),groupId:currentGroup.value?.id,datasourceId:form.datasourceId,sourceCatalog:form.sourceCatalog,sourceTable:form.sourceTable,fields:fieldPayload,remark:form.remark})
+      await createTableDataset({name:form.name.trim(),groupId:currentGroup.value?.id,datasourceId:form.datasourceId,warehouseModelId:form.warehouseModelId,sourceCatalog:form.sourceCatalog,sourceTable:form.sourceTable,fields:fieldPayload,remark:form.remark})
     }
     else await createSqlDataset({name:form.name.trim(),groupId:currentGroup.value?.id,datasourceId:form.datasourceId,sqlText:form.sqlText,remark:form.remark})
     createDialog.visible=false; ElMessage.success('数据集已保存'); await Promise.all([loadGroups(),loadDatasets()])

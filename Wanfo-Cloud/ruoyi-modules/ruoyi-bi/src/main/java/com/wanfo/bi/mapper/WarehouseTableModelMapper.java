@@ -32,6 +32,9 @@ public interface WarehouseTableModelMapper {
             """)
     Map<String, Object> find(@Param("id") Long id);
 
+    @Select("SELECT id,model_code AS modelCode,table_name AS tableName,status,consumer_gate AS consumerGate,freshness_sla_minutes AS freshnessSlaMinutes FROM dp_warehouse_table_model WHERE id=#{id}")
+    Map<String, Object> consumerBinding(@Param("id") Long id);
+
     @Select("""
             SELECT id,model_code AS modelCode,name,layer,table_name AS tableName,table_kind AS tableKind,
                    primary_keys_json AS primaryKeysJson,partition_field AS partitionField,

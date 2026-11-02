@@ -59,6 +59,7 @@ export interface DatasetSummary {
   name: string
   type: string
   datasourceId: number
+  warehouseModelId?: number | null
   sourceTable: string
   sourceCatalog?: string
   resourceActions?: string[]
@@ -74,6 +75,9 @@ export interface DatasetDetail extends DatasetSummary {
   remark?: string
   fields: DatasetField[]
 }
+
+export interface WarehouseTableModelOption { id:number; modelCode:string; name:string; layer:string; tableName:string; status:string; consumerGate:string; freshnessSlaMinutes?:number }
+export function listWarehouseTableModels():Promise<AjaxResult<WarehouseTableModelOption[]>>{return request({url:'/bi/warehouse/table-models'})}
 
 export interface DatasetJoinStep { joinType: 'LEFT' | 'INNER' | 'RIGHT'; rightTable: string; leftKey: string; rightKey: string; rightFields: string[] }
 export interface DatasetJoinModel extends Partial<DatasetJoinStep> { joins?: DatasetJoinStep[] }
@@ -190,6 +194,7 @@ export interface TableDatasetForm {
   name: string
   groupId?: number
   datasourceId: number
+  warehouseModelId?: number
   sourceTable: string
   sourceCatalog?: string
   fields: (string | TableDatasetFieldInput)[]

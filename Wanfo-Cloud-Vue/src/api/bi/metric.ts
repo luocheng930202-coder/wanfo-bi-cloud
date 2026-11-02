@@ -64,8 +64,14 @@ export interface MetricConsumerContext {
   kind: MetricKind
   publishStatus: MetricPublishStatus
   publishedVersion: number
+  datasetId?: number
   pinNote: string
   businessDefinition?: string
+  measure?: MeasureSpec
+  components?: ComponentRef[]
+  expression?: string
+  compositeExpression?: string
+  fixedFilterSummary?: Array<{ field: string; op: string }>
   businessDimensions?: string
   allowedDimensions?: string[]
   grain?: string

@@ -218,5 +218,10 @@ class MetricStandardLifecycleTest {
         var ctx = service.consumerContext(gmvId);
         assertEquals("published", ctx.get("publishStatus"));
         assertEquals(List.of("city", "channel"), ctx.get("allowedDimensions"));
+        assertEquals(9L, ctx.get("datasetId"));
+        assertEquals(new MetricDefinitionService.MeasureSpec("amount", "SUM"), ctx.get("measure"));
+        assertEquals("订单日", ctx.get("grain"));
+        assertEquals("元", ctx.get("unit"));
+        assertEquals("alice", ctx.get("owner"));
     }
 }

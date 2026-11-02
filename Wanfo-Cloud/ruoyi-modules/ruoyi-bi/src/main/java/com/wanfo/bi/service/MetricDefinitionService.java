@@ -120,7 +120,15 @@ public class MetricDefinitionService {
                 : "指标尚未发布，消费侧暂无冻结口径");
         Definition source = "published".equals(row.getPublishStatus()) && row.getPublishedJson() != null
                 ? decodePublished(row) : decode(row);
+        out.put("datasetId", source.datasetId());
         out.put("businessDefinition", source.businessDefinition());
+        out.put("measure", source.measure());
+        out.put("components", source.components() == null ? List.of() : source.components());
+        out.put("expression", source.expression());
+        out.put("compositeExpression", source.compositeExpression());
+        out.put("fixedFilterSummary", source.fixedFilters() == null ? List.of() : source.fixedFilters().stream()
+                .map(filter -> Map.of("field", filter.getField(), "op", filter.getOp()))
+                .toList());
         out.put("businessDimensions", joinDims(source.allowedDimensions()));
         out.put("allowedDimensions", source.allowedDimensions() == null ? List.of() : source.allowedDimensions());
         out.put("grain", source.grain());

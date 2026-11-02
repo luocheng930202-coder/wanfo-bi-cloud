@@ -109,4 +109,5 @@ W7 已收口本表「S3 加深」MVP；上表「仍 backlog（S4+）」须新触
 
 - 功能细项仍以 `DATA-PLATFORM-FUNCTION-CHECKLIST.md` 为准，但 **P2/暂缓不得默认升 P0**。  
 - `PLATFORM-EXTENSION-ROADMAP.md` 未勾选且属于上表的，跟进时改状态并引用本文 ID。  
-- S2/S3 MVP 均已关闭；后续加深以验收记录遗留表 + 本文触发条件为准。
+- S2/S3 MVP 均已关闭；后续加深以验收记录遗留表 + 本文触发条件为准。  
+- **商业成交/过审观感**类后续项见 [COMMERCIAL-VALUE-BACKLOG.md](COMMERCIAL-VALUE-BACKLOG.md)（与本文余项交叉时两边互链 ID，不得无触发默认升 P0）。

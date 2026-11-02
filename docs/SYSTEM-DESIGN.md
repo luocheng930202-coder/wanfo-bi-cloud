@@ -1,17 +1,24 @@
 # Wanfo 系统功能设计原理总文档
 
-> 版本：1.0  
-> 日期：2026-10-31  
+> 版本：1.1  
+> 日期：2026-11-01  
 > 状态：**实现级回溯主文档（以代码 + Flyway 为准）**  
-> 代码基线：`Wanfo-Cloud` / `ruoyi-modules-bi`（BI Flyway 至 **V63**）+ `Wanfo-Cloud-Vue`  
+> 代码基线：`Wanfo-Cloud` / `ruoyi-modules-bi`（BI Flyway 至 **V64**，含标准指标 cutover）+ `Wanfo-Cloud-Vue`  
+> 对外介绍入口：[../README.md](../README.md)  
 > 产品边界宪章：[PRODUCT-POSITIONING-AND-FOUNDATION.md](PRODUCT-POSITIONING-AND-FOUNDATION.md)  
 > 目标架构基线：[DATA-PLATFORM-ARCHITECTURE.md](DATA-PLATFORM-ARCHITECTURE.md)
 
 ## 0. 怎么用这份文档
 
-### 0.1 目的
+### 0.1 目的与文档分工
 
-回答「这个功能在系统里**到底怎么实现**」：业务主路径、控制面/执行面数据流、核心表与状态、关键类与 API、门禁与失败语义、已知边界。  
+| 文档 | 回答 |
+|---|---|
+| 根目录 `README.md` | 项目是什么、功能总览、怎么跑起来 |
+| `PRODUCT-POSITIONING-AND-FOUNDATION.md` | 是什么 / 不是什么、底座与阶段边界 |
+| **本文** | 功能在系统里**到底怎么实现** |
+
+本文覆盖：业务主路径、控制面/执行面数据流、核心表与状态、关键类与 API、门禁与失败语义、已知边界。  
 **不替代**验收记录（`S*-ACCEPTANCE-RECORD`）与产品定位文档；验收只记证据，**原理以本文为准**。
 
 ### 0.2 读者
@@ -999,6 +1006,7 @@ flowchart LR
 | V55–V56 | 凭据密钥环、备份演练 |
 | V57–V62 | API 契约/调用方/族版本/金丝雀/样本；任务泳道与运维加深 |
 | V63 | W7：泳道优先级/权重、标准域与批量绑定计划、调用方加权金丝雀与 call sample、变更单与 override ticket |
+| V64 | 标准指标干净切换：原子/派生/复合（schema v2）；清空旧 scalar/table 指标及 Data API 绑定 |
 
 完整 DDL 以 `Wanfo-Cloud/ruoyi-modules/ruoyi-bi/src/main/resources/db/migration/bi/` 为准。
 
@@ -1030,6 +1038,8 @@ flowchart LR
 | 2026-10-31 | 前端：三套可切换 UI 主题（令牌 + 工作台外观设置；List 骨架分批） |
 | 2026-11-01 | 指标：原子/派生/复合标准定义（schema v2）；定义与查询分离；V64 干净切换 |
 | 2026-11-01 | 图表/指标查询：遗留 MySQL 反引号 `union_sql` 在 Calcite 前归一（forCalcite） |
+| 2026-11-01 | 入口文档基线对齐 V64；README / 产品定位与本文导读同步 |
+| 2026-11-02 | 增补商业价值后续清单链接：`COMMERCIAL-VALUE-BACKLOG.md`（待排期，不扩 S4+ 默认范围） |
 
 ---
 

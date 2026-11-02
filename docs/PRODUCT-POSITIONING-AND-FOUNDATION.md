@@ -1,11 +1,12 @@
 # Wanfo 产品定位与底座基线
 
-> 版本：1.0  
-> 日期：2026-10-31  
+> 版本：1.1  
+> 日期：2026-11-01  
 > 状态：**产品与架构决策基线（后续扩展不得与本文冲突）**  
 > 适用仓库：`Wanfo-Cloud`（`ruoyi-modules-bi`）+ `Wanfo-Cloud-Vue`  
+> 阶段：S2 / S3 MVP 已退出；当前加深含标准指标 schema v2、分析|数据中心双壳与三套 UI 主题  
 > 配套文档：[DATA-PLATFORM-ARCHITECTURE.md](DATA-PLATFORM-ARCHITECTURE.md)、[PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md)、[DATA-PLATFORM-FUNCTION-CHECKLIST.md](DATA-PLATFORM-FUNCTION-CHECKLIST.md)  
-> **实现级功能原理回溯（表 / 流 / 门禁）**：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)
+> **对外入口**：[../README.md](../README.md) · **实现级功能原理（表 / 流 / 门禁）**：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)
 
 本文回答三件事：
 
@@ -130,7 +131,7 @@ flowchart TB
 
 - `ruoyi-gateway` / `ruoyi-auth` / `ruoyi-system`：身份与入口  
 - `ruoyi-modules-bi`：BI + 平台领域（catalog / pipeline / warehouse / quality / data-api / glossary…）  
-- `Wanfo-Cloud-Vue`：`/bi-admin/*` 数据中心工作区导航  
+- `Wanfo-Cloud-Vue`：`/bi-admin/*` 以 `BiWorkspaceLayout` 承载 **分析 | 数据中心** 双域壳（偏好键 `localStorage.bi-workspace-domain`）  
 
 **拆 Worker / 独立治理服务的触发条件**：批任务与在线查询资源争抢无法用配额解决、或有明确多实例扩缩容需求。不以「模块多」为由提前拆分。
 
@@ -174,8 +175,9 @@ flowchart TB
 
 ### 5.6 前端与产品壳底座
 
-1. 数据中心导航以 `BiWorkspaceLayout` + `/bi-admin` 路由为壳；新能力优先挂现有「目录 / 管道 / 装载 / 血缘 / API / 术语 / 指标」而不是无限增加顶级菜单。  
-2. 菜单可见 ≠ 授权通过；API 负向测试是发布门槛。
+1. `/bi-admin` 以 `BiWorkspaceLayout` 为壳，顶部分域 **分析**（看板/图表/指标/填报/订阅/导出）与 **数据中心**（资产/加工装载/语义开放/治理运维）；新能力优先挂现有分组，而不是无限增加顶级菜单。  
+2. 外观主题（`restrained` / `saas` / `ops`）仅改壳表现，不改变权限与数据范围。  
+3. 菜单可见 ≠ 授权通过；API 负向测试是发布门槛。
 
 ### 5.7 技术栈底座
 
@@ -195,7 +197,7 @@ flowchart TB
 |---|---|---|
 | A. 连接接入 | JDBC / API / 文件 / 对象 CSV；连通测试；凭据；周期元数据扫描 | 不追求连接器数量竞赛；湖表/实时按触发条件 |
 | B. 自助分析 | 数据集、关系/清洗、图表、看板、大屏、订阅、导出 | 不做独立「全民 BI 应用商店」 |
-| C. 指标语义 | 指标定义/发布、复合指标、术语、消费侧口径 | 不做完整 OneData 产品线，但要有可运营的指标门户形态 |
+| C. 指标语义 | 原子/派生/复合标准定义（schema v2）、定义与查询分离、发布冻结与口径取数；术语、字段标准 | 不做完整 OneData 产品线；跨数据集带维度的派生/复合等为加深项 |
 | D. 加工编排 | 版本化管道 DAG、预览/生产、调度、质量门禁节点 | 不替代 Airflow/dbt/Spark |
 | E. 批处理数仓 | 分层、装载、物化、对账钩子、运维页 | 有界批处理；MERGE/原子发布优先于堆连接器 |
 | F. 目录血缘 | 搜索、详情、BI 回填、血缘图、影响分析 | 不做万能元数据湖 |
@@ -309,8 +311,8 @@ flowchart LR
 |---|---|---|---|
 | **现在 → S1** | 企业自助 BI + 入仓/治理骨架可用 | 管道生产、装载运维、目录/血缘/术语、Data API、质量门禁 | 「能分析、能入仓、能管一点」 ✅ |
 | **S2** | 带可信入仓与指标治理的企业 BI | 原子发布/MERGE、对账门禁、指标门户、目录申请审批、分级强制、质量告警闭环 | 对齐 §2.2 六项观感 ✅ 2026-10-31（见 `S2-ACCEPTANCE-RECORD.md`） |
-| **S3** | BI + 轻量数据中台（可选包装） | 统一任务池、数据标准 MVP、API 版本门户、运维影响分析、密钥轮换/备份演练、Parquet 入仓、Doris/SR MERGE | ✅ MVP 2026-10-31（见 `S3-ACCEPTANCE-RECORD.md`）；加深项见 `S3-BACKLOG.md` |
-| **S4+** | 按触发扩展 | 湖表 POC、近实时隔离池、独立 Worker | 有 ADR 与容量证据 |
+| **S3** | BI + 轻量数据中台（可选包装） | 统一任务池、数据标准 MVP、API 版本门户、运维影响分析、密钥轮换/备份演练、Parquet 入仓、Doris/SR MERGE | ✅ MVP 2026-10-31（见 `S3-ACCEPTANCE-RECORD.md`）；加深部分已落地：公平泳道、标准域/绑批、加权金丝雀、标准指标 V64 cutover、双壳与主题（其余见 `S3-BACKLOG.md`） |
+| **S4+** | 按触发扩展 | 湖表 POC、近实时隔离池、独立 Worker、内嵌 AI Copilot 等 | 有 ADR 与容量证据；非默认交付 |
 
 **S2 / S3 MVP 已退出**。默认不再无触发扩中台；S3 加深或 S4+ 须书面触发 + ADR，禁止「对标 DataWorks 全量」无触发立项。
 
@@ -331,6 +333,8 @@ flowchart LR
 | 文档 | 角色 |
 |---|---|
 | **本文** | 产品定位与底座宪章；冲突时以本文为准修订其他文档 |
+| 根目录 `README.md` | 对外项目介绍与功能总览入口（边界服从本文） |
+| `SYSTEM-DESIGN.md` | 实现级原理（表 / 流 / 门禁）；功能怎么落地以该文为准 |
 | `DATA-PLATFORM-ARCHITECTURE.md` | 目标技术架构与原则（应服从本文定位） |
 | `DATA-PLATFORM-FUNCTION-CHECKLIST.md` | 功能与验收细项（状态以代码为准，范围受本文裁剪） |
 | `PLATFORM-EXTENSION-ROADMAP.md` | 近端实施勾选与边界（§7 数仓差距在本文 S2/S3 内消化） |
@@ -338,6 +342,7 @@ flowchart LR
 | `S2-ACCEPTANCE-RECORD.md` | S2 六项观感验收记录 |
 | `S3-ACCEPTANCE-RECORD.md` | S3-01～S3-08 轻量中台 MVP 验收记录 |
 | `S3-BACKLOG.md` | S3 可选包装 backlog 与加深项（防范围回潮） |
+| `COMMERCIAL-VALUE-BACKLOG.md` | 商业价值后续开发清单（成交闭环 / 过审 / 差异化；待排期） |
 | `superpowers/plans/2026-10-31-s2-wave1-warehouse-trust.md` | S2 Wave1（仓可信）可执行实施步骤 |
 | `DATA-WAREHOUSE-*` / `DATA-*-MODEL.md` | 领域细则，不得突破本文「有界批处理 / 非中台替代」 |
 
@@ -359,3 +364,11 @@ flowchart LR
 - 变更本文 §1–§5、§9–§10 需架构/产品书面同意，并同步更新路线图优先级说明。  
 - 仅增补流程示例或映射表，可小版本修订（1.x）。  
 - 实现细节以代码与 Flyway 为准；本文管「方向与边界」，不管「类名是否最新」。
+
+### 12.1 变更记录
+
+| 日期 | 说明 |
+|---|---|
+| 2026-10-31 | 初版 1.0：定位、底座、主路径与 S1–S4+ 阶段 |
+| 2026-11-01 | 1.1：对齐标准指标 v2、双壳/主题与 S3 加深落地；文档关系补 README / SYSTEM-DESIGN |
+| 2026-11-02 | 文档关系增加 `COMMERCIAL-VALUE-BACKLOG.md`（商业价值后续清单） |

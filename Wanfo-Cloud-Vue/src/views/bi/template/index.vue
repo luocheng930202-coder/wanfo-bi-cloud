@@ -115,7 +115,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listTemplateSummaries, getTemplate, saveTemplate, deleteTemplate,
-  listTemplateMarket, searchTemplatePrincipals, listTemplateGrants, grantTemplate, revokeTemplateGrant,
+  listTemplateMarket, getMarketTemplate, searchTemplatePrincipals, listTemplateGrants, grantTemplate, revokeTemplateGrant,
   type TemplateSummary, type MarketTemplateEntry
 } from '@/api/bi/template'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'

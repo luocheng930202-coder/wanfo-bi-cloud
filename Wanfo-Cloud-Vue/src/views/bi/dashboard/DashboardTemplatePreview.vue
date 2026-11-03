@@ -1,30 +1,55 @@
 <template>
-  <div class="template-preview" :class="template.theme" :style="file && 'scene' in file?{aspectRatio:file.scene.width+'/'+file.scene.height}:{}" role="img" :aria-label="template.name+'布局示意，无业务数据'">
-    <span class="preview-watermark">布局示意 · 无业务数据</span>
-    <div v-if="!file && !dashboard" class="mock-title">{{ template.name }}<small>布局示意 · 无业务数据</small></div>
-    <div v-for="slot in slots" :key="slot.key" class="mock-slot" :style="{left:slot.x/width*100+'%',top:slot.y/height*100+'%',width:slot.w/width*100+'%',height:slot.h/height*100+'%'}">
-      <span>{{ slot.label }}</span><strong v-if="slot.kind==='kpi'">— —</strong>
-      <img v-else-if="slot.kind==='image' && slot.content?.image" :src="slot.content.image" alt="" class="mock-image"/>
-      <div v-else-if="slot.kind==='image'" class="mock-image-empty">未打包图片</div>
-      <div v-else-if="slot.type==='bar'" class="mock-bars"><i v-for="(height,i) in [34,64,47,82,58]" :key="i" :style="{height:height+'%'}"/></div>
-      <div v-else-if="slot.type==='line' || slot.type==='area'" class="mock-line"><svg viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true"><polygon v-if="slot.type==='area'" points="0,39 16,31 31,35 48,18 63,25 81,9 100,15 100,48 0,48"/><polyline points="0,39 16,31 31,35 48,18 63,25 81,9 100,15"/></svg><div class="mock-axis"><i v-for="i in 4" :key="i"/></div></div>
-      <div v-else-if="slot.type==='ring' || slot.type==='pie'" class="mock-ring" :class="{'is-pie':slot.type==='pie'}"><i/></div>
-      <div v-else-if="slot.type==='map' || slot.type==='geo-map'" class="mock-map"><div class="map-shape"><i/><i/><i/><i/><i/><i/></div><span>区域数据绑定后呈现</span></div>
-      <div v-else-if="slot.type==='table' || slot.type==='pivot'" class="mock-table"><i v-for="i in 4" :key="i"/></div>
-      <div v-else-if="slot.kind==='chart'" class="mock-bars"><i v-for="(height,i) in [46,72,52,86,61]" :key="i" :style="{height:height+'%'}"/></div>
+  <div ref="previewRoot" class="template-preview" :class="[layoutFile?.appearance.theme || template.theme,{'is-demo':demonstration}]" :style="previewAspect" :role="demonstration?'group':'img'" :aria-label="template.name+(demonstration?'效果演示，非真实业务数据':'布局示意，无业务数据')">
+    <span class="preview-watermark">{{ demonstration?'效果演示 · 非真实业务数据':'布局示意 · 无业务数据' }}</span>
+    <div v-if="layoutFile" class="rendered-layout" :inert="!demonstration">
+      <div class="preview-surface" :style="surfaceStyle">
+        <DashboardCanvas :scene="layoutFile.format==='datacenter-screen-template'?{...layoutFile.scene,fit:'contain'}:undefined" :panels="layoutFile.panels" :appearance="layoutFile.appearance" fixed-layout readonly compact>
+          <template #default="{panel}"><DashboardCard :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="layoutFile?.appearance" :payload="demoPayloads[panel.key]" :demonstration="demonstration" :thumbnail="!demonstration" disabled refresh-disabled /></template>
+        </DashboardCanvas>
+      </div>
     </div>
+    <el-empty v-else description="加载模板后显示布局" :image-size="40" />
   </div>
 </template>
 <script setup lang="ts">
-import {computed} from 'vue'
-import type {ScreenTemplate} from '@/utils/biTemplates'
+import {computed,ref,onMounted,onBeforeUnmount} from 'vue'
+import {templateAppearance,type ScreenTemplate} from '@/utils/biTemplates'
 import type {LayoutTemplateFile} from '@/utils/biTemplateFiles'
-const props=defineProps<{template:ScreenTemplate;file?:LayoutTemplateFile}>()
-const dashboard=computed(()=>props.template.kind==='dashboard' || props.file?.format==='datacenter-dashboard-template')
-const slots=computed(()=>props.file?props.file.panels.filter(p=>!p.hidden).map(p=>({key:p.key,label:p.title,kind:p.componentType,type:p.chartType,x:p.x,y:p.y,w:p.w,h:p.h,content:p.content})):props.template.slots.map(s=>({...s,content:undefined})))
-const width=computed(()=>props.file && 'scene' in props.file?props.file.scene.width:dashboard.value?12:1920)
-const height=computed(()=>props.file && 'scene' in props.file?props.file.scene.height:dashboard.value?Math.max(12,...slots.value.map(s=>s.y+s.h),12):1080)
+import DashboardCanvas from './DashboardCanvas.vue'
+import DashboardCard from './DashboardCard.vue'
+import {templateGridSize,fitTemplateViewport} from '@/utils/biTemplateViewport'
+import {templateDemoPayloads} from '@/utils/biTemplateDemo'
+const props=defineProps<{template:ScreenTemplate;file?:LayoutTemplateFile;demonstration?:boolean}>()
+const layoutFile=computed<LayoutTemplateFile|undefined>(()=>{
+  if(props.file)return props.file
+  if(!props.template.slots.length)return
+  const template=props.template
+  const panels=template.slots.map(slot=>({key:slot.key,title:slot.label,componentType:slot.kind,chartType:slot.type,x:slot.x,y:slot.y,w:slot.w,h:slot.h,style:{showTitle:true,titleAlign:'left' as const}}))
+  const common={version:1 as const,name:template.name,appearance:templateAppearance(template.theme),panels}
+  if(template.kind==='dashboard')return {...common,format:'datacenter-dashboard-template'}
+  return {...common,format:'datacenter-screen-template',scene:{width:1920,height:1080,fit:'contain',refreshSeconds:0},panels:[{key:'preview-heading',title:template.name,componentType:'text',x:40,y:20,w:1840,h:90,content:{text:template.description},style:{showTitle:true,titleAlign:'left'}},...panels]}
+})
+const previewRoot=ref<HTMLElement>()
+const demoPayloads=computed(()=>props.demonstration && layoutFile.value?templateDemoPayloads(layoutFile.value):{})
+const viewport=ref({width:0,height:0})
+let observer:ResizeObserver|undefined
+onMounted(()=>{if(previewRoot.value){observer=new ResizeObserver(entries=>{const rect=entries[0]?.contentRect;if(rect)viewport.value={width:rect.width,height:rect.height}});observer.observe(previewRoot.value)}})
+onBeforeUnmount(()=>observer?.disconnect())
+const gridSize=computed(()=>templateGridSize(layoutFile.value?.panels || []))
+const previewAspect=computed(()=>({aspectRatio:layoutFile.value?.format==='datacenter-screen-template'?layoutFile.value.scene.width+'/'+layoutFile.value.scene.height:layoutFile.value?gridSize.value.width+'/'+gridSize.value.height:'16/9'}))
+const surfaceStyle=computed(()=>{
+  if(layoutFile.value?.format!=='datacenter-dashboard-template')return {width:'100%',height:'100%'}
+  const native=gridSize.value,fit=fitTemplateViewport(viewport.value.width,viewport.value.height,native.width,native.height)
+  return {position:'absolute' as const,width:native.width+'px',height:native.height+'px',transformOrigin:'0 0',transform:`translate(${fit.x}px,${fit.y}px) scale(${fit.scale})`}
+})
 </script>
 <style scoped>
-.template-preview{aspect-ratio:16/9;position:relative;border-radius:10px;overflow:hidden;background:radial-gradient(ellipse at 50% 38%,#102d43,#071625 75%);color:#e3f5ff;border:1px solid #1b5268}.template-preview.light{background:#f1f5f9;color:#20324d;border-color:#d7e2f0}.preview-watermark{position:absolute;right:1.2%;top:1.5%;z-index:2;padding:3px 6px;border:1px solid #5591a866;border-radius:3px;background:#061a2bc9;color:#92b4c6;font-size:clamp(6px,.55vw,9px);letter-spacing:.3px}.mock-title{position:absolute;left:2.1%;right:2.1%;top:3%;font-size:clamp(12px,1.4vw,20px);font-weight:600;display:flex;justify-content:space-between;align-items:center}.mock-title small{font-size:10px;opacity:.6;font-weight:400}.mock-slot{position:absolute;box-sizing:border-box;background:linear-gradient(145deg,#102a3d,#0b2032);border:1px solid #20536a;border-radius:5px;padding:1.15%;display:flex;flex-direction:column;gap:6px;font-size:clamp(7px,.7vw,11px);overflow:hidden;box-shadow:inset 0 0 18px #25c2d10b}.light .mock-slot{background:white;border-color:#d7e2f0}.mock-slot strong{font-size:clamp(11px,1.2vw,22px);color:#45d6de}.mock-image{width:100%;flex:1;min-height:0;object-fit:contain;border-radius:4px;display:block}.mock-image-empty{flex:1;display:flex;align-items:center;justify-content:center;opacity:.55}.mock-bars{display:flex;flex:1;min-height:0;align-items:end;gap:8%;padding:5% 8%;border-bottom:1px solid #53647b}.mock-bars i{flex:1;background:linear-gradient(#38d8e6,#3478ff);border-radius:3px 3px 0 0;box-shadow:0 0 10px #36c7da38}.mock-table{display:flex;flex-direction:column;justify-content:space-around;flex:1}.mock-table i{height:10%;background:#64748b1c;border-top:1px solid #4b769045}.mock-line{position:relative;flex:1;min-height:0;padding:6% 3% 4%}.mock-line svg{position:absolute;inset:0;width:100%;height:90%;overflow:visible}.mock-line polyline{fill:none;stroke:#50dce8;stroke-width:1.7;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 3px #36d8e7)}.mock-line polygon{fill:#29cdd522;stroke:none}.mock-axis{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-around;pointer-events:none}.mock-axis i{height:1px;background:#5ab9d51a}.mock-ring{align-self:center;position:relative;width:min(58%,150px);aspect-ratio:1;border-radius:50%;margin:auto;background:conic-gradient(#48d9e5 0 34%,#4a8dff 34% 59%,#8f70ff 59% 80%,#f2ad4f 80%)}.mock-ring i{position:absolute;inset:28%;border-radius:50%;background:#0c2335}.mock-ring.is-pie i{display:none}.mock-map{display:flex;align-items:center;justify-content:center;gap:10px;flex:1;min-height:0;position:relative;color:#7fa8bb;font-size:9px}.map-shape{position:relative;width:45%;height:80%;background:linear-gradient(145deg,#174b65,#0f344e);clip-path:polygon(34% 2%,52% 7%,62% 1%,77% 12%,73% 27%,88% 36%,77% 51%,82% 68%,62% 78%,57% 96%,42% 88%,38% 72%,22% 66%,28% 47%,13% 36%,24% 17%);filter:drop-shadow(0 0 12px #25c7df55)}.map-shape i{position:absolute;width:6px;height:6px;border-radius:50%;background:#45e4d1;box-shadow:0 0 8px #45e4d1}.map-shape i:nth-child(1){left:42%;top:22%}.map-shape i:nth-child(2){left:57%;top:36%}.map-shape i:nth-child(3){left:34%;top:45%}.map-shape i:nth-child(4){left:59%;top:55%}.map-shape i:nth-child(5){left:48%;top:70%}.map-shape i:nth-child(6){left:68%;top:76%}
+.template-preview{aspect-ratio:16/9;position:relative;border-radius:10px;overflow:hidden;background:#071625;color:#e3f5ff;border:1px solid #1b5268}
+.template-preview.light{background:#f1f5f9;color:#20324d;border-color:#d7e2f0}
+.preview-watermark{position:absolute;right:1.2%;top:1.5%;z-index:2;padding:3px 6px;border:1px solid #5591a866;border-radius:3px;background:#061a2bc9;color:#92b4c6;font-size:clamp(6px,.55vw,9px);letter-spacing:.3px}
+.rendered-layout{position:absolute;inset:0;pointer-events:none}
+.is-demo .rendered-layout{pointer-events:auto}
+.rendered-layout :deep(.screen-editor){height:100%}
+.rendered-layout :deep(.screen-frame){height:100%;min-height:0}
+.rendered-layout :deep(.screen-display-tools){display:none}
 </style>

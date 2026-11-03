@@ -14,6 +14,7 @@ export function normalizeDashboard(d: DashboardDefinition): DashboardDefinition 
   if(d.kind==='screen' && (!Number.isInteger(d.scene?.width) || !Number.isInteger(d.scene?.height) || d.scene!.width<320 || d.scene!.width>8192 || d.scene!.height<240 || d.scene!.height>8192 || !['contain','width','none'].includes(d.scene!.fit)))throw new Error('大屏尺寸或适配方式无效')
   for(const p of d.panels)if(p.componentType==='border' || p.componentType==='line'){if(d.kind!=='screen' || p.content?.text!=null || p.content?.image!=null)throw new Error('装饰组件仅支持大屏且不能携带文本或图片');normalizeDecoration(p.content?.decoration)}
   for(const p of d.panels)if(p.componentType==='scene3d' && (!p.content?.scene3d || !['map','building','chart'].includes(p.content.scene3d.mode) || p.content.text!=null || p.content.image!=null))throw new Error('3D 场景类型无效')
+  if(d.appearance?.glowIntensity!=null && (!Number.isInteger(d.appearance.glowIntensity) || d.appearance.glowIntensity<0 || d.appearance.glowIntensity>100))throw new Error('光效强度须为0至100的整数')
   validateContainerLayout(d.panels,d.kind)
   const hidden=new Set(d.panels.filter(p=>p.hidden).map(p=>p.key)),visibility=new Map<string,boolean>()
   for(const p of d.panels){if(p.hidden!=null && typeof p.hidden!=='boolean')throw new Error('隐藏状态无效');if(p.hidden && d.kind!=='screen')throw new Error('仅大屏支持隐藏图层');if(p.groupKey){if(visibility.has(p.groupKey) && visibility.get(p.groupKey)!==!!p.hidden)throw new Error('组合须整体隐藏或显示');visibility.set(p.groupKey,!!p.hidden)}}
@@ -23,18 +24,50 @@ export function normalizeDashboard(d: DashboardDefinition): DashboardDefinition 
   if([...groups.values()].some(n=>n<2))throw new Error('组合须至少包含两个组件')
   const seconds=d.scene?.refreshSeconds ?? 0
   if(d.kind==='screen' && (!Number.isInteger(seconds) || (seconds!==0 && (seconds<10 || seconds>3600))))throw new Error('刷新间隔须为0或10至3600秒')
-  if (d.panels.some(p => p.componentType && !['chart','kpi','scene3d','text','image','border','line','container'].includes(p.componentType))) throw new Error('存在不支持的看板组件')
+  if (d.panels.some(p => p.componentType && !['chart','kpi','scene3d','text','image','border','line','container','clock'].includes(p.componentType))) throw new Error('存在不支持的看板组件')
+  for(const p of d.panels)if(p.componentType==='clock'){const f=p.content?.text || 'HH:mm:ss';if(!['HH:mm:ss','HH:mm','YYYY-MM-DD','YYYY-MM-DD HH:mm','YYYY-MM-DD HH:mm:ss'].includes(f) || p.content?.image!=null || p.content?.decoration!=null)throw new Error('时钟格式或内容无效')}
   return { ...d, interaction: {controls: [], links: [], ...d.interaction}, kind: d.kind || 'dashboard', layout: d.kind==='screen'?'absolute':'grid', scene:d.kind==='screen'?{...d.scene!}:undefined, appearance: { ...defaultAppearance(d.appearance?.theme), ...d.appearance },
     panels: d.panels.map(p => ({ ...p, componentType: p.componentType || 'chart', locked: p.locked ?? false, hidden:p.hidden ?? false, style: { showTitle: true, titleAlign: 'left', ...p.style } })) }
 }
 
+/** Bounded rendering settings. Missing fields leave legacy dashboards unchanged. */
+export function resolveHologram(value?:DashboardAppearance) {
+  const enabled=value?.visualPreset==='hologram-ice-v1'
+  const raw=value?.glowIntensity
+  const intensity=typeof raw==='number' && Number.isFinite(raw)?Math.max(0,Math.min(100,Math.round(raw))):55
+  return {enabled,intensity,strength:enabled?intensity/100:0}
+}
+
+export function hologramAppearance():DashboardAppearance {
+  return {...defaultAppearance('dark'),visualPreset:'hologram-ice-v1',glowIntensity:55,background:'#020C18',cardBackground:'#071C2B',textColor:'#E2FAFF',borderColor:'#236176',palette:'ocean',titleSize:18,radius:4}
+}
+
 export function presentationVars(value?: DashboardAppearance) {
   const a = { ...defaultAppearance(value?.theme), ...value }
+  const hologram=resolveHologram(a),s=hologram.strength
+  const tech = a.visualPreset === 'tech-blue-v1' || hologram.enabled
+  const imageLayer = a.backgroundImage ? `center / cover no-repeat url("${a.backgroundImage}")` : ''
+  const baseFill = tech ? `radial-gradient(ellipse at 50% 0%,#165b7938,transparent 55%),linear-gradient(180deg,#04101d22,#02091288),${a.background}` : a.background
+  const canvasFill = imageLayer ? `${imageLayer},${baseFill}` : baseFill
   return { '--bi-background': a.background, '--bi-card': a.cardBackground, '--bi-text': a.textColor,
+    '--el-mask-color': a.theme==='dark' ? `${a.cardBackground}E8` : '#FFFFFFDD',
+    '--bi-canvas-fill': canvasFill,
+    '--bi-panel-fill': tech ? `linear-gradient(135deg,#199cca12,transparent 48%),linear-gradient(180deg,#ffffff04,#020c1844),${a.cardBackground}` : a.cardBackground,
+    '--bi-panel-shadow': hologram.enabled?(s>0?`inset 0 0 30px rgba(50,224,255,${s*.12}),0 0 ${s*22}px rgba(50,224,255,${s*.25})`:'none'):tech ? 'inset 0 0 28px #22b8f008,0 8px 24px #00000022' : 'none',
+    '--bi-heading-fill': tech ? 'linear-gradient(90deg,#26c5ee20,transparent)' : a.cardBackground,
+    '--bi-heading-accent': tech ? '#4edcfa' : 'transparent',
+    '--bi-number-glow': hologram.enabled?(s>0?`0 0 ${6+s*22}px rgba(55,226,255,${s*.8})`:'none'):tech ? '0 0 20px #38bdf850' : 'none',
+    '--bi-title-glow': hologram.enabled?(s>0?`0 0 ${s*18}px rgba(62,231,255,${s*.7})`:'none'):'0 0 22px #38bdf855',
     '--bi-border': a.borderColor, '--bi-link': a.theme==='dark'?'#A8C1FF':'#3563E9', '--bi-radius': `${a.radius}px`, '--bi-title-size': `${a.titleSize}px` }
 }
 
+/** A component may opt out of the common panel surface without changing data or layout. */
+export function panelSurfaceVars(style?:PanelStyle) {
+  return style?.transparent ? {background:'transparent',borderColor:'transparent',boxShadow:'none','--bi-heading-fill':'transparent','--bi-heading-accent':'transparent'} : {}
+}
+
 export function chartPalette(value?: DashboardAppearance) {
+  if(value?.visualPreset==='hologram-ice-v1' && value.palette==='ocean')return ['#42E9FF','#4CF2CB','#6CA8FF','#AB91FF','#F1C879']
   if (value?.palette === 'ocean') return ['#38BDF8', '#2DD4BF', '#818CF8', '#60A5FA', '#A78BFA']
   if (value?.palette === 'warm') return ['#F59E0B', '#F97316', '#EF4444', '#A78BFA', '#EC4899']
   return ['#409EFF', '#67C23A', '#E6A23C', '#A071D9', '#F56C6C']

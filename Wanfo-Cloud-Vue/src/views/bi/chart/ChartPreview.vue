@@ -4,19 +4,20 @@
   <el-empty v-else-if="!result.rows.length && type!=='map'" description="查询成功，当前筛选与权限范围内没有数据；请检查筛选范围"/>
   <template v-else>
     <el-alert v-if="!result.rows.length && !thumbnail" title="查询成功，当前筛选与权限范围内没有数据；请检查筛选范围" type="info" :closable="false"/>
-    <div v-if="type==='map' && !thumbnail" class="map-toolbar" :aria-busy="mapBusy"><span role="status" aria-live="polite">{{ mapStatus }}</span><el-button size="small" :disabled="mapBusy || !!renderError" title="恢复当前层级初始视图，不改变下钻路径和查询条件" @click="resetMapView">恢复视图</el-button></div>
+    <div v-if="type==='map' && !thumbnail && !embedded" class="map-toolbar" :aria-busy="mapBusy"><span role="status" aria-live="polite">{{ mapStatus }}</span><el-button size="small" :disabled="mapBusy || !!renderError" title="恢复当前层级初始视图，不改变下钻路径和查询条件" @click="resetMapView">恢复视图</el-button></div>
     <el-alert v-if="type==='map' && mapWarning" :title="mapWarning" type="info" :closable="false" class="mb8"/>
     <el-alert v-if="renderError" :title="renderError" type="warning" :closable="false" class="mb8"/>
-    <div v-show="type!=='table' && type!=='pivot' && !renderError" ref="host" class="chart-canvas" :class="{'chart-canvas--gauge':type==='gauge','chart-canvas--map':type==='map'}" role="img" :aria-label="'图表预览，共 '+result.rowCount+' 行'" />
+    <div v-show="type!=='table' && type!=='pivot' && !renderError" ref="host" class="chart-canvas" :class="{'chart-canvas--gauge':type==='gauge','chart-canvas--map':type==='map','chart-canvas--embedded':embedded}" role="img" :aria-label="'图表预览，共 '+result.rowCount+' 行'" />
     <el-alert v-if="type==='pivot' && !result.pivotTotals && pivotTotalsRequested(definition)" title="小计与总计仅基于当前查询已加载的分组结果；达到行数上限时可能不完整。SUM/COUNT累加，MIN/MAX取极值。" type="info" :closable="false" class="mb8"/>
     <div v-show="type==='pivot' && !renderError" ref="pivotHost" class="pivot-canvas" role="grid" :aria-label="'透视表，共 '+result.rowCount+' 行'"/>
-    <ChartDataTable v-if="type==='table'" :definition="definition" :result="result" :labels="labels" :appearance="appearance" :number-format="numberFormat" :metric-styles="metricStyles" :linkable="linkable" :drillable="drillable" :can-drill-down="canDrillDown" @select="selectRow" @drill="onChartPick"/>
-    <el-table v-if="type!=='table' && type!=='pivot' && !thumbnail" :data="result.rows" border max-height="420" size="small"><el-table-column v-if="linkable || drillable && canDrillDown" label="操作" width="88"><template #default="{row}"><el-button v-if="drillable && canDrillDown" link type="primary" :disabled="type==='map' && !mapRowDrillable(row)" @click="onChartPick(row)">下钻</el-button><el-button v-else-if="linkable" link type="primary" @click="selectRow(row)">选择</el-button></template></el-table-column><el-table-column v-if="type==='map' && definition.advanced?.mapValueMode==='code'" label="地区名称" min-width="120"><template #default="{row}">{{ mapRegionName(row) }}</template></el-table-column><el-table-column v-for="column in result.columns" :key="column" :prop="column" :label="displayLabels[column] || column" min-width="140" show-overflow-tooltip><template #default="{row}"><span :style="{color:metricKeys.has(column)?metricColor(row[column],column,effectiveMetricStyles):undefined}">{{ comparisonRate(result,column,row[column]) ?? (metricKeys.has(column) && formatFor(column)?formatMetric(row[column],appearance,formatFor(column)):displayNumber(row[column],appearance)) }}</span></template></el-table-column></el-table>
-    <p v-if="!thumbnail && result.queryDiagnostics?.slow" class="result-note" role="status">慢查询 · 服务端用时 {{ result.queryDiagnostics.durationMs }} ms · 可缩小筛选范围 · 排查编号：{{ result.queryDiagnostics.requestId }}</p>
+    <button v-if="embedded && type==='map'" class="embedded-map-reset" :disabled="mapBusy || !!renderError" title="恢复当前地图视图" @click="resetMapView">复位</button>
+    <ChartDataTable v-if="type==='table'" :embedded="embedded" :definition="definition" :result="result" :labels="labels" :appearance="appearance" :number-format="numberFormat" :metric-styles="metricStyles" :linkable="linkable" :drillable="drillable" :can-drill-down="canDrillDown" @select="selectRow" @drill="onChartPick"/>
+    <el-table v-if="type!=='table' && type!=='pivot' && !thumbnail && !embedded" :data="result.rows" border max-height="420" size="small"><el-table-column v-if="linkable || drillable && canDrillDown" label="操作" width="88"><template #default="{row}"><el-button v-if="drillable && canDrillDown" link type="primary" :disabled="type==='map' && !mapRowDrillable(row)" @click="onChartPick(row)">下钻</el-button><el-button v-else-if="linkable" link type="primary" @click="selectRow(row)">选择</el-button></template></el-table-column><el-table-column v-if="type==='map' && definition.advanced?.mapValueMode==='code'" label="地区名称" min-width="120"><template #default="{row}">{{ mapRegionName(row) }}</template></el-table-column><el-table-column v-for="column in result.columns" :key="column" :prop="column" :label="displayLabels[column] || column" min-width="140" show-overflow-tooltip><template #default="{row}"><span :style="{color:metricKeys.has(column)?metricColor(row[column],column,effectiveMetricStyles):undefined}">{{ comparisonRate(result,column,row[column]) ?? (metricKeys.has(column) && formatFor(column)?formatMetric(row[column],appearance,formatFor(column)):displayNumber(row[column],appearance)) }}</span></template></el-table-column></el-table>
+    <p v-if="!thumbnail && !embedded && result.queryDiagnostics?.slow" class="result-note" role="status">慢查询 · 服务端用时 {{ result.queryDiagnostics.durationMs }} ms · 可缩小筛选范围 · 排查编号：{{ result.queryDiagnostics.requestId }}</p>
     <p v-if="!thumbnail && result.topN" class="result-note" role="status">{{ result.topN.note }} 其他汇总项不支持联动或下钻。</p>
     <p v-if="!thumbnail && result.timeComparison" class="result-note" role="status">{{ result.timeComparison.label }}：{{ result.timeComparison.status==='skipped'?result.timeComparison.reason:result.timeComparison.note }}</p>
     <p v-if="!thumbnail && result.pivotTotals" class="result-note" role="status">{{ result.pivotTotals.status==='unavailable'?result.pivotTotals.reason:'小计/总计口径：当前筛选和权限范围内的全部数据' }}<span v-if="result.pivotTotals.detailTruncated"> · 明细分组已达展示上限，汇总包含未展示数据</span></p>
-    <p v-if="!thumbnail" class="result-note">{{ result.rowCount }} 行 · {{ result.costMs }} ms · 图表与明细使用当前用户的数据权限<span v-if="result.timeFill"> · {{ result.timeFill.status==='skipped'?'时间补齐已跳过：'+result.timeFill.reason:'实际 '+result.timeFill.sourceRows+' 行，补'+(result.timeFill.mode==='zero'?'零':'空值')+' '+result.timeFill.addedRows+' 个周期' }}</span></p>
+    <p v-if="!thumbnail && !embedded" class="result-note">{{ result.rowCount }} 行 · {{ result.costMs }} ms · 图表与明细使用当前用户的数据权限<span v-if="result.timeFill"> · {{ result.timeFill.status==='skipped'?'时间补齐已跳过：'+result.timeFill.reason:'实际 '+result.timeFill.sourceRows+' 行，补'+(result.timeFill.mode==='zero'?'零':'空值')+' '+result.timeFill.addedRows+' 个周期' }}</span></p>
   </template>
 </template>
 <script setup lang="ts">
@@ -38,7 +39,9 @@ import { defaultMapScope, ensureMapRegistered,registeredGeoFeatures, type MapSco
 import { PivotSheet } from '@antv/s2'
 import {matchGeoFeature,type GeoFeature} from '@/utils/biMapRegions'
 echarts.use([BarChart,LineChart,PieChart,ScatterChart,RadarChart,FunnelChart,GaugeChart,MapChart,GridComponent,TooltipComponent,LegendComponent,GeoComponent,VisualMapComponent,TitleComponent,GraphicComponent,MarkLineComponent,DataZoomComponent,CanvasRenderer])
-const props=defineProps<{thumbnail?:boolean;loading?:boolean;result:ChartResult|null;definition:ChartDefinition;labels:Record<string,string>;appearance?:DashboardAppearance;numberFormat?:NumberFormat|null;metricStyles?:MetricStyle[];linkable?:boolean;drillable?:boolean;canDrillDown?:boolean}>()
+const props=defineProps<{embedded?:boolean;thumbnail?:boolean;loading?:boolean;result:ChartResult|null;definition:ChartDefinition;labels:Record<string,string>;appearance?:DashboardAppearance;numberFormat?:NumberFormat|null;metricStyles?:MetricStyle[];linkable?:boolean;drillable?:boolean;canDrillDown?:boolean}>()
+// Glow lives in the canvas CSS and 3D pass; changing it need not rebuild the 2D chart.
+const chartAppearanceKey=computed(()=>props.appearance?JSON.stringify({...props.appearance,glowIntensity:undefined}):'')
 const displayDefinition=computed<ChartDefinition>(()=>{const context=props.result?.mapContext;if(props.definition.type!=='map' || !context)return props.definition;return {...props.definition,advanced:{...props.definition.advanced,mapScope:context.scope},query:{...props.definition.query,dimensions:[{field:context.field,alias:context.field}]}}})
 const displayLabels=computed(()=>{const labels=comparisonLabels(props.result,props.labels),context=props.result?.mapContext;return context?{...labels,[context.field]:context.fieldLabel || labels[context.field] || context.field}:labels})
 const emit=defineEmits<{(e:'select',value:string|number|null):void;(e:'drill',payload:{field:string;value:string|number|null}):void}>()
@@ -61,7 +64,7 @@ let renderVersion=0
 let instance:echarts.ECharts|undefined,pivotSheet:PivotSheet|undefined,observer:ResizeObserver|undefined
 function disposePivot(){pivotSheet?.destroy();pivotSheet=undefined}
 function dispose(){observer?.disconnect();observer=undefined;instance?.dispose();instance=undefined;disposePivot()}
-watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringify(props.definition.style),JSON.stringify(props.definition.query.metrics),JSON.stringify(props.definition.query.dimensions),JSON.stringify(props.definition.advanced),JSON.stringify(props.appearance),JSON.stringify(props.numberFormat),JSON.stringify(props.metricStyles)],async()=>{
+watch([()=>props.result,()=>props.definition.type,()=>props.definition.name,()=>JSON.stringify(props.definition.style),()=>JSON.stringify(props.definition.query.metrics),()=>JSON.stringify(props.definition.query.dimensions),()=>JSON.stringify(props.definition.advanced),chartAppearanceKey,()=>JSON.stringify(props.numberFormat),()=>JSON.stringify(props.metricStyles)],async()=>{
   const v=++renderVersion;dispose();renderError.value='';mapWarning.value='';mapLoading.value=false;mapNotice.value='';visibleGeoFeatures.value=[];await nextTick();if(v!==renderVersion)return
   if(!props.result || !props.result.rows.length && type.value!=='map' || type.value==='table')return
   if(type.value==='pivot'){
@@ -105,7 +108,7 @@ watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringi
       instance.on('mouseout',()=>instance?.getZr().setCursorStyle('move'))
       instance.setOption(option)
     }else{
-    const option=buildChartPreviewOption({type:type.value,definition:comparisonDefinition(props.definition,props.result),result:props.result,labels:displayLabels.value,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
+    const option=buildChartPreviewOption({compact:props.embedded,type:type.value,definition:comparisonDefinition(props.definition,props.result),result:props.result,labels:displayLabels.value,appearance:props.appearance,numberFormat:props.numberFormat,metricStyles:props.metricStyles,formatFor})
     instance=echarts.init(host.value)
     instance.on('click',(event:any)=>{if((props.linkable || props.drillable) && event.componentType==='series' && Number.isInteger(event.dataIndex)){const drawing=props.result && seriesDrawing(props.definition,props.result);const index=drawing?drawing.rowIndex(event.seriesIndex,event.dataIndex):event.dataIndex;const row=index==null || !props.result?undefined:analysisRows(props.definition,props.result).rows[index];if(row)onChartPick(row)}})
     instance.setOption(option)
@@ -116,3 +119,8 @@ watch(()=>[props.result,props.definition.type,props.definition.name,JSON.stringi
 onBeforeUnmount(()=>{++renderVersion;dispose()})
 </script>
 <style scoped>.map-loading{height:420px;display:flex;align-items:center;justify-content:center;color:var(--bi-text,#667085);background:var(--bi-card,var(--bi-soft,#f8fafc));border-radius:8px}.map-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;color:var(--bi-text,#667085)}.chart-canvas{width:100%;height:340px}.chart-canvas--gauge{height:280px}.chart-canvas--map{height:420px}.pivot-canvas{width:100%;height:420px;overflow:hidden}.result-note{color:var(--bi-text,#606266);font-size:12px;opacity:.8}</style>
+
+<style scoped>
+.chart-canvas--embedded{height:100%;min-height:0;flex:1}
+.embedded-map-reset{position:absolute;right:14px;top:4px;z-index:2;border:1px solid var(--bi-border,#dce3ec);border-radius:3px;background:var(--bi-card,#fff);color:var(--bi-text,#475467);font-size:10px;padding:2px 6px;cursor:pointer}
+</style>

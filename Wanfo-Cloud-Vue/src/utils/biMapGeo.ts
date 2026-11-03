@@ -56,9 +56,9 @@ export function defaultMapScope(): MapScopeId {
   return 'china-provinces'
 }
 
-export async function fetchMapGeo(scope: MapScopeId): Promise<unknown> {
+export async function fetchMapGeo(scope: MapScopeId,signal?:AbortSignal): Promise<unknown> {
   const code=mapScopeCode(scope)
-  const res = await request({ url: `/bi/geo/${code==='100000'?'china-provinces':code}`, method: 'get', timeout: 60000 })
+  const res = await request({ url: `/bi/geo/${code==='100000'?'china-provinces':code}`, method: 'get', timeout: 60000,signal })
   return res.data ?? res
 }
 

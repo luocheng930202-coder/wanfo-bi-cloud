@@ -32,6 +32,18 @@ class DashboardTest {
         service.create(new DashboardService.SaveRequest(null,definition(List.of(panel("a",0,0)))));
         verify(resources).register("dashboard",7L);verify(mapper).bind(7L,4L,9L,"draft");var capture=org.mockito.ArgumentCaptor.forClass(BiDashboardDO.class);verify(mapper).insert(capture.capture());assertEquals("author",capture.getValue().getCreateBy());
     }
+    @Test void draftAllowsUnboundDataPanelsFromTemplateLayout(){
+        doAnswer(c->{((BiDashboardDO)c.getArgument(0)).setId(8L);return 1;}).when(mapper).insert(any());
+        var unbound=new DashboardService.Panel("slot-a",null,"核心指标",0,0,6,4,"chart",null,null,null,null,null,null,null);
+        service.create(new DashboardService.SaveRequest(null,new DashboardService.Definition(1,"模板草稿",List.of(unbound))));
+        verify(mapper).insert(any());verify(mapper,never()).bind(any(),any(),any(),any());verify(charts,never()).exportForDashboard(any());
+    }
+    @Test void publishRejectsUnboundDataPanels(){
+        var unbound=new DashboardService.Panel("slot-a",null,"核心指标",0,0,6,4,"chart",null,null,null,null,null,null,null);
+        var row=stored(false);row.setDefinitionJson(json.writeValueAsString(new DashboardService.Definition(1,"未绑模板",List.of(unbound))));
+        assertThrows(IllegalArgumentException.class,()->service.publish(7L,2));
+        verify(mapper,never()).publish(any(),anyInt(),anyInt(),anyString(),anyString());
+    }
     @Test void invalidAndOverlappingLayoutsCannotPersist(){
         when(charts.exportForDashboard(4L)).thenReturn(chart());
         for(var panels:List.of(List.of(panel("a",0,0),panel("a",6,0)),List.of(panel("a",0,0),panel("b",3,0)),List.of(panel("a",Integer.MAX_VALUE,0))))

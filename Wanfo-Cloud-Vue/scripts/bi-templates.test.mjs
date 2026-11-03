@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import ts from 'typescript'
 import {test} from 'node:test'
 const source=await fs.readFile(new URL('../src/utils/biTemplates.ts',import.meta.url),'utf8')
-const {screenTemplates,dashboardTemplates,getScreenTemplate,getDashboardTemplate,instantiateScreenTemplate,instantiateDashboardTemplate}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText).toString('base64'))
+const {screenTemplates,dashboardTemplates,getScreenTemplate,getDashboardTemplate,instantiateScreenTemplate,instantiateDashboardTemplate,applyScreenTemplateLayout,applyDashboardTemplateLayout}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText).toString('base64'))
 const config={type:'table',dimensions:[],metrics:[{field:'amount',agg:'SUM',alias:'sales'}],orderBys:[],limit:100}
 function bindings(id){return Object.fromEntries(getScreenTemplate(id).slots.map(slot=>[slot.key,{source:'chart',chartId:42,config:structuredClone(slot.kind==='kpi'?config:{...config,type:slot.type,dimensions:[{field:'city',alias:'city'}]})}]))}
 
@@ -33,6 +33,18 @@ test('KPI bindings reject dimensions, multiple metrics and non-table configurati
 })
 test('duplicate generated keys cannot create an ambiguous document',()=>{
   assert.throws(()=>instantiateScreenTemplate('business-overview','new',bindings('business-overview'),()=> 'same'))
+})
+test('layout-first apply creates unbound data panels without chart IDs',()=>{
+  let serial=0
+  const a=applyScreenTemplateLayout('business-overview','布局先行',()=>`L${++serial}`)
+  assert.equal(a.kind,'screen');assert.equal(a.name,'布局先行');assert.equal(a.panels.length,5)
+  const data=a.panels.filter(p=>p.componentType==='chart' || p.componentType==='kpi')
+  assert.equal(data.length,4);assert.ok(data.every(p=>p.chartId==null || p.chartId===undefined))
+  assert.ok(data.every(p=>p.chartConfig?.type))
+  assert.throws(()=>applyScreenTemplateLayout('business-overview',' '))
+  assert.throws(()=>applyDashboardTemplateLayout('grid-business-overview',' '))
+  let k=0;const d=applyDashboardTemplateLayout('grid-business-overview','看板布局',()=>`D${++k}`)
+  assert.equal(d.kind,'dashboard');assert.equal(d.panels.length,4);assert.ok(d.panels.every(p=>!p.chartId))
 })
 function dashboardBindings(id){return Object.fromEntries(getDashboardTemplate(id).slots.map(slot=>[slot.key,{source:'chart',chartId:42,config:structuredClone(slot.kind==='kpi'?config:{...config,type:slot.type,dimensions:[{field:'city',alias:'city'}]})}]))}
 test('curated dashboard templates use 12-column grid slots without business IDs',()=>{

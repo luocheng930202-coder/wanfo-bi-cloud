@@ -9,9 +9,21 @@ for(const file of ['biTheme.ts','biPresentation.ts','biChartTypes.ts','biChartPr
   bundle+=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText+'\n'
 }
 const {buildChartPreviewOption,chartStylePresets,applyChartStylePreset,chartAxisLabel,seriesDrawing,analysisRows,funnelAnalysis}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
-function option(type,style={},value=20) {
-  return buildChartPreviewOption({type,definition:{schemaVersion:1,name:'销售额',type,style,query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}},result:{columns:['category','value'],rows:[{category:'A',value}],rowCount:1,costMs:1},labels:{value:'销售额'},formatFor:()=>undefined})
+function option(type,style={},value=20,compact=false) {
+  return buildChartPreviewOption({compact,type,definition:{schemaVersion:1,name:'销售额',type,style,query:{datasetId:1,dimensions:[{field:'category'}],metrics:[{field:'value',agg:'SUM',alias:'value'}]}},result:{columns:['category','value'],rows:[{category:'A',value}],rowCount:1,costMs:1},labels:{value:'销售额'},formatFor:()=>undefined})
 }
+
+test('embedded plots reserve less chrome while retaining raw values and gauge bounds',()=>{
+ const regular=option('bar',{showLegend:false}),compact=option('bar',{showLegend:false},20,true)
+ assert.ok(compact.grid.top<regular.grid.top)
+ assert.deepEqual(compact.series[0].data,regular.series[0].data)
+ const ring=option('ring',{legendPosition:'bottom',ringShowTotal:true},20,true)
+ assert.deepEqual(ring.series[0].center,['50%','43%'])
+ assert.equal(ring.series[0].data[0].value,20)
+ const gauge=option('gauge',{gaugeMin:0,gaugeMax:100},98.6,true).series[0]
+ assert.equal(gauge.min,0);assert.equal(gauge.max,100);assert.equal(gauge.data[0].value,98.6)
+ assert.equal(gauge.title.show,false)
+})
 test('bar, line and area controls modify their actual rendering options',()=>{
   const bar=option('hbar',{barMaxWidth:28,barRadius:6,showLabels:true}).series[0]
   assert.equal(bar.barMaxWidth,28);assert.deepEqual(bar.itemStyle.borderRadius,[0,6,6,0]);assert.equal(bar.label.position,'right')

@@ -20,13 +20,18 @@ class ScreenTemplateServiceTest {
   assertEquals("datacenter-screen-template",ScreenTemplateService.validate(screen).get("format"));
   var grid=builtin("market-dashboard-retail");var image=imagePanel(PIXEL);image.remove("hidden");image.put("w",4);image.put("h",4);grid.put("panels",List.of(image));assertEquals("datacenter-dashboard-template",ScreenTemplateService.validate(grid).get("format"));
  }
- @Test void remoteEmptySvgAndNonImagePayloadsRejected(){
+ @Test void remoteEmptyUnsafeSvgAndNonImagePayloadsRejected(){
   var remote=new HashMap<>(layout());remote.put("panels",List.of(imagePanel("https://x/a.png")));
   var empty=new HashMap<>(layout());empty.put("panels",List.of(imagePanel("")));
-  var svg=new HashMap<>(layout());svg.put("panels",List.of(imagePanel("data:image/svg+xml;base64,PHN2Zz4=")));
+  var badSvg=new HashMap<>(layout());badSvg.put("panels",List.of(imagePanel("data:image/svg+xml;base64,PHN2Zz4=")));
   var leaked=new HashMap<>(layout());leaked.put("panels",List.of(Map.of("componentType","text","content",Map.of("text","data:image/png;base64,xx"))));
   var many=new HashMap<>(layout());many.put("panels",java.util.stream.IntStream.range(0,6).mapToObj(i->imagePanel(PIXEL)).toList());
-  for(var bad:List.of(remote,empty,svg,leaked,many))assertThrows(IllegalArgumentException.class,()->ScreenTemplateService.validate(bad));
+  for(var bad:List.of(remote,empty,badSvg,leaked,many))assertThrows(IllegalArgumentException.class,()->ScreenTemplateService.validate(bad));
+ }
+ @Test void safeSvgImageAcceptedInTemplate(){
+  String svg="data:image/svg+xml;base64,"+Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\"/>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  var screen=new HashMap<>(layout());screen.put("panels",List.of(imagePanel(svg)));
+  assertEquals("datacenter-screen-template",ScreenTemplateService.validate(screen).get("format"));
  }
  @Test void unknownFormatRejected(){assertThrows(IllegalArgumentException.class,()->ScreenTemplateService.validate(Map.of("format","det2","version",1)));}
  @Test void dashboardFormatAccepted(){assertEquals("datacenter-dashboard-template",ScreenTemplateService.validate(builtin("market-dashboard-retail")).get("format"));}

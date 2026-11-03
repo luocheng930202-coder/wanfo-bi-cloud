@@ -2,7 +2,7 @@
   <el-dialog v-model="visible" :title="screen?'导出大屏布局模板':'导出看板布局模板'" width="min(560px,calc(100vw - 24px))" :close-on-click-modal="false">
     <p>{{ screen?'导出当前编辑状态的主题、文字、布局、图层与容器关系。':'导出当前编辑状态的主题、文字与栅格布局。' }}</p>
     <el-alert title="数据绑定、查询条件、筛选与联动、自动刷新、按字段格式及阈值规则将移除。使用者须重新绑定数据；文件不会包含查询结果或权限。" type="info" :closable="false"/>
-    <p>已校验的 PNG/JPEG/WebP 会打包进文件（每张不超过 256KB，最多 5 张）。远程地址、SVG 与空图片会拒绝导出。文本和标题会原样保留。</p>
+    <p>已校验的 PNG/JPEG/WebP/GIF/SVG 会打包进文件（每张不超过 512KB，最多 5 张）。远程地址、空图片与含脚本的 SVG 会拒绝导出。文本和标题会原样保留。</p>
     <el-form label-position="top" class="save-form"><el-form-item label="保存到模板库的名称"><el-input v-model="name" maxlength="200" aria-label="私有模板名称"/></el-form-item><el-form-item label="分类"><el-input v-model="category" maxlength="64" aria-label="私有模板分类"/></el-form-item></el-form>
     <el-alert v-if="error" :title="error" type="error" :closable="false"/>
     <template #footer><el-button @click="visible=false">取消</el-button><el-button :loading="saving" :disabled="!name.trim() || saving" @click="save">保存到模板库</el-button><el-button type="primary" @click="download">下载布局模板</el-button></template>

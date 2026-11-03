@@ -2,12 +2,14 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import ts from 'typescript'
 import {test} from 'node:test'
+Error.stackTraceLimit=0
 const url=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64')
 const compile=async name=>ts.transpileModule(await fs.readFile(new URL('../src/utils/'+name+'.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText
+const imageData=url(await compile('biImageDataUrl'))
 const chartTypes=url(await compile('biChartTypes'))
 const resolveTypes=code=>code.replaceAll("'@/utils/biChartTypes'",JSON.stringify(chartTypes)).replaceAll("'./biChartTypes'",JSON.stringify(chartTypes))
 const presentation=url(resolveTypes(await compile('biPresentation'))),templates=url(resolveTypes(await compile('biTemplates')))
-const {exportTemplateFile,parseTemplateFile,parseLayoutTemplate,instantiateImportedTemplate,importedTemplate,TEMPLATE_MAX_BYTES,TEMPLATE_MAX_IMAGES}=await import(url(resolveTypes(await compile('biTemplateFiles')).replace("'./biPresentation'",JSON.stringify(presentation)).replace("'./biTemplates'",JSON.stringify(templates))))
+const {exportTemplateFile,parseTemplateFile,parseLayoutTemplate,instantiateImportedTemplate,applyImportedTemplateLayout,importedTemplate,TEMPLATE_MAX_BYTES,TEMPLATE_MAX_IMAGES}=await import(url(resolveTypes(await compile('biTemplateFiles')).replace("'./biPresentation'",JSON.stringify(presentation)).replace("'./biTemplates'",JSON.stringify(templates)).replace("'./biImageDataUrl'",JSON.stringify(imageData))))
 const {defaultAppearance}=await import(presentation)
 test('every packaged market template passes the actual frontend file parser',async()=>{
  const base='../../Wanfo-Cloud/ruoyi-modules/ruoyi-bi/src/main/resources/'
@@ -58,7 +60,7 @@ test('validated png packs, remaps and instantiates without remote URLs or extra 
   assert.ok(!JSON.stringify(file).includes('https://'));assert.ok(!JSON.stringify(file).includes('chartId'))
   const parsed=parseTemplateFile(JSON.stringify(file));let n=0;const created=instantiateImportedTemplate(parsed,'带图实例',bindings(parsed),()=>`img-${++n}`)
   assert.equal(created.panels.find(p=>p.componentType==='image').content.image,PIXEL)
-  for(const bad of ['https://remote/image.png','data:image/svg+xml;base64,PHN2Zz4=','',PIXEL+'x']){const f=structuredClone(file);f.panels.find(p=>p.componentType==='image').content.image=bad;assert.throws(()=>parseTemplateFile(JSON.stringify(f)),/图片/)}
+  for(const bad of ['https://remote/image.png','data:image/svg+xml;base64,PHN2Zz4=','',PIXEL+'x']){const f=structuredClone(file);f.panels.find(p=>p.componentType==='image').content.image=bad;assert.throws(()=>parseTemplateFile(JSON.stringify(f)),/图片|SVG/)}
   const many=fixture();for(let i=0;i<TEMPLATE_MAX_IMAGES+1;i++)many.panels.push({key:'img'+i,title:'图',componentType:'image',x:20+i*140,y:20,w:120,h:80,locked:false,hidden:false,style,content:{image:PIXEL}});assert.throws(()=>parseTemplateFile(JSON.stringify(many)),/5张/)
 })
 function dashboardSource(){return {schemaVersion:1,name:'看板导出',kind:'dashboard',layout:'grid',appearance:defaultAppearance('light'),interaction:{controls:[],links:[]},panels:[
@@ -88,4 +90,13 @@ test('binding completeness, unknown slots, invalid KPI shape and duplicate gener
 test('number formats have backend-compatible limits and cannot contain controls or incompatible scaling',()=>{
   const format={mode:'number',scale:'none',decimals:2,grouping:true,fixed:true,prefix:'',suffix:'元',nullText:'—'};const f=fixture();f.panels[1].style.numberFormat=format;assert.equal(parseTemplateFile(JSON.stringify(f)).panels[1].style.numberFormat.suffix,'元')
   for(const patch of [{decimals:7},{prefix:'a'.repeat(21)},{prefix:'\n'},{mode:'percent',scale:'wan'}]){const bad=structuredClone(f);Object.assign(bad.panels[1].style.numberFormat,patch);assert.throws(()=>parseTemplateFile(JSON.stringify(bad)))}
+})
+test('layout-first import keeps panel geometry and chart types without chart IDs',()=>{
+  const file=fixture();let n=0;const draft=applyImportedTemplateLayout(file,'布局草稿',()=>`L${++n}`)
+  assert.equal(draft.name,'布局草稿');assert.equal(draft.kind,'screen')
+  const data=draft.panels.filter(p=>p.componentType==='chart'||p.componentType==='kpi')
+  assert.ok(data.length>=2);assert.ok(data.every(p=>p.chartId==null||p.chartId===undefined));assert.ok(data.every(p=>p.chartConfig?.type))
+  assert.throws(()=>applyImportedTemplateLayout(file,' '))
+  const dash=exportTemplateFile(dashboardSource());n=0;const grid=applyImportedTemplateLayout(dash,'看板布局',()=>`G${++n}`)
+  assert.equal(grid.kind,'dashboard');assert.ok(grid.panels.every(p=>!p.chartId))
 })

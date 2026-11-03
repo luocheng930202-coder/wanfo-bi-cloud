@@ -13,7 +13,14 @@ class AssetServiceTest {
  static String image(int w,int h)throws Exception{var out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(w,h,BufferedImage.TYPE_INT_RGB),"png",out);return "data:image/png;base64,"+Base64.getEncoder().encodeToString(out.toByteArray());}
  @Test void uploadRegistersRealOwnerAndStoresVerifiedImage()throws Exception{String data=image(2,2);when(storage.save(eq("Logo"),eq(data),anyInt(),eq("alice"))).thenReturn(7L);assertEquals(7L,service.upload(new AssetService.Upload(" Logo ",data)).get("id"));verify(resources).register("asset",7L);}
  @Test void nameRequired(){assertThrows(IllegalArgumentException.class,()->service.upload(new AssetService.Upload(" ","")));verifyNoInteractions(storage);}
- @Test void remoteAndSvgDenied(){assertThrows(IllegalArgumentException.class,()->AssetService.validate("https://example.com/a.png"));assertThrows(IllegalArgumentException.class,()->AssetService.validate("data:image/svg+xml;base64,PHN2Zz4="));}
+ @Test void remoteAndUnsafeSvgDeniedSafeSvgAccepted(){
+  assertThrows(IllegalArgumentException.class,()->AssetService.validate("https://example.com/a.png"));
+  assertThrows(IllegalArgumentException.class,()->AssetService.validate("data:image/svg+xml;base64,PHN2Zz4="));
+  String safe="data:image/svg+xml;base64,"+Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"2\" height=\"2\"/>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  assertTrue(AssetService.validate(safe)>0);
+  String unsafe="data:image/svg+xml;base64,"+Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"/>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  assertThrows(IllegalArgumentException.class,()->AssetService.validate(unsafe));
+ }
  @Test void fakeSignatureCannotPassDecoder(){assertThrows(IllegalArgumentException.class,()->AssetService.validate("data:image/png;base64,iVBORw0KGgo="));}
  @Test void imageDimensionsBounded()throws Exception{String data=image(4097,1);assertThrows(IllegalArgumentException.class,()->AssetService.validate(data));}
  @Test void readRequiresResourcePermission(){doThrow(new BiAccessException(403,"denied")).when(resources).require("asset",7L,"view");assertThrows(BiAccessException.class,()->service.detail(7L));verifyNoInteractions(storage);}

@@ -4,9 +4,10 @@ import {CHART_TYPES} from '@/utils/biChartTypes'
 import {normalizeDashboard,normalizeContainer,normalizeDecoration} from './biPresentation'
 import {templateSlotPanel,type TemplateBinding,type ScreenTemplate} from './biTemplates'
 
+import {IMAGE_MAX_BYTES,IMAGE_MAX_CHARS,validateImageDataUrl} from './biImageDataUrl'
 export const TEMPLATE_MAX_BYTES=2*1024*1024
 export const TEMPLATE_MAX_IMAGES=5
-export const TEMPLATE_IMAGE_MAX_BYTES=262144
+export const TEMPLATE_IMAGE_MAX_BYTES=IMAGE_MAX_BYTES
 type FilePanel=Omit<Panel,'chartId'|'chartConfig'> & {chartType?:ChartDefinition['type']}
 export interface ScreenTemplateFile {format:'datacenter-screen-template';version:1;name:string;panels:FilePanel[];scene:NonNullable<DashboardDefinition['scene']>;appearance:DashboardAppearance}
 export interface DashboardTemplateFile {format:'datacenter-dashboard-template';version:1;name:string;panels:FilePanel[];appearance:DashboardAppearance}
@@ -29,23 +30,17 @@ function numberFormat(v:unknown):NumberFormat {
   return {mode:choice(n.mode,['number','percent'],'数值模式'),scale:choice(n.scale,['none','thousand','wan','million','yi'],'单位'),decimals:integer(n.decimals,0,6,'小数位'),grouping:bool(n.grouping,'千分位'),fixed:bool(n.fixed,'补零'),prefix:text(n.prefix,20,'前缀',true),suffix:text(n.suffix,20,'后缀',true),nullText:text(n.nullText,20,'空值文本',true)}
 }
 function style(v:unknown):PanelStyle {
-  const s=object(v,['showTitle','titleAlign','numberFormat'],'组件样式')
-  return {showTitle:bool(s.showTitle,'标题显示'),titleAlign:choice(s.titleAlign,['left','center','right'],'标题对齐'),...(s.numberFormat?{numberFormat:numberFormat(s.numberFormat)}:{})}
+  const s=object(v,['showTitle','titleAlign','numberFormat','fontSize','textColor','transparent'],'组件样式')
+  return {...(s.fontSize!=null?{fontSize:integer(s.fontSize,10,96,'字号')}:{}),...(s.textColor!=null?{textColor:color(s.textColor,'组件文字颜色')}:{}),...(s.transparent!=null?{transparent:bool(s.transparent,'透明背景')}:{}),showTitle:bool(s.showTitle,'标题显示'),titleAlign:choice(s.titleAlign,['left','center','right'],'标题对齐'),...(s.numberFormat?{numberFormat:numberFormat(s.numberFormat)}:{})}
 }
 function appearance(v:unknown):DashboardAppearance {
-  const a=object(v,['theme','background','cardBackground','textColor','borderColor','palette','titleSize','radius','decimals','grouping'],'主题')
-  return {theme:choice(a.theme,['light','dark'],'主题'),background:color(a.background,'背景'),cardBackground:color(a.cardBackground,'卡片背景'),textColor:color(a.textColor,'文字颜色'),borderColor:color(a.borderColor,'边框颜色'),palette:choice(a.palette,['business','ocean','warm'],'配色'),titleSize:integer(a.titleSize,12,24,'标题字号'),radius:integer(a.radius,0,24,'圆角'),decimals:integer(a.decimals,0,6,'小数位'),grouping:bool(a.grouping,'千分位')}
+  const a=object(v,['theme','background','cardBackground','textColor','borderColor','palette','titleSize','radius','decimals','grouping','visualPreset','backgroundImage','glowIntensity'],'主题')
+  return {...(a.glowIntensity!=null?{glowIntensity:integer(a.glowIntensity,0,100,'光效强度')}:{}),theme:choice(a.theme,['light','dark'],'主题'),background:color(a.background,'背景'),cardBackground:color(a.cardBackground,'卡片背景'),textColor:color(a.textColor,'文字颜色'),borderColor:color(a.borderColor,'边框颜色'),palette:choice(a.palette,['business','ocean','warm'],'配色'),titleSize:integer(a.titleSize,12,24,'标题字号'),radius:integer(a.radius,0,24,'圆角'),decimals:integer(a.decimals,0,6,'小数位'),grouping:bool(a.grouping,'千分位'),...(a.visualPreset!=null?{visualPreset:choice(a.visualPreset,['standard','tech-blue-v1','hologram-ice-v1'] as const,'视觉预设')}:{}),...(a.backgroundImage?{backgroundImage:validateImageDataUrl(String(a.backgroundImage))}:{})}
 }
 function packedImage(v:unknown):string {
   if(typeof v!=='string' || !v)throw Error('模板图片不能为空')
-  if(v.length>350000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(v))throw Error('仅支持不超过 256KB 的 PNG/JPEG/WebP 图片')
-  let bytes:Uint8Array
-  try{const bin=atob(v.slice(v.indexOf(',')+1));bytes=Uint8Array.from(bin,c=>c.charCodeAt(0))}catch{throw Error('图片编码无效')}
-  const png=v.startsWith('data:image/png;') && bytes.length>=8 && bytes[0]===137 && bytes[1]===80 && bytes[2]===78 && bytes[3]===71 && bytes[4]===13 && bytes[5]===10 && bytes[6]===26 && bytes[7]===10
-  const jpeg=v.startsWith('data:image/jpeg;') && bytes.length>=3 && bytes[0]===255 && bytes[1]===216 && bytes[2]===255
-  const webp=v.startsWith('data:image/webp;') && bytes.length>=12 && bytes[0]===82 && bytes[1]===73 && bytes[2]===70 && bytes[3]===70 && bytes[8]===87 && bytes[9]===69 && bytes[10]===66 && bytes[11]===80
-  if(bytes.length>TEMPLATE_IMAGE_MAX_BYTES || !(png||jpeg||webp))throw Error('图片内容与格式不匹配')
-  return v
+  if(v.length>IMAGE_MAX_CHARS)throw Error('仅支持不超过 512KB 的 PNG/JPEG/WebP/GIF/SVG 图片')
+  return validateImageDataUrl(v)
 }
 function countPackedImages(panels:FilePanel[]){if(panels.filter(p=>p.componentType==='image').length>TEMPLATE_MAX_IMAGES)throw Error('模板最多打包5张图片')}
 function parsedValue(raw:string):unknown {
@@ -64,7 +59,7 @@ function parseScreenRoot(value:unknown):ScreenTemplateFile {
   if(!Array.isArray(f.panels) || f.panels.length<1 || f.panels.length>20)throw Error('模板须包含1至20个组件')
   const panels:FilePanel[]=f.panels.map((value:unknown)=>{
     const p=object(value,['key','title','componentType','x','y','w','h','style','content','locked','hidden','groupKey','parentKey','chartType'],'组件')
-    const type=choice(p.componentType,['chart','kpi','text','image','border','line','container'],'组件类型')
+    const type=choice(p.componentType,['chart','kpi','text','image','border','line','container','clock'],'组件类型')
     const panel:FilePanel={key:key(p.key),title:text(p.title,200,'组件标题',true),componentType:type,x:integer(p.x,0,size.width,'横坐标'),y:integer(p.y,0,size.height,'纵坐标'),w:integer(p.w,20,size.width,'组件宽度'),h:integer(p.h,20,size.height,'组件高度'),style:style(p.style),locked:bool(p.locked,'锁定状态'),hidden:bool(p.hidden,'隐藏状态')}
     if(panel.x+panel.w>size.width || panel.y+panel.h>size.height)throw Error('组件超出画布')
     if(p.groupKey!=null)panel.groupKey=key(p.groupKey);if(p.parentKey!=null)panel.parentKey=key(p.parentKey)
@@ -74,6 +69,7 @@ function parseScreenRoot(value:unknown):ScreenTemplateFile {
       if(p.chartType!=null)throw Error('静态组件不能携带图表类型')
       if(type==='image'){const c=object(p.content,['image'],'组件内容');panel.content={image:packedImage(c.image)}}
       else if(type==='text'){const c=object(p.content,['text'],'组件内容');panel.content={text:text(c.text,2000,'文本',true)}}
+      else if(type==='clock'){const c=object(p.content,['text'],'组件内容');const format=choice(c.text || 'HH:mm:ss',['HH:mm:ss','HH:mm','YYYY-MM-DD','YYYY-MM-DD HH:mm','YYYY-MM-DD HH:mm:ss'],'时钟格式');panel.content={text:format}}
       else if(type==='container'){const c=object(p.content,['container'],'组件内容');const x=object(c.container,['background','borderColor','stroke','radius','padding'],'容器');panel.content={container:normalizeContainer(x)}}
       else{const c=object(p.content,['decoration'],'组件内容');const x=object(c.decoration,['color','stroke','pattern','radius','direction'],'装饰');panel.content={decoration:normalizeDecoration(x)}}
     }
@@ -90,13 +86,15 @@ function parseDashboardRoot(value:unknown):DashboardTemplateFile {
   if(!Array.isArray(f.panels) || f.panels.length<1 || f.panels.length>20)throw Error('模板须包含1至20个组件')
   const panels:FilePanel[]=f.panels.map((value:unknown)=>{
     const p=object(value,['key','title','componentType','x','y','w','h','style','content','locked','chartType'],'组件')
-    const type=choice(p.componentType,['chart','kpi','text','image'],'组件类型')
+    const type=choice(p.componentType,['chart','kpi','text','image','clock'],'组件类型')
     const panel:FilePanel={key:key(p.key),title:text(p.title,200,'组件标题',true),componentType:type,x:integer(p.x,0,10,'横坐标'),y:integer(p.y,0,118,'纵坐标'),w:integer(p.w,2,12,'组件宽度'),h:integer(p.h,2,12,'组件高度'),style:style(p.style),locked:bool(p.locked,'锁定状态')}
     if(panel.x+panel.w>12 || panel.y+panel.h>120)throw Error('组件超出栅格')
     if(type==='chart' || type==='kpi'){
       panel.chartType=choice<ChartDefinition['type']>(p.chartType,CHART_TYPES,'图表类型');if(type==='kpi' && panel.chartType!=='table')throw Error('指标卡仅支持单值表格聚合');if(p.content!=null)throw Error('数据槽不能携带内容')
     }else{
       if(p.chartType!=null)throw Error('静态组件不能携带图表类型')
+      if(type==='clock'){const c=object(p.content,['text'],'组件内容');panel.content={text:choice(c.text || 'HH:mm:ss',['HH:mm:ss','HH:mm','YYYY-MM-DD','YYYY-MM-DD HH:mm','YYYY-MM-DD HH:mm:ss'],'时钟格式')}}
+      else
       if(type==='image'){const c=object(p.content,['image'],'组件内容');panel.content={image:packedImage(c.image)}}
       else{const c=object(p.content,['text'],'组件内容');panel.content={text:text(c.text,2000,'文本',true)}}
     }
@@ -128,7 +126,7 @@ export function parseDashboardTemplateFile(raw:string):DashboardTemplateFile {
 }
 function staticContent(p:Panel):NonNullable<FilePanel['content']> {
   if(p.componentType==='image')return {image:packedImage(p.content?.image)}
-  if(p.componentType==='text')return {text:p.content?.text || ''}
+  if(p.componentType==='text' || p.componentType==='clock')return {text:p.content?.text || (p.componentType==='clock'?'HH:mm:ss':'')}
   if(p.componentType==='container')return {container:normalizeContainer(p.content?.container)}
   return {decoration:normalizeDecoration(p.content?.decoration)}
 }
@@ -151,7 +149,8 @@ function exportDashboardFile(document:DashboardDefinition,types:Record<string,Ch
   const panels=d.panels.map(p=>{
     const result:FilePanel={key:keys.get(p.key)!,title:p.title,componentType:p.componentType,x:p.x,y:p.y,w:p.w,h:p.h,locked:!!p.locked,style:{showTitle:p.style?.showTitle!==false,titleAlign:p.style?.titleAlign || 'left',...(p.style?.numberFormat?{numberFormat:p.style.numberFormat}:{})}}
     if(p.componentType==='chart' || p.componentType==='kpi')result.chartType=p.componentType==='kpi'?'table':p.chartConfig?.type || types[p.key] || 'table'
-    else result.content=p.componentType==='image'?{image:packedImage(p.content?.image)}:{text:p.content?.text || ''}
+    else if(p.componentType==='image')result.content={image:packedImage(p.content?.image)}
+    else result.content={text:p.content?.text || (p.componentType==='clock'?'HH:mm:ss':'')}
     return result
   })
   countPackedImages(panels)
@@ -165,6 +164,24 @@ export function exportTemplateFile(document:DashboardDefinition,types:Record<str
 export function importedTemplate(file:LayoutTemplateFile):ScreenTemplate {
   const dashboard=file.format==='datacenter-dashboard-template'
   return {schemaVersion:1,id:'imported-file',name:file.name,category:dashboard?'导入看板模板':'导入模板',description:'本地文件布局 · 使用前须重新绑定数据',theme:file.appearance.theme,kind:dashboard?'dashboard':'screen',slots:file.panels.filter(p=>p.componentType==='chart' || p.componentType==='kpi').map(p=>({key:p.key,label:p.title,kind:p.componentType as 'chart'|'kpi',type:p.chartType!,x:p.x,y:p.y,w:p.w,h:p.h}))}
+}
+/** Layout-first: copy imported panels without chart bindings (bind later in the designer). */
+export function applyImportedTemplateLayout(file:LayoutTemplateFile,name:string,factory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
+  const checked=parseLayoutTemplate(JSON.stringify(file)),dashboard=checked.format==='datacenter-dashboard-template'
+  text(name.trim(),200,dashboard?'看板名称':'大屏名称')
+  const keys=new Map(checked.panels.map(p=>[p.key,key(factory())])),groups=new Map<string,string>()
+  const panels:Panel[]=checked.panels.map(p=>{
+    const {chartType,...layout}=p
+    const panel:Panel={...layout,key:keys.get(p.key)!,chartId:null,
+      chartConfig:p.componentType==='chart' || p.componentType==='kpi'
+        ?{type:chartType || (p.componentType==='kpi'?'table':'bar'),dimensions:[],metrics:[],orderBys:[],limit:100}
+        :undefined}
+    if(p.parentKey)panel.parentKey=keys.get(p.parentKey)
+    if(p.groupKey){if(!groups.has(p.groupKey))groups.set(p.groupKey,key(factory()));panel.groupKey=groups.get(p.groupKey)}
+    return panel
+  })
+  if(new Set([...keys.values(),...groups.values()]).size!==keys.size+groups.size)throw Error('生成的组件或组合标识重复')
+  return normalizeDashboard({schemaVersion:1,name:name.trim(),kind:dashboard?'dashboard':'screen',layout:dashboard?'grid':'absolute',scene:checked.format==='datacenter-screen-template'?checked.scene:undefined,appearance:checked.appearance,panels,interaction:{controls:[],links:[]}})
 }
 export function instantiateImportedTemplate(file:LayoutTemplateFile,name:string,bindings:Record<string,TemplateBinding>,factory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
   const checked=parseLayoutTemplate(JSON.stringify(file)),template=importedTemplate(checked),dashboard=checked.format==='datacenter-dashboard-template'

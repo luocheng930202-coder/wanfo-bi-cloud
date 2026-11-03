@@ -83,7 +83,7 @@ public class DashboardService {
     private Panel normalize(Panel p) {
         if(p==null)throw new IllegalArgumentException("看板组件不能为空");
         String type=p.componentType()==null?"chart":p.componentType();
-        if(!Set.of("chart","kpi","scene3d","text","image","border","line","container").contains(type))throw new IllegalArgumentException("不支持的组件类型");
+        if(!Set.of("chart","kpi","scene3d","text","image","border","line","container","clock").contains(type))throw new IllegalArgumentException("不支持的组件类型");
         return new Panel(p.key(),p.chartId(),p.title(),p.x(),p.y(),p.w(),p.h(),type,DashboardPresentation.normalize(p.style()),DashboardContent.normalize(type,p.content()),p.locked(),p.chartConfig(),p.groupKey(),p.hidden(),p.parentKey());
     }
     private Definition normalize(Definition d) {
@@ -106,8 +106,10 @@ public class DashboardService {
         var normalized=d.panels().stream().map(this::normalize).toList();DashboardContainers.validate(normalized,d.kind());
         return new Definition(1,d.name(),normalized,"screen".equals(d.kind())?"screen":"dashboard","screen".equals(d.kind())?"absolute":"grid",DashboardPresentation.normalize(d.appearance()),d.interaction(),DashboardPresentation.scene(d.kind(),d.scene()));
     }
-    void validateHistorical(Definition d){validate(normalize(d));}
-    private List<PublishedPanel> validate(Definition d) {
+    void validateHistorical(Definition d){validateDraft(normalize(d));}
+    private List<PublishedPanel> validate(Definition d) { return validate(d,true); }
+    private List<PublishedPanel> validateDraft(Definition d) { return validate(d,false); }
+    private List<PublishedPanel> validate(Definition d, boolean requireBound) {
         if(d==null || !Objects.equals(d.schemaVersion(),1) || d.name()==null || d.name().isBlank() || d.name().length()>200 || d.panels()==null || d.panels().size()>20)
             throw new IllegalArgumentException("看板须为 v1 定义，名称不超过 200 字符，最多 20 个图表");
         boolean screen="screen".equals(d.kind());int width=screen?d.scene().width():12,height=screen?d.scene().height():120,min=screen?20:2,maxHeight=screen?height:12;
@@ -120,11 +122,20 @@ public class DashboardService {
             if(!screen)for(var other:panels) {
                 var o=other.layout();if(p.x()<o.x()+o.w() && p.x()+p.w()>o.x() && p.y()<o.y()+o.h() && p.y()+p.h()>o.y())throw new IllegalArgumentException("图表组件不能重叠");
             }
-            // Revalidate every reference at save/publish time, including unchanged panels.
-            boolean data=Set.of("chart","kpi").contains(p.componentType()) || p.componentType().equals("scene3d") && p.chartId()!=null;
-            if(data && (p.chartId()==null || p.chartId()<1))throw new IllegalArgumentException("数据组件须绑定图表");
-            if(!data && p.chartId()!=null)throw new IllegalArgumentException("静态组件不能引用图表");
-            if(!data && p.chartConfig()!=null)throw new IllegalArgumentException("静态组件不能配置图表字段");
+            boolean dataSlot=Set.of("chart","kpi").contains(p.componentType());
+            boolean sceneBound=p.componentType().equals("scene3d") && p.chartId()!=null;
+            boolean bound=p.chartId()!=null && p.chartId()>=1;
+            if(!dataSlot && !p.componentType().equals("scene3d") && p.chartId()!=null)throw new IllegalArgumentException("静态组件不能引用图表");
+            if(!dataSlot && !sceneBound && p.chartConfig()!=null)throw new IllegalArgumentException("静态组件不能配置图表字段");
+            if((dataSlot || sceneBound) && !bound){
+                if(requireBound)throw new IllegalArgumentException("数据组件须绑定图表");
+                // Draft may keep chartConfig as layout intent only (template apply / layout-first).
+                if(p.chartConfig()!=null && p.chartConfig().type()!=null && p.chartConfig().type().isBlank())throw new IllegalArgumentException("未绑定组件的图表类型无效");
+                DashboardPresentation.validateMetricKeys(p.style(),Set.of());
+                panels.add(new PublishedPanel(p,null));
+                continue;
+            }
+            boolean data=dataSlot || sceneBound;
             ChartDefinitionService.Definition chart=data?charts.exportForDashboard(p.chartId()):null;
             if(p.chartConfig()!=null)chart=charts.configureForDashboard(chart,p.chartConfig());
             if(p.componentType().equals("kpi")) {
@@ -157,13 +168,13 @@ public class DashboardService {
     @Transactional
     public Map<String,Object> create(SaveRequest request) {
         caps.require("bi:dashboard:add");if(request==null)throw new IllegalArgumentException("看板定义不能为空");
-        var d=normalize(request.definition());var panels=validate(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setCreateBy(actor());row.setUpdateBy(actor());
+        var d=normalize(request.definition());var panels=validateDraft(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setCreateBy(actor());row.setUpdateBy(actor());
         mapper.insert(row);resources.register("dashboard",row.getId());bindings(row.getId(),"draft",panels);remember(row,"create",0);return Map.of("id",row.getId(),"version",0);
     }
     @Transactional
     public Map<String,Object> update(Long id,SaveRequest request) {
         caps.require("bi:dashboard:edit");var before=require(id,"edit");remember(before,"baseline",before.getVersion());if(request==null)throw new IllegalArgumentException("看板定义不能为空");version(request.version());
-        var d=normalize(request.definition());var panels=validate(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setId(id);row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setVersion(request.version());row.setUpdateBy(actor());
+        var d=normalize(request.definition());var panels=validateDraft(d);d=withInteraction(d,panels);var row=new BiDashboardDO();row.setId(id);row.setName(d.name().trim());row.setDefinitionJson(document(d));row.setVersion(request.version());row.setUpdateBy(actor());
         updated(mapper.update(row));bindings(id,"draft",panels);remember(row,"save",request.version()+1);return Map.of("id",id,"version",request.version()+1);
     }
     @Transactional
@@ -172,7 +183,17 @@ public class DashboardService {
         if(!Objects.equals(row.getVersion(),expected))throw new BiAccessException(409,"草稿已改变，请重新打开后发布");
         var d=normalize(read(row.getDefinitionJson(),Definition.class));var panels=validate(d);if(panels.stream().noneMatch(p->!Boolean.TRUE.equals(p.layout().hidden())))throw new IllegalArgumentException("请先加入可见组件再发布");
         d=withInteraction(d,panels);
-        for(var p:panels)if(p.chart()==null && ((p.layout().componentType().equals("text") && p.layout().content().text().isBlank()) || (p.layout().componentType().equals("image") && p.layout().content().image().isEmpty())))throw new IllegalArgumentException("请完善文本或图片内容后发布");
+        for(var p:panels){
+            if(p.chart()!=null)continue;
+            var type=p.layout().componentType();
+            if(Set.of("chart","kpi").contains(type))throw new IllegalArgumentException("请先为所有数据组件绑定图表后再发布");
+            if("scene3d".equals(type)){
+                var scene=p.layout().content()==null?null:p.layout().content().scene3d();
+                var mode=scene==null?null:scene.mode();
+                if("map".equals(mode) || "chart".equals(mode))throw new IllegalArgumentException("地图/柱图 3D 场景须绑定图表后再发布");
+            }
+        }
+        for(var p:panels)if(p.chart()==null && ((p.layout().componentType().equals("text") && p.layout().content().text().isBlank()) || (p.layout().componentType().equals("image") && p.layout().content().image().isEmpty()) || (p.layout().componentType().equals("clock") && (p.layout().content()==null || p.layout().content().text()==null || p.layout().content().text().isBlank()))))throw new IllegalArgumentException("请完善文本、图片或时钟内容后发布");
         String snapshot=json.writeValueAsString(new Publication(1,d.name(),panels,d.kind(),d.layout(),d.appearance(),d.interaction(),d.scene()));if(snapshot.length()>1048576)throw new IllegalArgumentException("发布快照超过 1M 字符，请减少组件或筛选条件");
         updated(mapper.publish(id,expected,expected+1,snapshot,actor()));bindings(id,"published",panels);remember(row,"publish",expected+1);return Map.of("id",id,"version",expected+1,"revision",expected+1);
     }
@@ -329,7 +350,7 @@ public class DashboardService {
             caps.require("bi:dashboard:edit");var row=require(id,"edit");version(request.version());
             if(!Objects.equals(row.getVersion(),request.version()))throw new BiAccessException(409,"草稿版本已变化，请重新打开后预览");
         }
-        var d=normalize(request.definition());var panels=validate(d);d=withInteraction(d,panels);document(d);
+        var d=normalize(request.definition());var panels=validateDraft(d);d=withInteraction(d,panels);document(d);
         return new Publication(1,d.name(),panels,d.kind(),d.layout(),d.appearance(),d.interaction(),d.scene());
     }
     public Map<String,Object> preview(Long id,PreviewRequest request) throws Exception {

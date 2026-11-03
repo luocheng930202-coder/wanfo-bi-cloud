@@ -954,7 +954,22 @@ flowchart LR
 | `bi_export_job` | 导出作业 |
 | `bi_screen_template` 等 | 大屏/模板 |
 
-### 15.4 实现入口
+### 15.4 模板应用（布局先行）
+
+- **主路径**：选模板 → 填名称 →「应用布局并打开设计器」→ 草稿可含未绑定 `chart`/`kpi`/`scene3d` 槽 → 设计器右侧「数据」补绑 → 发布门禁要求全部数据组件已绑定。创建前不再要求槽位绑验证。  
+- **草稿 vs 发布**：`DashboardService` 草稿校验允许未绑定数据槽（可保留布局意图 `chartConfig`）；发布/正式校验要求绑定图表。不导入第三方模板二进制协议。  
+- **前端入口**：`DashboardTemplatePicker` + `apply*TemplateLayout` / `applyImportedTemplateLayout`。
+
+### 15.4.1 设计器 IA 与装饰素材
+
+- **布局**：顶栏分类插入条（图表/指标/查询/文本/媒体/更多/素材）+ 左侧固定栏（组件网格 / 图层管理 / 素材）+ 右侧属性；窄轨切换侧栏。图层区按「大屏/画布区域」展示数量与密列表（锁/显隐）。  
+- **素材**：顶栏「素材」与左侧素材 Tab 均复用 `/bi/asset`；选中图片则填入，否则新建 `image`。无独立素材市场与新权限体系。  
+- **内置素材**：前端打包 DataEase 同源静态边框/图形 SVG（`board_1..9`、矩形/圆/三角），以消毒后的 SVG data URL 插入 `image`，无需上传或素材库权限；不含 DE 在线市场、动效装饰组件（`DeDecoration*`）与 Element Plus 图标全集。源文件见 `Wanfo-Cloud-Vue/src/assets/bi/materials/`，清单 `biBuiltinMaterials.ts`。  
+- **图片格式**：面板/素材库允许 `PNG/JPEG/WebP/GIF/SVG` data URL（单张 ≤512KB）；SVG 仅作 `<img>` 渲染并拒绝 script/事件等不安全内容；仍禁止远程 URL。不做 SVG 自由绘制编辑器、视频/音频或第三方模板协议。  
+- **画布背景图**：`appearance.backgroundImage` 可选；设计器「看板/大屏属性 → 主题与样式」上传/清除；叠在背景色之上（`cover`），与主题套装色值并存。  
+- **装饰**：边框/分割线预设与内置图标包（图标仍走 `image`）；`clock` 为白名单静态类型（格式字符串本地走时，不绑图表、不参与发布数据门禁）。
+
+### 15.5 实现入口
 
 | 能力 | API | 前端 |
 |---|---|---|
@@ -963,10 +978,11 @@ flowchart LR
 | 订阅 | `/bi/subscription` | `/bi-admin/subscription` |
 | 导出 | `/bi/export` | `/bi-admin/export` |
 
-### 15.5 延伸阅读
+### 15.6 延伸阅读
 
 - [BI-WORKFLOW-ENHANCEMENTS.md](BI-WORKFLOW-ENHANCEMENTS.md)  
-- [CHART-OPTIMIZATION-ROADMAP.md](CHART-OPTIMIZATION-ROADMAP.md)
+- [CHART-OPTIMIZATION-ROADMAP.md](CHART-OPTIMIZATION-ROADMAP.md)  
+- [COMMERCIAL-VALUE-BACKLOG.md](COMMERCIAL-VALUE-BACKLOG.md)（售前画布加深余项）
 
 ---
 
@@ -1040,6 +1056,13 @@ flowchart LR
 | 2026-11-01 | 图表/指标查询：遗留 MySQL 反引号 `union_sql` 在 Calcite 前归一（forCalcite） |
 | 2026-11-01 | 入口文档基线对齐 V64；README / 产品定位与本文导读同步 |
 | 2026-11-02 | 增补商业价值后续清单链接：`COMMERCIAL-VALUE-BACKLOG.md`（待排期，不扩 S4+ 默认范围） |
+| 2026-11-02 | BI 模板：布局先行进草稿 + 设计器补绑；发布仍强制数据绑定；大屏设计器组件库/图层双 Tab 与主题套装起步 |
+| 2026-11-02 | 模板向导去掉创建前绑验证；主路径仅「应用布局并打开设计器」 |
+| 2026-11-03 | 设计器 IA：左三 Tab（组件/图层/素材）+ 边框预设/图标包/`clock`；素材复用 asset API |
+| 2026-11-03 | 设计器布局对齐 DE 观感：顶栏分类插入 + 左侧固定图层/组件网格 |
+| 2026-11-03 | 素材/图片白名单扩至 GIF/SVG（≤512KB；SVG 消毒后 `<img>` 渲染） |
+| 2026-11-03 | 设计器外观：可选画布背景图 `appearance.backgroundImage` |
+| 2026-11-03 | 内置素材：拷贝 DataEase board/图形 SVG，素材 Tab/组件库可直接插入，免上传 |
 
 ---
 

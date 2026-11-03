@@ -10,6 +10,33 @@ const bundle=ts.transpileModule(chartTypes,opts).outputText+'\n'+ts.transpileMod
 const tpl=await fs.readFile(new URL('../src/utils/biTemplates.ts',import.meta.url),'utf8')
 const {analyzeBindingImpact,suggestPanelConfig,remapPanelConfig,isNumericFieldType}=await import('data:text/javascript;base64,'+Buffer.from(bundle).toString('base64'))
 const {getScreenTemplate}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(tpl,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText).toString('base64'))
+const canteenSource=(await fs.readFile(new URL('../src/utils/biCanteenTemplateContracts.ts',import.meta.url),'utf8')).split('\n').filter(line=>!line.includes("from './biTemplateBindingCore'")).join('\n')
+const {canteenBindingError,canteenNumberFormat}=await import('data:text/javascript;base64,'+Buffer.from(bundle+'\n'+ts.transpileModule(canteenSource,opts).outputText).toString('base64'))
+test('canteen units preserve raw ratios and avoid assigning units to mixed metric panels',()=>{
+  assert.equal(canteenNumberFormat('acceptance-rate').mode,'percent')
+  assert.equal(canteenNumberFormat('acceptance-rate').suffix,'')
+  assert.equal(canteenNumberFormat('purchase-total').suffix,'元')
+  assert.equal(canteenNumberFormat('meal-count').decimals,0)
+  assert.equal(canteenNumberFormat('school-count').suffix,'所')
+  assert.equal(canteenNumberFormat('school-region'),undefined)
+  assert.equal(canteenNumberFormat('acceptance-events'),undefined)
+})
+
+test('canteen contracts reject unavailable and nonnumeric amounts but permit text school identifiers',()=>{
+  const config={type:'table',dimensions:[],metrics:[{field:'city',agg:'SUM'}],orderBys:[],limit:100}
+  assert.match(canteenBindingError('purchase-total',config,fields),/数值类型/)
+  assert.match(canteenBindingError('purchase-total',{...config,metrics:[{field:'missing',agg:'SUM'}]},fields),/不可见/)
+  assert.equal(canteenBindingError('school-count',{...config,metrics:[{field:'city',agg:'COUNT_DISTINCT'}]},fields),undefined)
+  assert.match(canteenBindingError('acceptance-rate',{...config,metrics:[{field:'amount',agg:'SUM'}]},fields),/AVG/)
+})
+
+test('canteen trend requires a typed date and ascending time ordering',()=>{
+  const config={type:'line',dimensions:[{field:'day'}],metrics:[{field:'amount',agg:'SUM'}],orderBys:[],limit:100}
+  assert.match(canteenBindingError('meal-trend',config,[...fields,{name:'day',type:'varchar'}]),/日期或时间/)
+  const dated=[...fields,{name:'day',type:'timestamp'}]
+  assert.match(canteenBindingError('meal-trend',config,dated),/升序/)
+  assert.equal(canteenBindingError('meal-trend',{...config,orderBys:[{field:'day',order:'ASC'}]},dated),undefined)
+})
 const fields=[{name:'city',type:'varchar',dimFlag:'1'},{name:'amount',type:'decimal',dimFlag:'0'},{name:'qty',type:'int',dimFlag:'0'}]
 test('field typing helpers and suggestions respect slot shape',()=>{
   assert.equal(isNumericFieldType('decimal'),true);assert.equal(isNumericFieldType('varchar'),false)

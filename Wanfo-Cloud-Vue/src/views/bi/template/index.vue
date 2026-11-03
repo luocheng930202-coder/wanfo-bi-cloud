@@ -8,29 +8,8 @@
         </div>
       </template>
       <el-alert type="info" :closable="false" show-icon class="mb8"
-        title="本地模板库保存布局 JSON；模板市场为只读拉取，应用时须重新绑定数据，不含凭据或业务 ID。" />
+        title="先预览模板，再选择完整布局或仅使用视觉风格。我的模板包含自己保存、导入及获授权使用的模板。" />
       <el-tabs v-model="tab">
-        <el-tab-pane label="本地模板库" name="local">
-          <el-table :data="localRows" v-loading="loading" border>
-            <el-table-column prop="name" label="名称" min-width="160" />
-            <el-table-column prop="category" label="分类" width="120" />
-            <el-table-column label="类型" width="100">
-              <template #default="{ row }">{{ row.kind === 'dashboard' ? '看板' : '大屏' }}</template>
-            </el-table-column>
-            <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="createBy" label="创建人" width="110" />
-            <el-table-column label="操作" width="360" fixed="right">
-              <template #default="{ row }">
-                <el-button v-hasPermi="['bi:dashboard:add']" link type="primary" @click="applyLocal(row)">用于新建</el-button>
-                <el-button v-hasPermi="['bi:template:list']" link @click="downloadLocal(row)">下载</el-button>
-                <el-button v-if="row.resourceActions?.includes('edit')" v-hasPermi="['bi:template:edit']" link @click="openEdit(row)">编辑</el-button>
-                <el-button v-if="row.resourceActions?.includes('grant')" v-hasPermi="['bi:template:grant']" link @click="openGrants(row)">授权</el-button>
-                <el-button v-if="row.resourceActions?.includes('remove')" v-hasPermi="['bi:template:remove']" link type="danger" @click="removeLocal(row)">删除</el-button>
-              </template>
-            </el-table-column>
-            <template #empty><el-empty description="暂无本地模板，可在看板设计器中导出并保存" /></template>
-          </el-table>
-        </el-tab-pane>
         <el-tab-pane label="模板市场" name="market">
           <div class="market-filters">
             <el-input v-model="marketSearch" clearable placeholder="搜索市场模板" style="max-width:320px" />
@@ -54,6 +33,27 @@
           </el-row>
           <el-empty v-if="!filteredMarket.length && !loading" description="没有匹配的市场模板" />
         </el-tab-pane>
+        <el-tab-pane label="我的模板" name="local">
+          <el-table :data="localRows" v-loading="loading" border>
+            <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column prop="category" label="分类" width="120" />
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">{{ row.kind === 'dashboard' ? '看板' : '大屏' }}</template>
+            </el-table-column>
+            <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="createBy" label="创建人" width="110" />
+            <el-table-column label="操作" width="360" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="previewLocal(row)">预览模板</el-button>
+                <el-button v-hasPermi="['bi:template:list']" link @click="downloadLocal(row)">下载</el-button>
+                <el-button v-if="row.resourceActions?.includes('edit')" v-hasPermi="['bi:template:edit']" link @click="openEdit(row)">编辑</el-button>
+                <el-button v-if="row.resourceActions?.includes('grant')" v-hasPermi="['bi:template:grant']" link @click="openGrants(row)">授权</el-button>
+                <el-button v-if="row.resourceActions?.includes('remove')" v-hasPermi="['bi:template:remove']" link type="danger" @click="removeLocal(row)">删除</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><el-empty description="暂无我的模板，可在编辑器中将设计保存为模板" /></template>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -69,22 +69,25 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="marketPreview.visible" :title="marketPreview.row?.name || '模板预览'" width="min(1000px, calc(100vw - 24px))" destroy-on-close>
+    <el-dialog v-model="marketPreview.visible" :fullscreen="previewFullscreen" :title="marketPreview.row?.name || '模板预览'" width="min(1000px, calc(100vw - 24px))" destroy-on-close>
       <template v-if="marketPreview.row">
         <div class="market-preview-meta">
           <el-tag>{{ marketPreview.row.kind === 'dashboard' ? '看板' : '大屏' }}</el-tag>
           <el-tag type="info">{{ marketPreview.row.category }}</el-tag>
-          <span>{{ marketPreview.row.provider === 'remote' ? '远程模板' : '内置模板' }}</span>
+          <span>{{ marketPreview.row.provider === 'mine' ? '我的模板' : marketPreview.row.provider === 'remote' ? '远程模板' : '内置模板' }}</span>
+          <el-button size="small" @click="previewFullscreen=!previewFullscreen">{{ previewFullscreen?'退出全屏':'全屏预览' }}</el-button>
         </div>
         <p class="market-preview-desc">{{ marketPreview.row.description }}</p>
-        <DashboardTemplatePreview v-if="marketPreview.template && marketPreview.file" :template="marketPreview.template" :file="marketPreview.file" />
+        <el-radio-group v-model="previewMode" class="mb8" aria-label="模板预览方式"><el-radio-button value="effect">效果演示</el-radio-button><el-radio-button value="layout">布局结构</el-radio-button></el-radio-group>
+        <DashboardTemplatePreview v-if="marketPreview.template && marketPreview.file" :template="marketPreview.template" :file="marketPreview.file" :demonstration="previewMode==='effect'" :style="previewFullscreen?{maxHeight:'calc(100vh - 260px)'}:{}" />
         <el-skeleton v-else-if="marketPreview.loading" :rows="5" animated />
         <el-alert v-else :title="marketPreview.error || '模板预览加载失败，请重试'" type="error" :closable="false" />
-        <el-alert class="market-preview-hint" type="info" :closable="false" title="预览仅展示布局示意，不含业务数据。继续后将进入数据绑定与确认步骤，不会直接创建或发布。" />
+        <el-alert class="market-preview-hint" type="info" :closable="false" :title="previewMode==='effect'?'效果演示使用独立示例数据，不代表真实业务，也不会写入新草稿。常用图表展示示例，暂不支持的类型显示占位。':'布局结构不包含业务数据。完整布局进入绑定向导；仅用风格进入空白编辑器，带入基础背景、配色、字号、圆角与画布尺寸。'" />
       </template>
       <template #footer>
         <el-button @click="marketPreview.visible = false">返回</el-button>
-        <el-button v-hasPermi="['bi:dashboard:add']" type="primary" :disabled="!marketPreview.template || marketPreview.loading" @click="useMarketTemplate">选择此模板并绑定数据</el-button>
+        <el-button v-hasPermi="['bi:dashboard:add']" :disabled="!marketPreview.file || marketPreview.loading" @click="useTemplateStyle">仅使用视觉风格</el-button>
+        <el-button v-hasPermi="['bi:dashboard:add']" type="primary" :disabled="!marketPreview.template || marketPreview.loading" @click="useMarketTemplate">使用完整布局</el-button>
       </template>
     </el-dialog>
 
@@ -106,6 +109,7 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+    <DashboardTemplatePicker v-if="templateOpen" v-model="templateOpen" :kind="templateKind" :initial-select-id="templatePickId" />
   </div>
 </template>
 
@@ -120,10 +124,19 @@ import {
 } from '@/api/bi/template'
 import type { GrantPrincipal, ResourceGrant } from '@/api/bi/datasource'
 import DashboardTemplatePreview from '@/views/bi/dashboard/DashboardTemplatePreview.vue'
+import DashboardTemplatePicker from '@/views/bi/dashboard/DashboardTemplatePicker.vue'
 import { importedTemplate, parseLayoutTemplate, type LayoutTemplateFile } from '@/utils/biTemplateFiles'
 import type { ScreenTemplate } from '@/utils/biTemplates'
+import {serializeTemplateStyle} from '@/utils/biTemplateStyleDraft'
 
-const router = useRouter()
+const router=useRouter()
+const previewMode=ref<'effect'|'layout'>('effect'),previewFullscreen=ref(false)
+type PreviewEntry=Omit<MarketTemplateEntry,'provider'> & {provider:MarketTemplateEntry['provider']|'mine';localId?:number}
+let previewSequence=0
+
+const templateOpen = ref(false)
+const templateKind = ref<'screen' | 'dashboard'>('screen')
+const templatePickId = ref('')
 const tab = ref<'local' | 'market'>('market')
 const loading = ref(false)
 const localRows = ref<TemplateSummary[]>([])
@@ -134,7 +147,7 @@ const marketPreview = reactive<{
   visible: boolean
   loading: boolean
   error: string
-  row?: MarketTemplateEntry
+  row?: PreviewEntry
   file?: LayoutTemplateFile
   template?: ScreenTemplate
 }>({ visible: false, loading: false, error: '' })
@@ -158,48 +171,35 @@ async function refresh() {
   }
 }
 
-function applyLocal(row: TemplateSummary) {
-  router.push({ path: '/bi/dashboard', query: { openTemplate: row.kind === 'dashboard' ? 'dashboard' : 'screen', templateId: 'saved-' + row.id } })
+function previewMarket(row:MarketTemplateEntry){return openTemplatePreview(row,async()=>(await getMarketTemplate(row.id)).data.content)}
+function previewLocal(row:TemplateSummary){return openTemplatePreview({id:String(row.id),localId:row.id,name:row.name,category:row.category,description:row.description,kind:row.kind || 'screen',provider:'mine'},async()=>(await getTemplate(row.id)).data.content)}
+async function openTemplatePreview(row:PreviewEntry,load:()=>Promise<LayoutTemplateFile>){
+  const sequence=++previewSequence
+  previewMode.value='effect';previewFullscreen.value=false
+  marketPreview.visible=true;marketPreview.loading=true;marketPreview.error='';marketPreview.row=row;marketPreview.file=undefined;marketPreview.template=undefined
+  try{
+    const content=await load();if(sequence!==previewSequence || !marketPreview.visible)return
+    const file=parseLayoutTemplate(JSON.stringify(content))
+    if(row.provider!=='mine' && (row.kind==='dashboard')!==(file.format==='datacenter-dashboard-template'))throw Error('模板类型与目录信息不一致')
+    if(row.provider==='mine')marketPreview.row={...row,kind:file.format==='datacenter-dashboard-template'?'dashboard':'screen'}
+    marketPreview.file=file
+    marketPreview.template={...importedTemplate(file),id:row.provider==='mine'?'saved-'+row.id:'market-'+row.id,name:row.name,category:row.category,description:row.description}
+  }catch{if(sequence===previewSequence)marketPreview.error='模板预览加载失败，请检查权限或稍后重试'}finally{if(sequence===previewSequence)marketPreview.loading=false}
 }
-
-function applyMarket(row: MarketTemplateEntry) {
-  router.push({ path: '/bi/dashboard', query: { openTemplate: row.kind, templateId: 'market-' + row.id } })
+function useMarketTemplate(){
+  const row=marketPreview.row;if(!row || !marketPreview.template || marketPreview.loading)return
+  marketPreview.visible=false;templateKind.value=row.kind;templatePickId.value=row.provider==='mine'?'saved-'+row.localId:'market-'+row.id;templateOpen.value=true
 }
-
-async function previewMarket(row: MarketTemplateEntry) {
-  marketPreview.visible = true
-  marketPreview.loading = true
-  marketPreview.error = ''
-  marketPreview.row = row
-  marketPreview.file = undefined
-  marketPreview.template = undefined
-  try {
-    const detail = (await getMarketTemplate(row.id)).data
-    const file = parseLayoutTemplate(JSON.stringify(detail.content))
-    const isDashboard = file.format === 'datacenter-dashboard-template'
-    if ((row.kind === 'dashboard') !== isDashboard) throw new Error('模板类型与目录信息不一致')
-    marketPreview.file = file
-    marketPreview.template = {
-      ...importedTemplate(file),
-      id: 'market-' + row.id,
-      name: row.name,
-      category: row.category,
-      description: row.description
-    }
-  } catch {
-    marketPreview.error = '模板预览加载失败，请检查权限或稍后重试'
-  } finally {
-    marketPreview.loading = false
-  }
+async function useTemplateStyle(){
+  if(!marketPreview.file || marketPreview.loading)return
+  try{
+    const snapshot=serializeTemplateStyle({...marketPreview.file,name:marketPreview.row?.name || marketPreview.file.name})
+    const kind=marketPreview.file.format==='datacenter-screen-template'?'screen':'dashboard'
+    const failure=await router.push({path:'/bi-admin/dashboard-workspace/new',query:{kind,styleOnly:'1'},state:{biStyleDraft:snapshot}})
+    if(failure)throw Error('未能打开编辑器')
+    marketPreview.visible=false
+  }catch{ElMessage.error('无法应用模板风格，请重新预览后重试')}
 }
-
-function useMarketTemplate() {
-  if (!marketPreview.row || !marketPreview.template || marketPreview.loading) return
-  const row = marketPreview.row
-  marketPreview.visible = false
-  applyMarket(row)
-}
-
 async function downloadLocal(row: TemplateSummary) {
   try {
     const detail = (await getTemplate(row.id)).data

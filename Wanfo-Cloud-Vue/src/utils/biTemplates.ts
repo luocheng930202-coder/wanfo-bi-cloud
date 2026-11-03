@@ -34,9 +34,24 @@ export function templateSlotPanel(slot:TemplateSlot,binding:TemplateBinding):Pan
       orderBys:binding.config.orderBys.map(({field,order})=>({field,order})),limit:binding.config.limit,
       filterTree:binding.config.filterTree})),style:{showTitle:true,titleAlign:'left'}}
 }
+function requireName(name:string,label:string){
+  if(!name.trim() || name.trim().length>200)throw new Error(`请填写200字以内的${label}名称`)
+  return name.trim()
+}
+/** DataEase-style: copy layout into a new draft; data panels stay unbound until edited. */
+export function applyScreenTemplateLayout(id:string,name:string,keyFactory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
+  const template=getScreenTemplate(id),trimmed=requireName(name,'大屏')
+  const panels:Panel[]=[{key:keyFactory(),title:trimmed,componentType:'text',x:40,y:20,w:1840,h:90,content:{text:template.description},style:{showTitle:true,titleAlign:'left'}}]
+  for(const slot of template.slots){
+    panels.push({key:keyFactory(),title:slot.label,componentType:slot.kind,x:slot.x,y:slot.y,w:slot.w,h:slot.h,chartId:null,
+      chartConfig:{type:slot.kind==='kpi'?'table':slot.type,dimensions:[],metrics:[],orderBys:[],limit:100},style:{showTitle:true,titleAlign:'left'}})
+  }
+  if(new Set(panels.map(p=>p.key)).size!==panels.length)throw new Error('组件标识重复')
+  return {schemaVersion:1,name:trimmed,kind:'screen',layout:'absolute',scene:{width:1920,height:1080,fit:'contain',refreshSeconds:0},appearance:templateAppearance(template.theme),panels,interaction:{controls:[],links:[]}}
+}
 export function instantiateScreenTemplate(id:string,name:string,bindings:Record<string,TemplateBinding>,keyFactory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
   const template=getScreenTemplate(id)
-  if(!name.trim() || name.trim().length>200)throw new Error('请填写200字以内的大屏名称')
+  requireName(name,'大屏')
   if(Object.keys(bindings).some(k=>!template.slots.some(s=>s.key===k)))throw new Error('存在未知绑定槽')
   const panels:Panel[]=[{key:keyFactory(),title:name.trim(),componentType:'text',x:40,y:20,w:1840,h:90,content:{text:template.description},style:{showTitle:true,titleAlign:'left'}}]
   for(const slot of template.slots){
@@ -68,9 +83,20 @@ export function getDashboardTemplate(id:string,version=1){
 function validDashboardLayout(panels:Panel[]){
   return panels.every((p,i)=>Number.isInteger(p.x)&&Number.isInteger(p.y)&&Number.isInteger(p.w)&&Number.isInteger(p.h)&&p.x>=0&&p.y>=0&&p.w>=2&&p.w<=12&&p.h>=2&&p.h<=12&&p.x+p.w<=12&&p.y+p.h<=120&&panels.slice(i+1).every(o=>p.x>=o.x+o.w||p.x+p.w<=o.x||p.y>=o.y+o.h||p.y+p.h<=o.y))
 }
+export function applyDashboardTemplateLayout(id:string,name:string,keyFactory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
+  const template=getDashboardTemplate(id),trimmed=requireName(name,'看板')
+  const panels:Panel[]=[]
+  for(const slot of template.slots){
+    panels.push({key:keyFactory(),title:slot.label,componentType:slot.kind,x:slot.x,y:slot.y,w:slot.w,h:slot.h,chartId:null,
+      chartConfig:{type:slot.kind==='kpi'?'table':slot.type,dimensions:[],metrics:[],orderBys:[],limit:100},style:{showTitle:true,titleAlign:'left'}})
+  }
+  if(new Set(panels.map(p=>p.key)).size!==panels.length)throw new Error('组件标识重复')
+  if(!validDashboardLayout(panels))throw new Error('看板布局重叠或越界')
+  return {schemaVersion:1,name:trimmed,kind:'dashboard',layout:'grid',appearance:templateAppearance(template.theme),panels,interaction:{controls:[],links:[]}}
+}
 export function instantiateDashboardTemplate(id:string,name:string,bindings:Record<string,TemplateBinding>,keyFactory:()=>string=()=>crypto.randomUUID()):DashboardDefinition {
   const template=getDashboardTemplate(id)
-  if(!name.trim() || name.trim().length>200)throw new Error('请填写200字以内的看板名称')
+  requireName(name,'看板')
   if(Object.keys(bindings).some(k=>!template.slots.some(s=>s.key===k)))throw new Error('存在未知绑定槽')
   const panels:Panel[]=[]
   for(const slot of template.slots){

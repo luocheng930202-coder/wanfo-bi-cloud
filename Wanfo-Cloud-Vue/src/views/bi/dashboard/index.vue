@@ -76,7 +76,7 @@
         <p v-if="pendingFilters" class="interaction-state-hint" role="status">筛选输入尚未应用，图表和导出仍使用上方已应用条件。</p>
       </section>
       <p v-if="view.links?.length" class="interaction-hint">点击柱形、折线点、扇区或明细可下钻或联动（下钻图不可作联动来源）。</p>
-      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" query-feedback :query-elapsed="panelRuns.elapsed(panel.key,queryNow)" :query-stopped="panelStopped[panel.key]" :refresh-disabled="loading" @stop="stopPanel(panel.key)" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
+      <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly><template #default="{panel}"><DashboardCard scene-interactive :data-bound="panel.dataBound" :title="panelTitle(panel.key)" :component-type="panel.componentType" :content="panel.content" :panel-style="panelStyle(panel.key)" :appearance="view.appearance" :payload="payloads[panel.key]" :query-completed-at="queryCompletedAt[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" query-feedback :query-elapsed="panelRuns.elapsed(panel.key,queryNow)" :query-stopped="panelStopped[panel.key]" :refresh-disabled="loading" @stop="stopPanel(panel.key)" @refresh="refreshViewPanel(panel.key)" :linkable="view.links?.some(l=>l.sourcePanel===panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v=>selectLink(panel.key,v)" @drill="p=>drillDown(panel.key,p.field,p.value)" @drill-up="(lvl:number)=>drillUp(panel.key,lvl)"/></template></DashboardCanvas>
     </el-card>
     <DashboardTemplatePicker v-if="templateOpen" v-model="templateOpen" :kind="templateKind" :initial-select-id="templatePickId" @created="onTemplateCreated"/>
     <DashboardShareDialog v-model:visible="shareDialog.visible" :dashboard-id="shareDialog.id" :name="shareDialog.name" />
@@ -177,6 +177,7 @@ function closeView() {
   invalidate(); loading.value = false; mode.value = null; currentId.value = undefined; view.value = null
   if (route.query.view) { const query = { ...route.query }; delete query.view; router.replace({ path: route.path, query }) }
 }
+const queryCompletedAt=reactive<Record<string,string>>({})
 const mode=ref<'view'|null>(null),currentId=ref<number>()
 const payloads=reactive<Record<string,PanelResult>>(Object.create(null)),panelErrors=reactive<Record<string,string>>(Object.create(null)),panelLoading=reactive<Record<string,boolean>>(Object.create(null))
 const loading=ref(false),saving=ref(false),listLoading=ref(false),error=ref('')
@@ -215,15 +216,15 @@ async function retryFailed(){
 }
 const inFlight=ref(0)
 const refreshSeconds=computed(()=>currentId.value===view.value?.id?(view.value?.scene?.refreshSeconds || 0):0)
-const {available,refreshStatus}=useBiRefresh(refreshSeconds,async()=>{if(currentId.value)await openView(currentId.value,true)},()=>loading.value || saving.value || inFlight.value>0)
+const {available,refreshStatus}=useBiRefresh(refreshSeconds,async()=>{if(currentId.value)await openView(currentId.value,true);return !error.value && !Object.values(panelErrors).some(Boolean)},()=>loading.value || saving.value || inFlight.value>0)
 let epoch=0
 const panelRequests:Record<string,number>=Object.create(null)
 const panelRuns=createPanelQueryRuns(),queryNow=ref(Date.now()),panelStopped=reactive<Record<string,boolean>>(Object.create(null))
 let queryClock:ReturnType<typeof setInterval>|undefined
 function syncQueryClock(){if(panelRuns.size && !queryClock){queryNow.value=Date.now();queryClock=setInterval(()=>{queryNow.value=Date.now()},1000)}else if(!panelRuns.size){clearInterval(queryClock);queryClock=undefined}}
-function stopPanel(key:string){if(!panelRuns.cancel(key))return;panelRequests[key]=(panelRequests[key]||0)+1;panelLoading[key]=false;panelStopped[key]=true;delete payloads[key];delete panelErrors[key];syncQueryClock()}
+function stopPanel(key:string){if(!panelRuns.cancel(key))return;panelRequests[key]=(panelRequests[key]||0)+1;panelLoading[key]=false;panelStopped[key]=true;delete payloads[key];delete queryCompletedAt[key];delete panelErrors[key];syncQueryClock()}
 function stopAllPanels(){for(const key of Object.keys(panelLoading))if(panelLoading[key])stopPanel(key);panelRuns.cancelAll();syncQueryClock()}
-function clearPanels(){for(const map of [payloads,panelErrors,panelLoading,panelStopped])for(const key of Object.keys(map))delete map[key]}
+function clearPanels(){for(const map of [payloads,panelErrors,panelLoading,panelStopped,queryCompletedAt])for(const key of Object.keys(map))delete map[key]}
 function invalidate(preserve=false){panelRuns.cancelAll();syncQueryClock();++epoch;if(!preserve)clearPanels();for(const key of Object.keys(optionLoading))optionLoading[key]=false;error.value=''}
 onBeforeUnmount(()=>{panelRuns.cancelAll();syncQueryClock();++epoch})
 onDeactivated(()=>{++epoch;loading.value=false;stopAllPanels()})
@@ -262,10 +263,10 @@ async function refreshViewPanel(key:string,internal=false,preserve=false){
   const panel=view.value?.panels.find(p=>p.key===key);const type=panel?.componentType;if(type && !['chart','kpi'].includes(type) && !(type==='scene3d' && panel?.dataBound))return
   const current=view.value;if(mode.value!=='view' || !current)return
   const controller=panelRuns.begin(key);if(!controller)return;syncQueryClock();panelStopped[key]=false
-  const e=epoch,v=(panelRequests[key]||0)+1;panelRequests[key]=v;panelLoading[key]=true;if(!preserve)delete payloads[key];delete panelErrors[key]
+  const e=epoch,v=(panelRequests[key]||0)+1;panelRequests[key]=v;panelLoading[key]=true;if(!preserve){delete payloads[key];delete queryCompletedAt[key]}delete panelErrors[key]
   inFlight.value++
-  try{const r=await dashboardPanelData(current.id,key,current.revision,runtimeInput(),controller.signal);if(panelRuns.current(key,controller) && e===epoch && panelRequests[key]===v)payloads[key]=r.data}
-  catch(failure){if(!controller.signal.aborted && e===epoch && panelRequests[key]===v){delete payloads[key];panelErrors[key]=queryErrorText(failure)}}finally{inFlight.value--;panelRuns.finish(key,controller);syncQueryClock();if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
+  try{const r=await dashboardPanelData(current.id,key,current.revision,runtimeInput(),controller.signal);if(panelRuns.current(key,controller) && e===epoch && panelRequests[key]===v){payloads[key]=r.data;queryCompletedAt[key]=new Date().toISOString()}}
+  catch(failure){if(!controller.signal.aborted && e===epoch && panelRequests[key]===v){delete payloads[key];delete queryCompletedAt[key];panelErrors[key]=queryErrorText(failure)}}finally{inFlight.value--;panelRuns.finish(key,controller);syncQueryClock();if(e===epoch && panelRequests[key]===v)panelLoading[key]=false}
 }
 const grantActions:Record<string,string>={view:'查看列表',consume:'查看已发布数据',edit:'编辑草稿',publish:'发布/下线',remove:'删除',grant:'授权管理'}
 const grantDialog=reactive({visible:false,id:0,name:'',principalId:undefined as number|undefined,action:'view'})

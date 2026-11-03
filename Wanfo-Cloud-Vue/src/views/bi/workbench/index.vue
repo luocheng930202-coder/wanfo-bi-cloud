@@ -310,7 +310,7 @@ const statDefs: { key: SummaryKey; label: string; perm: string; primary?: boolea
   { key: 'dataset', label: '数据集', perm: 'bi:dataset:list', primary: true },
   { key: 'datasource', label: '数据源', perm: 'bi:datasource:list' },
   { key: 'chart', label: '图表', perm: 'bi:chart:list' },
-  { key: 'template', label: '本地模板', perm: 'bi:template:list' },
+  { key: 'template', label: '我的模板', perm: 'bi:template:list' },
   { key: 'form', label: '数据填报', perm: 'bi:form:list' },
   { key: 'export', label: '导出任务', perm: 'bi:export:list' }
 ]

@@ -29,17 +29,27 @@
       <el-tab-pane label="样式" name="style">
         <el-form label-position="top" :disabled="disabled" class="property-form">
           <h3 class="inspector-section-title">基础设置</h3>
+          <el-form-item v-if="['text','clock','kpi'].includes(panel.componentType || '')" label="内容字号"><el-input-number :model-value="panel.style?.fontSize || 18" :min="10" :max="96" :precision="0" @update:model-value="v => patchStyle({fontSize:v})"/></el-form-item>
+          <el-form-item label="文字颜色"><el-color-picker :model-value="panel.style?.textColor || '#DDF5FF'" @update:model-value="v => patchStyle({textColor:v})"/></el-form-item>
+          <el-form-item label="透明背景"><el-switch :model-value="!!panel.style?.transparent" @update:model-value="v => patchStyle({transparent:v})"/></el-form-item>
           <el-form-item label="组件名称"><el-input :model-value="panel.title" maxlength="200" aria-label="样式组件名称" @update:model-value="v => patch({ title: v })" /></el-form-item>
           <el-form-item v-if="panel.componentType !== 'border' && panel.componentType !== 'line'" label="显示标题" class="inline-switch"><el-switch :model-value="panel.style!.showTitle" @update:model-value="v => patchStyle({ showTitle: v })"/></el-form-item>
           <el-form-item v-if="panel.componentType !== 'border' && panel.componentType !== 'line'" label="标题对齐">
             <el-radio-group :model-value="panel.style!.titleAlign" class="title-align-control" aria-label="标题对齐" @update:model-value="v => patchStyle({ titleAlign: v })"><el-radio-button value="left">左对齐</el-radio-button><el-radio-button value="center">居中</el-radio-button><el-radio-button value="right">右对齐</el-radio-button></el-radio-group>
           </el-form-item>
           <el-form-item v-if="panel.componentType === 'text'" label="文本内容"><el-input :model-value="panel.content!.text" type="textarea" :rows="7" maxlength="2000" show-word-limit @update:model-value="v => patchContent({ text: v })"/></el-form-item>
+          <el-form-item v-if="panel.componentType === 'clock'" label="时钟格式"><el-select :model-value="panel.content?.text || 'HH:mm:ss'" aria-label="时钟格式" @update:model-value="v => patchContent({ text: v })"><el-option v-for="f in clockFormats" :key="f" :label="f" :value="f"/></el-select></el-form-item>
+          <p v-if="panel.componentType === 'clock'" class="property-help">时钟在预览与发布查看端本地走时，不查询业务数据。</p>
           <template v-if="panel.componentType === 'scene3d'">
             <div class="property-section">3D 场景</div>
             <el-alert v-if="panel.content?.scene3d?.enabled===false" type="warning" :closable="false" :title="panel.content.scene3d.fallbackReason || '场景配置不受支持，当前显示静态预览'" show-icon><template #default><el-button link type="primary" @click="restoreSceneDefaults">恢复默认场景</el-button></template></el-alert>
-            <el-form-item label="场景类型"><el-select :model-value="panel.content?.scene3d?.mode || 'building'" aria-label="3D 场景类型" @update:model-value="v => patchSceneMode(v)"><el-option label="食堂建筑" value="building"/><el-option label="区域分布" value="map"/><el-option label="数据柱图" value="chart"/></el-select></el-form-item>
-            <p class="property-help">场景可在大屏画布中拖动、缩放并随版本保存。区域分布当前为示意布局。</p>
+            <el-form-item label="场景类型"><el-select :model-value="panel.content?.scene3d?.mode || 'building'" aria-label="3D 场景类型" @update:model-value="v => patchSceneMode(v)"><el-option label="食堂建筑" value="building"/><el-option label="行政区地图（3D）" value="map"/><el-option label="数据柱图" value="chart"/></el-select></el-form-item>
+            <template v-if="panel.content?.scene3d?.mode==='map'">
+              <p class="property-help">绑定“行政区地图”类型的图表，并在图表中将地区值设为“行政区编码”。场景继承该图表的地图范围与省市县字段；在大屏预览或发布查看中选择地区和下钻。学校坐标点位尚未接入。</p>
+              <el-button plain :disabled="disabled" @click="subTab='data'">设置地图数据</el-button>
+            </template>
+            <p v-else-if="panel.content?.scene3d?.mode==='chart'" class="property-help">在“数据”页绑定已有图表，使用第一个维度和度量绘制柱图；未绑定时不生成示例业务值。</p>
+            <p v-else class="property-help">当前为程序化食堂建筑示意，非实际学校模型。场景可在画布中拖动、缩放并随版本保存。</p>
           </template>
           <template v-if="panel.content?.decoration">
             <div class="property-section">装饰样式</div>
@@ -63,12 +73,16 @@
             <div class="property-section">数据绑定</div>
             <p class="source-name">{{ chartName }}</p>
             <p v-if="panel.componentType === 'kpi'" class="property-help">取当前组件第一个聚合度量，按当前权限与筛选汇总。</p>
-            <p v-if="panel.componentType === 'scene3d'" class="property-help">3D 柱图使用绑定图表的第一个维度和第一个度量；发布后按看板权限查询。</p>
+            <p v-if="panel.componentType === 'scene3d'" class="property-help">{{ panel.content?.scene3d?.mode==='map'?'行政区地图需绑定编码模式的地图图表，地图范围和下钻字段在源图表中配置；预览及发布时按当前权限查询。':'3D 柱图使用绑定图表的第一个维度和第一个度量；发布后按看板权限查询。' }}</p>
             <el-button :disabled="disabled" @click="emit('replace-chart')">更换图表</el-button>
             <DashboardChartEditor :kind="kind" :layout="layout" :scene="scene" :panel="panel" :id="dashboardId" :version="version" :disabled="disabled" @apply="(_key, config, payload) => emit('chart-config', config, payload)"/>
           </template>
-          <template v-else-if="panel.componentType==='scene3d'"><div class="property-section">数据绑定</div><p class="property-help">为“数据柱图”绑定一个已有图表，预览和发布时会使用该图表的数据及权限。</p><el-button type="primary" plain :disabled="disabled" @click="emit('replace-chart')">绑定图表数据</el-button></template>
-          <p v-else class="property-help">文本、图片与装饰组件不取数；图表与指标卡请从左侧添加并绑定已保存图表。</p>
+          <template v-else-if="panel.componentType==='scene3d' || panel.componentType==='chart' || panel.componentType==='kpi'">
+            <div class="property-section">数据绑定</div>
+            <p class="property-help">{{ panel.componentType==='scene3d'?(panel.content?.scene3d?.mode==='map'?'选择一个已保存的行政区地图图表，地区值须使用行政区编码；没有合适图表时请先到图表管理中创建。':'绑定已有图表后，在预览和发布中使用该图表的授权查询结果。'):(panel.componentType==='kpi'?'模板布局中的指标卡尚未绑定图表，请选择一个已保存图表后再预览或发布。':'模板布局中的图表尚未绑定，请选择已保存图表；也可先换类型后再配置字段。') }}</p>
+            <el-button type="primary" plain :disabled="disabled" @click="emit('replace-chart')">{{ panel.componentType==='scene3d'?(panel.content?.scene3d?.mode==='map'?'绑定行政区地图图表':'绑定图表数据'):(panel.componentType==='kpi'?'绑定指标图表':'绑定图表') }}</el-button>
+          </template>
+          <p v-else class="property-help">文本、图片、时钟与装饰组件不取数；图表与指标卡请从左侧组件库添加并绑定已保存图表。</p>
         </div>
       </el-tab-pane>
       <el-tab-pane label="交互" name="interaction">
@@ -82,7 +96,8 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { DashboardAppearance, Panel, PanelChartConfig, PanelResult, ScreenScene } from '@/api/bi/dashboard'
+import { CLOCK_FORMATS, type DashboardAppearance, type Panel, type PanelChartConfig, type PanelResult, type ScreenScene } from '@/api/bi/dashboard'
+const clockFormats = CLOCK_FORMATS
 import DashboardChartEditor from './DashboardChartEditor.vue'
 import DashboardNumberFormatEditor from './DashboardNumberFormatEditor.vue'
 import DashboardMetricStyleEditor from './DashboardMetricStyleEditor.vue'
@@ -117,6 +132,15 @@ const emit = defineEmits<{
   (e: 'update:targetContainer', value: string): void
 }>()
 const subTab = ref('style')
+const unboundData = computed(() => {
+  const t = String(props.panel.componentType || 'chart')
+  if ((t === 'chart' || t === 'kpi') && !props.panel.chartId) return true
+  if (t === 'scene3d' && !props.panel.chartId) {
+    const mode = props.panel.content?.scene3d?.mode
+    return mode === 'map' || mode === 'chart'
+  }
+  return false
+})
 const targetContainer = computed({
   get: () => props.targetContainer,
   set: (v: string) => emit('update:targetContainer', v)
@@ -126,7 +150,7 @@ const geometryLabels = computed(() =>
     ? { x: '横向位置', y: '纵向位置', w: '宽度（像素）', h: '高度（像素）' }
     : { x: '横向位置', y: '纵向位置', w: '宽度（列）', h: '高度（行）' }
 )
-watch(() => props.panel.key, () => { subTab.value = 'style' })
+watch(() => [props.panel.key, unboundData.value] as const, () => { subTab.value = unboundData.value ? 'data' : 'style' }, { immediate: true })
 function patch(p: Partial<Panel>) { emit('patch', p) }
 function patchStyle(p: Record<string, unknown>) { patch({ style: { ...props.panel.style!, ...p } }) }
 function patchContent(p: Record<string, unknown>) { patch({ content: { ...props.panel.content, ...p } }) }

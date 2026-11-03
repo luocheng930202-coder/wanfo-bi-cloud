@@ -95,6 +95,7 @@ export function buildChartPreviewOption(params: {
   appearance?: DashboardAppearance
   numberFormat?: NumberFormat | null
   metricStyles?: MetricStyle[]
+  compact?: boolean
   formatFor: (key: string) => NumberFormat | null | undefined
 }): EChartsOption {
   const drawing=seriesDrawing(params.definition,params.result,params.labels)
@@ -140,10 +141,11 @@ export function buildChartPreviewOption(params: {
       .join('\n')
   }
 
+  const compact=!!params.compact
   const legendTop = style?.legendPosition === 'bottom' ? undefined : style?.showTitle?36:8
   const legendBottom = style?.legendPosition === 'bottom' ? 8 : undefined
-  const chartTop=style?.showTitle?(style.showLegend!==false && style.legendPosition!=='bottom'?76:44):(style?.showLegend!==false && style?.legendPosition!=='bottom'?48:20)
-  const chartBottom=style?.showLegend!==false && style?.legendPosition==='bottom'?52:28
+  const chartTop=compact?(style?.showLegend!==false && style?.legendPosition!=='bottom'?34:12):style?.showTitle?(style.showLegend!==false && style.legendPosition!=='bottom'?76:44):(style?.showLegend!==false && style?.legendPosition!=='bottom'?48:20)
+  const chartBottom=style?.showLegend!==false && style?.legendPosition==='bottom'?(compact?34:52):(compact?20:28)
   const base: EChartsOption = {
     color: palette,
     textStyle: { color: textColor,fontFamily:visualTheme.fontFamily,fontSize:BI_TYPE.chart },
@@ -188,6 +190,7 @@ export function buildChartPreviewOption(params: {
       ...base,
       series: [{
         type: 'gauge',
+        ...(compact?{center:['50%','52%'],radius:'82%',title:{show:false}}:{}),
         min, max,
         startAngle: progress?210:225, endAngle: progress?-30:-45,
         progress: {show:progress,width:16,roundCap:true},
@@ -195,7 +198,7 @@ export function buildChartPreviewOption(params: {
         axisLine: {lineStyle:{width:progress?16:10}},
         axisTick: {show:!progress}, splitLine:{show:!progress},
         axisLabel: {show:!progress,formatter:(v:number)=>formatValue(key,v)},
-        detail: { formatter: (v: number) => formatValue(key,v), color:metricColor(raw,key,metricStyles) || style?.metrics?.find(m=>m.key===key)?.color || textColor },
+        detail: { ...(compact?{fontSize:28,offsetCenter:[0,'25%']}:{}),formatter: (v: number) => formatValue(key,v), color:metricColor(raw,key,metricStyles) || style?.metrics?.find(m=>m.key===key)?.color || textColor },
         data: [{ value, name: labels[key] || key }]
       }]
     }
@@ -291,8 +294,8 @@ export function buildChartPreviewOption(params: {
     }
     const total=data.reduce((sum,p)=>sum+p.value,0)
     return { ...base,
-      graphic: type==='ring' && style?.ringShowTotal ? [{type:'text',left:'center',top:'middle',style:{text:`合计\n${formatValue(key,total)}`,align:'center' as const,fill:textColor,fontSize:18,lineHeight:28}}] : undefined,
-      series: [{ type: 'pie' as const, radius, data, startAngle:style?.startAngle??90,
+      graphic: type==='ring' && style?.ringShowTotal ? [{type:'text',left:'center',top:compact?'28%':'middle',style:{text:`合计\n${formatValue(key,total)}`,align:'center' as const,fill:textColor,fontSize:compact?14:18,lineHeight:compact?20:28}}] : undefined,
+      series: [{ type: 'pie' as const, radius, data, ...(compact && style?.legendPosition==='bottom'?{center:['50%','43%']}:{}), startAngle:style?.startAngle??90,
         label:{show:style?.showLabels!==false,position:style?.pieLabelPosition??'outside',formatter:style?.pieLabelPosition==='inside'?'{d}%':'{b}'},
         labelLine:{show:style?.pieLabelPosition!=='inside',length:12,length2:10},labelLayout:{hideOverlap:true},emphasis:{focus:'self'},itemStyle:{borderWidth:2,borderColor:visualTheme.surface}}] }
   }

@@ -4,12 +4,14 @@ import { notifyBiSaved } from '@/utils/biThumbnail'
 import type { BiResult as AjaxResult } from './response'
 import type { GrantPrincipal, ResourceGrant } from './datasource'
 import type { ChartResult, ChartDefinition, QueryModel } from './chart'
-export interface DashboardAppearance {theme:'light'|'dark';background:string;cardBackground:string;textColor:string;borderColor:string;palette:'business'|'ocean'|'warm';titleSize:number;radius:number;decimals:number;grouping:boolean}
+export interface DashboardAppearance {glowIntensity?:number|null;visualPreset?:'standard'|'tech-blue-v1'|'hologram-ice-v1'|null;theme:'light'|'dark';background:string;backgroundImage?:string;cardBackground:string;textColor:string;borderColor:string;palette:'business'|'ocean'|'warm';titleSize:number;radius:number;decimals:number;grouping:boolean}
 export interface NumberFormat {mode:'number'|'percent';scale:'none'|'thousand'|'wan'|'million'|'yi';decimals:number;grouping:boolean;fixed:boolean;prefix:string;suffix:string;nullText:string}
 export interface Threshold {op:'GT'|'GTE'|'LT'|'LTE'|'EQ'|'NE';value:string;color:string}
 export interface MetricStyle {key:string;format?:NumberFormat|null;rules:Threshold[]}
-export interface PanelStyle {metrics?:MetricStyle[];numberFormat?:NumberFormat|null;showTitle:boolean;titleAlign:'left'|'center'|'right'}
-export type ComponentType = 'chart'|'kpi'|'scene3d'|'text'|'image'|'border'|'line'|'container'
+export interface PanelStyle {fontSize?:number|null;textColor?:string|null;transparent?:boolean|null;metrics?:MetricStyle[];numberFormat?:NumberFormat|null;showTitle:boolean;titleAlign:'left'|'center'|'right'}
+export type ComponentType = 'chart'|'kpi'|'scene3d'|'text'|'image'|'border'|'line'|'container'|'clock'
+export const CLOCK_FORMATS = ['HH:mm:ss','HH:mm','YYYY-MM-DD','YYYY-MM-DD HH:mm','YYYY-MM-DD HH:mm:ss'] as const
+export type ClockFormat = typeof CLOCK_FORMATS[number]
 export interface Decoration {color:string;stroke:number;pattern:'solid'|'dashed'|'dotted';radius:number;direction:'horizontal'|'vertical'}
 export interface ContainerStyle {background:string;borderColor:string;stroke:number;radius:number;padding:number}
 export interface Scene3DConfig {
@@ -37,7 +39,7 @@ export function resolveScene3DConfig(value?:Partial<Scene3DConfig>|null):Resolve
 export interface PanelContent {container?:ContainerStyle;decoration?:Decoration;scene3d?:Scene3DConfig;text?:string|null;image?:string|null}
 export type PanelChartConfig = Pick<QueryModel,'dimensions'|'metrics'> & {type:ChartDefinition['type'];orderBys:NonNullable<QueryModel['orderBys']>;limit:number;filterTree?:QueryModel['filterTree']}
 export interface Panel { parentKey?:string;hidden?:boolean;groupKey?:string;key:string;chartId?:number|null;title:string;x:number;y:number;w:number;h:number;componentType?:ComponentType;style?:PanelStyle;content?:PanelContent;locked?:boolean;chartConfig?:PanelChartConfig }
-export type PanelLayout = Pick<Panel,'key'|'x'|'y'|'w'|'h'|'locked'|'componentType'|'groupKey'|'hidden'|'parentKey'|'content'>
+export type PanelLayout = Pick<Panel,'key'|'x'|'y'|'w'|'h'|'locked'|'componentType'|'groupKey'|'hidden'|'parentKey'|'content'|'style'>
 export type FilterValue = string | number | [string|number|null,string|number|null] | null
 export interface FilterTarget {panel:string;field:string;valueType?:string}
 export interface FilterControl {key:string;label:string;type:'text'|'enum'|'number'|'date';defaultValue:FilterValue;targets:FilterTarget[]}

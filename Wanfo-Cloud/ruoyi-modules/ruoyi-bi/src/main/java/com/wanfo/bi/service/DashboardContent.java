@@ -1,10 +1,23 @@
 package com.wanfo.bi.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
-/** Small embedded image/text assets; no HTML, SVG, remote URLs or executable content. */
+/**
+ * Embedded static image/text for dashboard panels.
+ * Images: PNG/JPEG/WebP/GIF/SVG data URLs only (no remote URLs). SVG is allowlisted for designer
+ * materials but stripped of script/event vectors; render via {@code <img>}, never inline HTML.
+ */
 public final class DashboardContent {
     private DashboardContent() {}
+    public static final int IMAGE_MAX_BYTES = 524288;
+    public static final int IMAGE_MAX_CHARS = 720000;
+    private static final Pattern IMAGE_DATA_URL = Pattern.compile("^data:image/(png|jpeg|webp|gif|svg\\+xml);base64,[A-Za-z0-9+/]+={0,2}$");
+    private static final Pattern SVG_UNSAFE = Pattern.compile(
+            "<script|javascript:|data:text/html|foreignObject|<(?:iframe|embed|object|link|meta|base)\\b|\\bon[a-z]+\\s*=",
+            Pattern.CASE_INSENSITIVE);
     public record Decoration(String color,Integer stroke,String pattern,Integer radius,String direction) {}
     public record ContainerStyle(String background,String borderColor,Integer stroke,Integer radius,Integer padding) {}
     /** Versioned, allowlisted scene settings. A legacy mode-only payload is read as schema v1. */
@@ -38,21 +51,49 @@ public final class DashboardContent {
         }
         if(c!=null && c.scene3d()!=null)throw new IllegalArgumentException("当前组件不支持 3D 场景内容");
         if(type.equals("chart") || type.equals("kpi")){if(c!=null)throw new IllegalArgumentException("数据组件不能携带静态内容");return null;}
+        if(type.equals("clock")){
+            if(c!=null && (c.image()!=null || c.decoration()!=null || c.container()!=null || c.scene3d()!=null))throw new IllegalArgumentException("时钟不能混用其他内容");
+            String format=c==null || c.text()==null || c.text().isBlank()?"HH:mm:ss":c.text().trim();
+            if(!java.util.Set.of("HH:mm:ss","HH:mm","YYYY-MM-DD","YYYY-MM-DD HH:mm","YYYY-MM-DD HH:mm:ss").contains(format))
+                throw new IllegalArgumentException("时钟格式仅支持 HH:mm:ss、HH:mm、YYYY-MM-DD、YYYY-MM-DD HH:mm、YYYY-MM-DD HH:mm:ss");
+            return new Content(format,null);
+        }
         if(type.equals("text")){
             if(c!=null && c.image()!=null)throw new IllegalArgumentException("文本不能包含图片内容");
             String text=c==null || c.text()==null?"":c.text();if(text.length()>2000)throw new IllegalArgumentException("文本最多 2000 字符");return new Content(text,null);
         }
         if(c!=null && c.text()!=null)throw new IllegalArgumentException("图片不能包含文本内容");
         String image=c==null || c.image()==null?"":c.image();
-        if(!image.isEmpty()) {
-            if(image.length()>350000 || !image.matches("data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}"))throw new IllegalArgumentException("仅支持不超过 256KB 的 PNG/JPEG/WebP 图片");
-            byte[] bytes;try{bytes=Base64.getDecoder().decode(image.substring(image.indexOf(',')+1));}catch(IllegalArgumentException ex){throw new IllegalArgumentException("图片编码无效");}
-            boolean png=image.startsWith("data:image/png;") && bytes.length>=8 && bytes[0]==(byte)137 && bytes[1]==80 && bytes[2]==78 && bytes[3]==71 && bytes[4]==13 && bytes[5]==10 && bytes[6]==26 && bytes[7]==10;
-            boolean jpeg=image.startsWith("data:image/jpeg;") && bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
-            boolean webp=image.startsWith("data:image/webp;") && bytes.length>=12 && bytes[0]==82 && bytes[1]==73 && bytes[2]==70 && bytes[3]==70 && bytes[8]==87 && bytes[9]==69 && bytes[10]==66 && bytes[11]==80;
-            if(bytes.length>262144 || !(png || jpeg || webp))throw new IllegalArgumentException("图片内容与格式不匹配");
-        }
+        if(!image.isEmpty()) image=normalizeImageDataUrl(image);
         return new Content(null,image);
+    }
+    /** Validates and returns the image data URL; used by dashboard panels and asset library. */
+    public static String normalizeImageDataUrl(String image){
+        if(image==null || image.isBlank())throw new IllegalArgumentException("图片内容不能为空");
+        if(image.length()>IMAGE_MAX_CHARS || !IMAGE_DATA_URL.matcher(image).matches())
+            throw new IllegalArgumentException("仅支持不超过 512KB 的 PNG/JPEG/WebP/GIF/SVG 图片");
+        byte[] bytes;try{bytes=Base64.getDecoder().decode(image.substring(image.indexOf(',')+1));}catch(IllegalArgumentException ex){throw new IllegalArgumentException("图片编码无效");}
+        if(bytes.length==0 || bytes.length>IMAGE_MAX_BYTES)throw new IllegalArgumentException("图片内容与格式不匹配");
+        boolean png=image.startsWith("data:image/png;") && bytes.length>=8 && bytes[0]==(byte)137 && bytes[1]==80 && bytes[2]==78 && bytes[3]==71 && bytes[4]==13 && bytes[5]==10 && bytes[6]==26 && bytes[7]==10;
+        boolean jpeg=image.startsWith("data:image/jpeg;") && bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
+        boolean webp=image.startsWith("data:image/webp;") && bytes.length>=12 && bytes[0]==82 && bytes[1]==73 && bytes[2]==70 && bytes[3]==70 && bytes[8]==87 && bytes[9]==69 && bytes[10]==66 && bytes[11]==80;
+        boolean gif=image.startsWith("data:image/gif;") && bytes.length>=6 && bytes[0]=='G' && bytes[1]=='I' && bytes[2]=='F' && bytes[3]=='8' && (bytes[4]=='7' || bytes[4]=='9') && bytes[5]=='a';
+        boolean svg=image.startsWith("data:image/svg+xml;");
+        if(svg){
+            String xml=new String(bytes,StandardCharsets.UTF_8);
+            String compact=xml.replace("\uFEFF","").trim();
+            String lower=compact.toLowerCase(Locale.ROOT);
+            if(!(lower.startsWith("<svg") || lower.startsWith("<?xml")))throw new IllegalArgumentException("SVG 内容无效");
+            if(!lower.contains("<svg") || !lower.contains("xmlns=") || !lower.contains("http://www.w3.org/2000/svg"))
+                throw new IllegalArgumentException("SVG 内容无效");
+            if(SVG_UNSAFE.matcher(compact).find())throw new IllegalArgumentException("SVG 含有不安全内容");
+            return image;
+        }
+        if(!(png || jpeg || webp || gif))throw new IllegalArgumentException("图片内容与格式不匹配");
+        return image;
+    }
+    public static boolean isRasterImage(String image){
+        return image!=null && (image.startsWith("data:image/png;") || image.startsWith("data:image/jpeg;") || image.startsWith("data:image/webp;") || image.startsWith("data:image/gif;"));
     }
     private static Scene3D scene3d(Scene3D value){
         if(value==null)return fallback("场景配置缺失，已安全降级");

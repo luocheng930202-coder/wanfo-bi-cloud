@@ -20,9 +20,9 @@ public class AssetService {
  @Transactional public void grant(Long id,Long principal,String action,boolean add){caps.require("bi:asset:grant");active(id,"grant");resources.change("asset",id,principal,action,add);}
  public Map<String,Object> detail(Long id){caps.require("bi:asset:list");resources.require("asset",id,"view");var row=storage.get(id);if(row==null)throw new IllegalArgumentException("素材不存在");return row;}
  static int validate(String image){
-  if(image==null || !image.startsWith("data:image/png;base64,") && !image.startsWith("data:image/jpeg;base64,"))throw new IllegalArgumentException("素材库仅支持 PNG/JPEG 图片");
-  DashboardContent.normalize("image",new DashboardContent.Content(null,image));
-  byte[] bytes=Base64.getDecoder().decode(image.substring(image.indexOf(',')+1));
+  String normalized=DashboardContent.normalizeImageDataUrl(image);
+  byte[] bytes=Base64.getDecoder().decode(normalized.substring(normalized.indexOf(',')+1));
+  if(normalized.startsWith("data:image/svg+xml;"))return bytes.length;
   try(var input=ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))){
    var readers=ImageIO.getImageReaders(input);if(!readers.hasNext())throw new IllegalArgumentException("图片无法解码");var reader=readers.next();
    try{reader.setInput(input);int w=reader.getWidth(0),h=reader.getHeight(0);if(w<1 || h<1 || w>4096 || h>4096 || (long)w*h>16000000)throw new IllegalArgumentException("图片尺寸不超过 4096，像素不超过 1600 万");if(reader.read(0)==null)throw new IllegalArgumentException("图片无法解码");}finally{reader.dispose();}

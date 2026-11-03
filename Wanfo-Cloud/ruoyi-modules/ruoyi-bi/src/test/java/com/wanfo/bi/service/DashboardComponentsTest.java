@@ -27,10 +27,19 @@ class DashboardComponentsTest {
         var d=f.chart();d.query().getMetrics().get(0).setAgg("NONE");when(f.charts.exportForDashboard(4L)).thenReturn(d);assertThrows(IllegalArgumentException.class,()->f.service.create(new DashboardService.SaveRequest(null,f.definition(List.of(new DashboardService.Panel("a",4L,"bad",0,0,4,4,"kpi",null))))));
         assertThrows(IllegalArgumentException.class,()->f.service.create(new DashboardService.SaveRequest(null,f.definition(List.of(new DashboardService.Panel("a",4L,"bad",0,0,4,4,"text",null,new DashboardContent.Content("x",null)))))));
     }
-    @Test void imageAndTextBoundsRejectUrlsSvgAndMismatchedBytes(){
-        for(var image:List.of("https://example.com/x.png","data:image/svg+xml;base64,PHN2Zz4=","data:image/png;base64,YWJj","data:image/png;base64,"+"A".repeat(350000)))assertThrows(IllegalArgumentException.class,()->DashboardContent.normalize("image",new DashboardContent.Content(null,image)));
+    @Test void imageAndTextBoundsRejectUrlsUnsafeSvgAndMismatchedBytes(){
+        String safeSvg="data:image/svg+xml;base64,"+Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String badSvg="data:image/svg+xml;base64,"+Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        for(var image:List.of("https://example.com/x.png","data:image/svg+xml;base64,PHN2Zz4=",badSvg,"data:image/png;base64,YWJj","data:image/png;base64,"+"A".repeat(350000)))assertThrows(IllegalArgumentException.class,()->DashboardContent.normalize("image",new DashboardContent.Content(null,image)));
         assertThrows(IllegalArgumentException.class,()->DashboardContent.normalize("text",new DashboardContent.Content("x".repeat(2001),null)));
         String png="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ZkAAAAASUVORK5CYII=";assertEquals(png,DashboardContent.normalize("image",new DashboardContent.Content(null,png)).image());
+        assertEquals(safeSvg,DashboardContent.normalize("image",new DashboardContent.Content(null,safeSvg)).image());
+    }
+    @Test void clockNormalizesFormatsAndRejectsMixedContent(){
+        assertEquals("HH:mm:ss",DashboardContent.normalize("clock",null).text());
+        assertEquals("YYYY-MM-DD HH:mm",DashboardContent.normalize("clock",new DashboardContent.Content("YYYY-MM-DD HH:mm",null)).text());
+        assertThrows(IllegalArgumentException.class,()->DashboardContent.normalize("clock",new DashboardContent.Content("ss:mm:HH",null)));
+        assertThrows(IllegalArgumentException.class,()->DashboardContent.normalize("clock",new DashboardContent.Content("HH:mm:ss","data:image/png;base64,aa")));
     }
     @Test void incompleteStaticContentCanSaveButCannotPublish(){
         var row=f.stored(false);row.setDefinitionJson(f.json.writeValueAsString(f.definition(List.of(text("")))));assertThrows(IllegalArgumentException.class,()->f.service.publish(7L,2));verify(f.mapper,never()).publish(any(),anyInt(),anyInt(),anyString(),anyString());

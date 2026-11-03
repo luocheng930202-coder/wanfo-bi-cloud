@@ -7,11 +7,22 @@ public final class DashboardPresentation {
     private DashboardPresentation() { }
     public record Appearance(String theme, String background, String cardBackground, String textColor,
             String borderColor, String palette, Integer titleSize, Integer radius,
-            Integer decimals, Boolean grouping) { }
+            Integer decimals, Boolean grouping, String visualPreset, String backgroundImage, Integer glowIntensity) {
+        public Appearance(String theme,String background,String cardBackground,String textColor,String borderColor,String palette,Integer titleSize,Integer radius,Integer decimals,Boolean grouping,String visualPreset,String backgroundImage) {
+            this(theme,background,cardBackground,textColor,borderColor,palette,titleSize,radius,decimals,grouping,visualPreset,backgroundImage,null);
+        }
+        public Appearance(String theme,String background,String cardBackground,String textColor,String borderColor,String palette,Integer titleSize,Integer radius,Integer decimals,Boolean grouping) {
+            this(theme,background,cardBackground,textColor,borderColor,palette,titleSize,radius,decimals,grouping,null,null);
+        }
+        public Appearance(String theme,String background,String cardBackground,String textColor,String borderColor,String palette,Integer titleSize,Integer radius,Integer decimals,Boolean grouping,String visualPreset) {
+            this(theme,background,cardBackground,textColor,borderColor,palette,titleSize,radius,decimals,grouping,visualPreset,null);
+        }
+    }
     public record NumberFormat(String mode,String scale,Integer decimals,Boolean grouping,Boolean fixed,String prefix,String suffix,String nullText) { }
     public record Threshold(String op,String value,String color) { }
     public record MetricStyle(String key,NumberFormat format,List<Threshold> rules) { }
-    public record PanelStyle(Boolean showTitle, String titleAlign,NumberFormat numberFormat,List<MetricStyle> metrics) {
+    public record PanelStyle(Boolean showTitle, String titleAlign,NumberFormat numberFormat,List<MetricStyle> metrics,Integer fontSize,String textColor,Boolean transparent) {
+        public PanelStyle(Boolean showTitle,String titleAlign,NumberFormat format,List<MetricStyle> metrics){this(showTitle,titleAlign,format,metrics,null,null,null);}
         public PanelStyle(Boolean showTitle,String titleAlign,NumberFormat format){this(showTitle,titleAlign,format,List.of());}
         public PanelStyle(Boolean showTitle,String titleAlign){this(showTitle,titleAlign,null);}
     }
@@ -52,15 +63,19 @@ public final class DashboardPresentation {
     public static Appearance normalize(Appearance value) {
         if(value==null)return defaults("light");
         String theme=choice(value.theme(),"light",Set.of("light","dark"));var d=defaults(theme);
+        String image=value.backgroundImage();
+        if(image!=null && !image.isBlank())image=DashboardContent.normalizeImageDataUrl(image);else image=null;
         return new Appearance(theme,color(value.background(),d.background()),color(value.cardBackground(),d.cardBackground()),
                 color(value.textColor(),d.textColor()),color(value.borderColor(),d.borderColor()),
                 choice(value.palette(),d.palette(),Set.of("business","ocean","warm")),
                 bounded(value.titleSize(),14,12,24),bounded(value.radius(),6,0,24),
-                bounded(value.decimals(),2,0,6),value.grouping()==null?true:value.grouping());
+                bounded(value.decimals(),2,0,6),value.grouping()==null?true:value.grouping(),
+                value.visualPreset()==null?null:choice(value.visualPreset(),"standard",Set.of("standard","tech-blue-v1","hologram-ice-v1")),
+                image,value.glowIntensity()==null?null:bounded(value.glowIntensity(),55,0,100));
     }
     public static PanelStyle normalize(PanelStyle value) {
         return value==null?new PanelStyle(true,"left"):new PanelStyle(value.showTitle()==null?true:value.showTitle(),
-                choice(value.titleAlign(),"left",Set.of("left","center","right")),normalize(value.numberFormat()),normalizeMetrics(value.metrics()));
+                choice(value.titleAlign(),"left",Set.of("left","center","right")),normalize(value.numberFormat()),normalizeMetrics(value.metrics()),value.fontSize()==null?null:bounded(value.fontSize(),14,10,96),value.textColor()==null?null:color(value.textColor(),"#DDF5FF"),value.transparent());
     }
     public record Scene(Integer width,Integer height,String fit,Integer refreshSeconds) {
         public Scene(Integer width,Integer height,String fit){this(width,height,fit,0);}

@@ -19,6 +19,12 @@ class GeoMetadataAccessTest {
         assertTrue(new BiSecurityInterceptor(actors,capabilities).preHandle(new MockHttpServletRequest(),new MockHttpServletResponse(),metadata()));
         verify(actors).currentActor();verifyNoInteractions(capabilities);
     }
+    @Test void shareScreensCanReadBoundariesWithoutASession() throws Exception {
+        var actors=mock(CurrentActorProvider.class);var capabilities=mock(CapabilityProvider.class);
+        var request=new MockHttpServletRequest();request.setRequestURI("/bi/geo/regions");
+        assertTrue(new BiSecurityInterceptor(actors,capabilities).preHandle(request,new MockHttpServletResponse(),metadata()));
+        verifyNoInteractions(actors,capabilities);
+    }
     @Test void boundaryMetadataDoesNotBypassSessionVerification() throws Exception {
         var actors=mock(CurrentActorProvider.class);var capabilities=mock(CapabilityProvider.class);
         when(actors.currentActor()).thenThrow(new BiAccessException(401,"login required"));

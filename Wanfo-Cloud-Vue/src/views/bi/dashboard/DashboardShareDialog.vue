@@ -1,7 +1,7 @@
 <template>
   <el-dialog :model-value="visible" title="分享看板" width="min(720px, calc(100vw - 24px))" @update:model-value="emit('update:visible', $event)" @open="load">
     <el-alert type="info" :closable="false" show-icon class="mb8"
-      title="分享链接需登录后打开。访问者按当前登录用户权限取数；创建者按创建者的当前权限取数。连续密码错误会暂时限制访问。" />
+      title="访问者数据权限仍需登录。创建者数据权限的链接可以不登录打开，看到的数据范围与创建者相同。连续密码错误按链接限制访问。" />
     <el-form label-width="110px" class="mb8">
       <el-form-item label="数据范围">
         <el-select v-model="form.dataScope" style="width:220px">

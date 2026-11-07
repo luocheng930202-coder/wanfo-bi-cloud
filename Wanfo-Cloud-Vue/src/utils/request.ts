@@ -83,6 +83,11 @@ service.interceptors.response.use((res: any) => {
     if (res.request.responseType ===  'blob' || res.request.responseType ===  'arraybuffer') {
       return res.data
     }
+    const requestUrl = typeof res.config?.url === 'string' ? res.config.url : ''
+    const sharePage = typeof window !== 'undefined' && window.location.pathname.startsWith('/bi-share/')
+    if (code === 401 && (sharePage || requestUrl.includes('/bi/share/') || requestUrl.includes('/bi/geo/'))) {
+      return Promise.reject(new Error(msg))
+    }
     if (code === 401) {
       if (!isRelogin.show) {
         isRelogin.show = true
@@ -113,6 +118,7 @@ service.interceptors.response.use((res: any) => {
   },
   (error: any) => {
     if (axios.isCancel(error)) return Promise.reject(error)
+    if (error.config?.skipErrorMessage) return Promise.reject(error)
     if(isBiQueryUrl(error.config?.url))return Promise.reject(biQueryError(error))
     console.log('err' + error)
     let { message } = error

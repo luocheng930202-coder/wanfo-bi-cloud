@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { runPanelQueue } from '@/utils/biPanelQueue'
 import { getShareDashboardView, shareDashboardPanelData, shareDashboardControlOptions, type ShareDashboardView } from '@/api/bi/share'
@@ -45,6 +45,7 @@ import DashboardCard from './DashboardCard.vue'
 import DashboardFilterInput from './DashboardFilterInput.vue'
 
 const route = useRoute()
+const router = useRouter()
 const token = computed(() => String(route.params.token || ''))
 const view = ref<ShareDashboardView | null>(null)
 const password = ref('')
@@ -94,9 +95,11 @@ async function reload() {
     await refreshAll()
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '加载失败'
-    if (msg.includes('密码') || msg.includes('401')) {
+    if (msg.includes('密码')) {
       passwordDialog.value = true
       error.value = '需要输入分享访问密码'
+    } else if (msg.includes('请先登录')) {
+      await router.replace(`/login?redirect=${encodeURIComponent(route.fullPath)}`)
     } else {
       error.value = msg
     }

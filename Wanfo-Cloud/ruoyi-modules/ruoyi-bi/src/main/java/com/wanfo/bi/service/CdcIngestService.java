@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,8 @@ public class CdcIngestService {
     }
 
     private final CdcIngestMapper mapper;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
     private final WarehouseLoadService loads;
     private final com.wanfo.bi.mapper.WarehouseLoadMapper loadRuns;
     private final TaskPoolGateService poolGate;
@@ -147,6 +150,7 @@ public class CdcIngestService {
                         watermark, List.of(watermark), layer);
         Map<String, Object> run = loads.trigger(request, "cdc-" + job.get("jobCode"));
         mapper.markSuccess(number(job.get("id")), String.valueOf(run.getOrDefault("id", "")), "system");
+        if (lineageRebuild != null) lineageRebuild.afterChange();
     }
 
     private static Long number(Object value) {

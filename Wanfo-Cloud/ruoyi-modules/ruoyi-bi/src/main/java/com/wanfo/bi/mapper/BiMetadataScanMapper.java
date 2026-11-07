@@ -81,6 +81,9 @@ public interface BiMetadataScanMapper
     @Select("SELECT m.id,m.code,m.name,m.kind,m.dataset_id AS datasetId,m.publish_status AS publishStatus,(SELECT r.owner_id FROM bi_resource r WHERE r.resource_type='metric' AND r.resource_id=m.id) AS ownerPrincipalId FROM bi_metric m WHERE m.del_flag='0' ORDER BY m.id")
     List<Map<String, Object>> backfillMetrics();
 
+    @Select("SELECT a.id,a.name,a.metric_id AS metricId,a.status AS publishStatus,a.api_code AS code,(SELECT r.owner_id FROM bi_resource r WHERE r.resource_type='data_api' AND r.resource_id=a.id) AS ownerPrincipalId FROM dp_data_api a WHERE a.status IN ('ACTIVE','DEPRECATED') ORDER BY a.id")
+    List<Map<String, Object>> backfillDataApis();
+
     @Insert("INSERT INTO dp_asset(asset_type,source_kind,source_id,urn,urn_hash,parent_id,name,qualified_name,description,owner_principal_id,status,last_seen_at,create_by,update_by) VALUES(#{type},'BI_RESOURCE',#{sourceId},#{urn},#{urnHash},#{parentId},#{name},#{qualifiedName},#{description},#{ownerPrincipalId},'ACTIVE',NOW(),#{actor},#{actor}) ON DUPLICATE KEY UPDATE source_id=VALUES(source_id),parent_id=VALUES(parent_id),name=VALUES(name),qualified_name=VALUES(qualified_name),description=VALUES(description),owner_principal_id=VALUES(owner_principal_id),status='ACTIVE',last_seen_at=NOW(),update_by=VALUES(update_by)")
     int upsertBackfillAsset(Map<String, Object> asset);
 

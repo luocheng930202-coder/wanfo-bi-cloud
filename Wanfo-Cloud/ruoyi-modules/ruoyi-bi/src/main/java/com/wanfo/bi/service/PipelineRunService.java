@@ -37,6 +37,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -66,6 +67,8 @@ public class PipelineRunService {
     private final ExecutorService executor;
     private final ScheduledExecutorService timer;
     private final int productionMaxRows;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
     private final Map<Long, Future<?>> futures = new ConcurrentHashMap<>();
     private final Map<Long, ScheduledFuture<?>> timeouts = new ConcurrentHashMap<>();
 
@@ -237,6 +240,7 @@ public class PipelineRunService {
                 summary.put("sinks", sinkResult[0]);
                 summary.put("note", production ? "生产运行已按发布定义写入数仓逻辑层" : "预览只处理样本数据，不写入数仓");
                 runs.succeed(runId, write(summary));
+                if (production && lineageRebuild != null) lineageRebuild.afterChange();
             }
         } catch (PipelineNodeFailure failure) {
             String reason = failure.getCause() instanceof QualityGateRejected rejected

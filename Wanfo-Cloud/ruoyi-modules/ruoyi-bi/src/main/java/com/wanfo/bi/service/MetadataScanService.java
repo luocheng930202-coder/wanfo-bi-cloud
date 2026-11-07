@@ -23,6 +23,7 @@ import java.util.concurrent.Executor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -59,6 +60,8 @@ public class MetadataScanService
     private final MeterRegistry meters;
     private final boolean scheduleEnabled;
     private final int scheduleIntervalMinutes;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
 
     public MetadataScanService(BiMetadataScanMapper mapper, DataSourceProvider sources,
             BiResourceAuthorizer resources, CapabilityProvider capabilities, CurrentActorProvider actors,
@@ -333,6 +336,7 @@ public class MetadataScanService
         String status = failed == 0 ? "SUCCEEDED" : succeeded == 0 ? "FAILED" : "PARTIAL_SUCCESS";
         mapper.finishRun(runId, tables.size(), completed, succeeded, failed, writeJson(summary), status,
                 failed == 0 ? null : "部分对象元数据读取失败，请检查数据源权限和结构状态");
+        if (succeeded > 0 && lineageRebuild != null) lineageRebuild.afterChange();
     }
 
     private Long persistAsset(Long sourceId, String type, Long parentId, String name, String qualifiedName,
@@ -391,8 +395,17 @@ public class MetadataScanService
                 Map<String, Map<String, Object>> newByName = indexColumns(newColumns);
                 List<String> added = newByName.keySet().stream().filter(name -> !oldByName.containsKey(name)).sorted().toList();
                 List<String> removed = oldByName.keySet().stream().filter(name -> !newByName.containsKey(name)).sorted().toList();
-                List<String> changed = newByName.keySet().stream().filter(oldByName::containsKey)
-                        .filter(name -> !java.util.Objects.equals(oldByName.get(name), newByName.get(name))).sorted().toList();
+                List<String> changed = new java.util.ArrayList<>();
+                List<String> commentChanges = new java.util.ArrayList<>();
+                for (String name : newByName.keySet())
+                {
+                    if (!oldByName.containsKey(name)) continue;
+                    if (java.util.Objects.equals(oldByName.get(name), newByName.get(name))) continue;
+                    if (AssetMetadataDiff.commentOnlyColumn(oldByName.get(name), newByName.get(name))) commentChanges.add(name);
+                    else changed.add(name);
+                }
+                changed.sort(String::compareTo);
+                commentChanges.sort(String::compareTo);
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("added", added);
                 result.put("removed", removed);
@@ -426,11 +439,17 @@ public class MetadataScanService
                 if (!removed.isEmpty()) changeKinds.add("COLUMN_REMOVED");
                 if (!typeChanges.isEmpty()) changeKinds.add("COLUMN_TYPE_CHANGED");
                 if (!changed.isEmpty() && typeChanges.size() < changed.size()) changeKinds.add("COLUMN_ATTRIBUTES_CHANGED");
+                if (!commentChanges.isEmpty()) changeKinds.add("COLUMN_COMMENT_CHANGED");
+                result.put("commentChanges", commentChanges);
                 result.put("changeKinds", changeKinds);
                 List<String> metadataChanged = current.keySet().stream().filter(old::containsKey)
                         .filter(key -> !"columns".equals(key) && !java.util.Objects.equals(old.get(key), current.get(key)))
                         .sorted().toList();
                 if (!metadataChanged.isEmpty()) { result.put("metadataChanged", metadataChanged); changeKinds.add("TABLE_METADATA_CHANGED"); }
+                boolean commentOnly = added.isEmpty() && removed.isEmpty() && typeChanges.isEmpty() && renameCandidates.isEmpty()
+                        && changed.isEmpty() && metadataChanged.stream().allMatch("comment"::equals)
+                        && (!commentChanges.isEmpty() || metadataChanged.contains("comment"));
+                if (commentOnly) result.put("commentOnly", true);
                 return result;
             }
             List<String> added = current.keySet().stream().filter(key -> !old.containsKey(key)).sorted().toList();

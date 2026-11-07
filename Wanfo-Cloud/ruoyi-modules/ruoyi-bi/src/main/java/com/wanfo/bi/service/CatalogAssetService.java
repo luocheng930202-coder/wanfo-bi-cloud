@@ -25,7 +25,7 @@ public class CatalogAssetService
 {
     private static final int MAX_PAGE_SIZE = 100;
     private static final List<String> TYPES = List.of("SCHEMA", "TABLE", "COLUMN");
-    private static final List<String> BI_RESOURCE_TYPES = List.of("CHART", "DASHBOARD", "DATASET", "DATASET_FIELD", "DATASOURCE", "API_SOURCE", "METRIC");
+    private static final List<String> BI_RESOURCE_TYPES = List.of("CHART", "DASHBOARD", "DATASET", "DATASET_FIELD", "DATASOURCE", "API_SOURCE", "METRIC", "DATA_API");
 
     private final BiMetadataScanMapper mapper;
     private final DataSourceProvider sources;
@@ -56,6 +56,7 @@ public class CatalogAssetService
         counts.put("CHART", mapper.backfillCharts().size());
         counts.put("DASHBOARD", mapper.backfillDashboards().size());
         counts.put("METRIC", mapper.backfillMetrics().size());
+        counts.put("DATA_API", mapper.backfillDataApis().size());
         counts.put("total", counts.values().stream().mapToInt(value -> ((Number) value).intValue()).sum());
         counts.put("mode", "DRY_RUN");
         counts.put("copiedDefinitions", false);
@@ -66,8 +67,6 @@ public class CatalogAssetService
     public Map<String, Object> backfill()
     {
         capabilities.require("bi:resource:admin");
-        int createdOrUpdated = 0;
-        int versionsCreated = 0;
         String actor = actors.currentActor().username();
         Map<Long, Long> datasetAssetIds = new LinkedHashMap<>();
         Map<Long, Long> datasourceAssetIds = new LinkedHashMap<>();
@@ -79,6 +78,25 @@ public class CatalogAssetService
         addBackfill(resourcesToBackfill, "CHART", "chart", mapper.backfillCharts());
         addBackfill(resourcesToBackfill, "DASHBOARD", "dashboard", mapper.backfillDashboards());
         addBackfill(resourcesToBackfill, "METRIC", "metric", mapper.backfillMetrics());
+        addBackfill(resourcesToBackfill, "DATA_API", "data-api", mapper.backfillDataApis());
+        int versionsCreated = persistBackfill(resourcesToBackfill, actor, datasetAssetIds, datasourceAssetIds);
+        return Map.of("mode", "EXECUTED", "assetsProcessed", resourcesToBackfill.size(), "versionsCreated", versionsCreated,
+                "copiedDefinitions", false, "at", LocalDateTime.now().toString());
+    }
+
+    /** Registers published Data APIs so lineage can point a metric at them. */
+    public int syncPublishedDataApis()
+    {
+        String actor = actors.currentActor().username();
+        List<Map<String, Object>> resources = new ArrayList<>();
+        addBackfill(resources, "DATA_API", "data-api", mapper.backfillDataApis());
+        return persistBackfill(resources, actor, new LinkedHashMap<>(), new LinkedHashMap<>());
+    }
+
+    private int persistBackfill(List<Map<String, Object>> resourcesToBackfill, String actor,
+            Map<Long, Long> datasetAssetIds, Map<Long, Long> datasourceAssetIds)
+    {
+        int versionsCreated = 0;
         for (Map<String, Object> item : resourcesToBackfill)
         {
             String urn = String.valueOf(item.get("urn"));
@@ -119,10 +137,8 @@ public class CatalogAssetService
                 mapper.setCurrentAssetVersion(assetId, ((Number) version.get("id")).longValue(), actor);
                 versionsCreated++;
             }
-            createdOrUpdated++;
         }
-        return Map.of("mode", "EXECUTED", "assetsProcessed", createdOrUpdated, "versionsCreated", versionsCreated,
-                "copiedDefinitions", false, "at", LocalDateTime.now().toString());
+        return versionsCreated;
     }
 
     private void addBackfill(List<Map<String, Object>> target, String type, String urnType, List<Map<String, Object>> rows)
@@ -133,7 +149,7 @@ public class CatalogAssetService
             String name = String.valueOf(row.getOrDefault("name", type + " " + id));
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("resourceType", type); metadata.put("resourceId", id); metadata.put("name", name);
-            for (String key : List.of("type", "schemaName", "status", "datasourceId", "sourceTable", "datasetId", "dashboardId", "showName", "dimFlag", "extFlag", "code", "kind", "publishStatus", "ownerPrincipalId", "snapshotKind", "rowCount", "snapshotVersion", "refreshedAt"))
+            for (String key : List.of("type", "schemaName", "status", "datasourceId", "sourceTable", "datasetId", "metricId", "dashboardId", "showName", "dimFlag", "extFlag", "code", "kind", "publishStatus", "ownerPrincipalId", "snapshotKind", "rowCount", "snapshotVersion", "refreshedAt"))
                 if (row.containsKey(key) && row.get(key) != null) metadata.put(key, row.get(key));
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("type", type); item.put("sourceId", id); item.put("name", name);

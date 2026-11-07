@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -47,6 +48,8 @@ public class ObjectStorageLoadService {
     private static final int MAX_OBJECTS = 50;
     private static final long MAX_OBJECT_BYTES = 5L * 1024 * 1024;
     private static final long STREAM_TO_DISK_THRESHOLD = 512 * 1024;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
 
     public record LoadRequest(Long objectDatasourceId, Long targetDatasourceId, String objectPrefix,
             String targetLayer, String targetTable, Integer maxRows, String fileFormat) {
@@ -183,6 +186,7 @@ public class ObjectStorageLoadService {
                 var published = WarehousePublisher.publishMaps(connection, engine, database, table, runId, columns, records,
                         ClickHouseBatchPublisher.DEFAULT_BATCH_SIZE, maxRows, null);
                 mapper.succeed(runId, keys.size(), published.rows());
+                if (lineageRebuild != null) lineageRebuild.afterChange();
             }
         } catch (Exception failure) {
             LOGGER.warn("Object storage load {} failed", runId, failure);

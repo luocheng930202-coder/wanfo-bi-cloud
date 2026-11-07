@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -39,6 +40,8 @@ public class PipelineDefinitionService {
     private final PipelineMapper mapper;
     private final BiResourceAuthorizer resources;
     private final CurrentActorProvider actors;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
     private final ObjectMapper json;
     private final BiDatasetFieldMapper datasetFields;
     private final DatasetDataPolicy dataPolicies;
@@ -111,7 +114,9 @@ public class PipelineDefinitionService {
         Map<String,Object> pipeline=mapper.pipeline(pipelineId);Long previousRevision=longValue(pipeline==null?null:pipeline.get("currentRevisionId"));
         if(mapper.markPublished(pipelineId,revisionId,previousRevision,currentActor)!=1)throw new IllegalStateException("发布冲突：当前生效版本已变化，请刷新后重试");
         String action=revision.get("rollbackFromRevisionId")==null?"PUBLISH":"ROLLBACK";String reason="ROLLBACK".equals(action)?"由历史版本 "+revision.get("rollbackFromRevisionId")+" 创建的新修订发布":null;
-        mapper.insertPublishHistory(pipelineId,previousRevision,revisionId,action,currentActor,reason);return detail(pipelineId);
+        mapper.insertPublishHistory(pipelineId,previousRevision,revisionId,action,currentActor,reason);
+        if(lineageRebuild!=null)lineageRebuild.afterChange();
+        return detail(pipelineId);
     }
 
     @Transactional

@@ -134,6 +134,7 @@ public class LineageGraphService
             case "CHART" -> resourceType = "chart";
             case "DASHBOARD" -> resourceType = "dashboard";
             case "METRIC" -> resourceType = "metric";
+            case "DATA_API" -> resourceType = "data_api";
             default -> { return false; }
         }
         Long resourceId = "DATASET_FIELD".equals(type) ? number(asset.get("parentSourceId")) : sourceId;
@@ -160,7 +161,20 @@ public class LineageGraphService
         Map<String, Object> item = new LinkedHashMap<>();
         for (String field : List.of("id", "sourceAssetId", "targetAssetId", "lineageLevel", "edgeKind", "sourceMethod", "confidence", "effectiveStatus"))
             item.put(field, edge.get(field));
+        String note = relationNote(edge.get("evidenceJson"));
+        if (note != null) item.put("relationNote", note);
         return item;
+    }
+
+    static String relationNote(Object evidence) {
+        if (evidence == null) return null;
+        String text = String.valueOf(evidence);
+        boolean incomplete = text.contains("\"completeness\":\"INCOMPLETE\"") || text.contains("\"completeness\": \"INCOMPLETE\"");
+        boolean allFields = text.contains("\"fieldScope\":\"DATASET_ALL_FIELDS\"") || text.contains("\"fieldScope\": \"DATASET_ALL_FIELDS\"");
+        if (incomplete && allFields) return "解析不完整；该数据集的全部字段";
+        if (incomplete) return "解析不完整";
+        if (allFields) return "该数据集的全部字段";
+        return null;
     }
 
     private static List<List<Long>> batches(List<Long> values, int size)

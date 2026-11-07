@@ -23,7 +23,7 @@ import useSettingsStore from '@/store/modules/settings'
 import BiWorkspaceLayout from './components/BiWorkspaceLayout.vue'
 
 const route = useRoute()
-const isBiWorkspace = computed(() => route.path.startsWith('/bi-admin/'))
+const isBiWorkspace = computed(() => route.path.startsWith('/bi-admin/') || ['/system','/monitor'].some(prefix => route.path === prefix || route.path.startsWith(prefix + '/')))
 
 const settingsStore = useSettingsStore()
 const theme = computed(() => settingsStore.theme)

@@ -1,69 +1,22 @@
 <template>
-  <div class="bi-workspace" :class="{ 'is-editor': isEditor }" :data-bi-theme="uiTheme">
-    <aside v-if="!isEditor" class="bi-navigation">
-      <div class="bi-brand-block">
-        <router-link :to="homePath" class="bi-brand" aria-label="工作台首页">
-          <el-icon><Histogram /></el-icon><span>万佛数据</span>
-        </router-link>
-        <div class="bi-domain-switch" role="tablist" aria-label="产品域">
-          <button
-            v-for="d in domains"
-            :key="d.id"
-            type="button"
-            role="tab"
-            class="bi-domain-btn"
-            :class="{ active: domain === d.id }"
-            :aria-selected="domain === d.id"
-            @click="setDomain(d.id)"
-          >{{ d.label }}</button>
-        </div>
-      </div>
-      <nav :aria-label="domainLabel + '导航'">
-        <template v-for="group in visibleGroups" :key="group.id">
-          <div v-if="group.label" class="bi-nav-group-label">{{ group.label }}</div>
-          <router-link
-            v-for="item in group.items"
-            :key="item.path"
-            :to="item.path"
-            :class="['bi-nav-link', { active: activePath === item.path }]"
-            :aria-current="activePath === item.path ? 'page' : undefined"
-          >
-            <el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span>
-          </router-link>
-        </template>
+  <div class="bi-workspace" :class="{'is-editor':isEditor}" :data-bi-theme="uiTheme">
+    <header v-if="!isEditor" class="platform-header">
+      <router-link to="/bi-admin/workbench" class="bi-brand"><img :src="wanfoBrandIcon" class="wanfo-brand-icon" alt=""/><span>万佛数据平台<small>WANFO DATA</small></span></router-link>
+      <nav class="platform-domains" aria-label="业务模块">
+        <button v-for="d in availableDomains" :key="d.id" type="button" :class="{active:domain===d.id}" :aria-current="domain===d.id?'page':undefined" @click="setDomain(d.id)">{{ d.label }}</button>
       </nav>
-      <router-link to="/index" class="bi-admin-link"><el-icon><Back /></el-icon><span>返回管理后台</span></router-link>
+      <div class="platform-actions">
+        <el-select :model-value="uiTheme" aria-label="平台主题" class="platform-theme" :teleported="false" @change="setBiUiTheme"><el-option v-for="t in BI_UI_THEME_OPTIONS" :key="t.id" :label="t.label" :value="t.id" /></el-select>
+        <HeaderNotice class="bi-notifications" />
+        <el-dropdown trigger="click" @command="handleAccountCommand"><button type="button" class="bi-account" aria-label="用户菜单"><el-avatar :src="userStore.avatar" :size="30">{{ displayName.slice(0,1) }}</el-avatar><span>{{ displayName }}</span><el-icon><ArrowDown /></el-icon></button><template #dropdown><el-dropdown-menu><el-dropdown-item command="profile">个人中心</el-dropdown-item><el-dropdown-item command="admin">管理后台</el-dropdown-item><el-dropdown-item command="logout" divided>退出登录</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+      </div>
+    </header>
+    <aside v-if="!isEditor" class="bi-navigation">
+      <div class="platform-domain-label">{{ domainLabel }}</div>
+      <nav aria-label="当前模块菜单"><template v-for="group in visibleGroups" :key="group.id"><router-link v-for="item in group.items" :key="item.path" :to="item.path" :class="['bi-nav-link',{active:activePath===item.path}]" :aria-current="activePath===item.path?'page':undefined"><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></router-link></template><el-menu v-if="domain==='system' || domain==='monitor'" :default-active="activePath" class="platform-system-menu" :unique-opened="true"><SidebarItem v-for="item in systemMenus.filter(r=>r.path==='/'+domain)" :key="item.path" :item="item" :base-path="item.path" /></el-menu></nav>
+      <router-link to="/bi-admin/workbench" class="bi-admin-link"><el-icon><House /></el-icon><span>返回工作台</span></router-link>
     </aside>
-    <div class="bi-workspace-main">
-      <header v-if="!isEditor" class="bi-topbar">
-        <span class="bi-mobile-brand"><el-icon><Histogram /></el-icon>{{ domainLabel }}</span>
-        <div class="bi-mobile-domain" role="tablist" aria-label="产品域">
-          <button
-            v-for="d in domains"
-            :key="'m-' + d.id"
-            type="button"
-            class="bi-domain-btn"
-            :class="{ active: domain === d.id }"
-            @click="setDomain(d.id)"
-          >{{ d.label }}</button>
-        </div>
-        <div class="bi-topbar-actions">
-          <HeaderNotice class="bi-notifications" />
-          <el-dropdown trigger="click" @command="handleAccountCommand">
-            <button type="button" class="bi-account" aria-label="用户菜单">
-              <el-avatar :src="userStore.avatar" :size="30">{{ displayName.slice(0, 1) }}</el-avatar>
-              <span>{{ displayName }}</span><el-icon><ArrowDown /></el-icon>
-            </button>
-            <template #dropdown><el-dropdown-menu>
-              <el-dropdown-item command="profile" :icon="User">个人中心</el-dropdown-item>
-              <el-dropdown-item command="admin" :icon="Setting">管理后台</el-dropdown-item>
-              <el-dropdown-item command="logout" divided :icon="SwitchButton">退出登录</el-dropdown-item>
-            </el-dropdown-menu></template>
-          </el-dropdown>
-        </div>
-      </header>
-      <slot />
-    </div>
+    <div class="bi-workspace-main"><slot /></div>
   </div>
 </template>
 
@@ -75,34 +28,40 @@ import {
   House, Grid, Coin, Files, Histogram, Collection, TrendCharts, Document, Download, List,
   DataLine, Back, ArrowDown, User, Setting, SwitchButton, Connection, Link, Reading, Monitor, Share, Key
 } from '@element-plus/icons-vue'
+import wanfoBrandIcon from '@/assets/bi/wanfo-brand-icon.png'
 import useUserStore from '@/store/modules/user'
+import usePermissionStore from '@/store/modules/permission'
+import SidebarItem from './Sidebar/SidebarItem.vue'
 import { checkPermi } from '@/utils/permission'
-import { getBiUiTheme, subscribeBiUiTheme, type BiUiTheme } from '@/utils/biUiTheme'
+import { getBiUiTheme, setBiUiTheme, subscribeBiUiTheme, BI_UI_THEME_OPTIONS, type BiUiTheme } from '@/utils/biUiTheme'
 import HeaderNotice from './HeaderNotice/index.vue'
 
-type DomainId = 'analyze' | 'platform'
+type DomainId = 'home' | 'develop' | 'govern' | 'analyze' | 'ops' | 'system' | 'monitor'
 type NavItem = { path: string; label: string; icon: unknown; permission: string }
 type NavGroup = { id: string; label: string; items: NavItem[] }
 
 const DOMAIN_KEY = 'bi-workspace-domain'
-const domains = [
-  { id: 'analyze' as const, label: '分析' },
-  { id: 'platform' as const, label: '数据中心' }
-]
+const domains: {id:DomainId;label:string}[] = [{id:'home',label:'工作台'},{id:'develop',label:'数据开发'},{id:'govern',label:'资产治理'},{id:'analyze',label:'分析应用'},{id:'ops',label:'运维服务'},{id:'system',label:'系统管理'},{id:'monitor',label:'系统监控'}]
 
 const router = useRouter()
 const route = useRoute()
 const activePath = computed(() => String(route.meta.activeMenu || route.path))
 const isEditor = computed(() => Boolean(route.meta.workspaceEditor))
 const userStore = useUserStore()
+const permissionStore=usePermissionStore()
+const systemMenus=computed(()=>permissionStore.sidebarRouters.filter((r:any)=>!r.hidden && ['/system','/monitor'].includes(r.path) && r.children?.some((c:any)=>!c.hidden)))
 const displayName = computed(() => userStore.nickName || userStore.name || '用户')
 const uiTheme = ref<BiUiTheme>(getBiUiTheme())
 let unsubscribeTheme: (() => void) | undefined
+let previousBodyTheme:string|null=null
+watch(uiTheme,t=>{document.body.setAttribute('data-bi-ui-theme',t)})
 onMounted(() => {
+  previousBodyTheme=document.body.getAttribute('data-bi-ui-theme')
+  document.body.setAttribute('data-bi-ui-theme',uiTheme.value)
   uiTheme.value = getBiUiTheme()
   unsubscribeTheme = subscribeBiUiTheme((t) => { uiTheme.value = t })
 })
-onUnmounted(() => { unsubscribeTheme?.() })
+onUnmounted(() => { unsubscribeTheme?.(); if(previousBodyTheme===null)document.body.removeAttribute('data-bi-ui-theme');else document.body.setAttribute('data-bi-ui-theme',previousBodyTheme) })
 
 const analyzeGroups: NavGroup[] = [
   {
@@ -198,45 +157,59 @@ function filterGroups(groups: NavGroup[]): NavGroup[] {
     .filter(g => g.items.length > 0)
 }
 
-const domainCatalog: Record<DomainId, NavGroup[]> = {
-  analyze: analyzeGroups,
-  platform: platformGroups
+const catalogItems = [...analyzeGroups,...platformGroups].flatMap(g=>g.items)
+function section(id:string, paths:string[]): NavGroup[] {return [{id,label:'',items:paths.map(path=>catalogItems.find(i=>i.path===`/bi-admin/${path}`)).filter((i):i is NavItem=>Boolean(i))}]}
+const domainCatalog:Record<DomainId,NavGroup[]>={
+ home:section('home',['workbench','task-center']),
+ system:[],monitor:[],
+ develop:section('develop',['datasource','dataset','pipeline','warehouse']),
+ govern:section('govern',['catalog','lineage','field-standard','glossary','access-requests']),
+ analyze:section('analyze',['chart','dashboard','metric','metric-set','template','form']),
+ ops:section('ops',['task-center','query-monitor','data-api','subscription','export','backup-drills'])
 }
+const availableDomains=computed(()=>domains.filter(d=>d.id==='system'||d.id==='monitor'?systemMenus.value.some(r=>r.path==='/'+d.id):filterGroups(domainCatalog[d.id]).length>0))
 
 function pathDomain(path: string): DomainId | null {
-  if (path === '/bi-admin/workbench') return null
-  for (const id of domains.map(d => d.id)) {
+  if(path==='/system'||path.startsWith('/system/'))return 'system'
+  if(path==='/monitor'||path.startsWith('/monitor/'))return 'monitor'
+  if(path==='/bi-admin/workbench')return 'home'
+  for (const id of domains.filter(d=>d.id!=='home').map(d => d.id)) {
     if (domainCatalog[id].some(g => g.items.some(i => i.path === path))) return id
   }
   return null
 }
 
 function readStoredDomain(): DomainId {
-  const v = localStorage.getItem(DOMAIN_KEY)
-  return v === 'platform' || v === 'analyze' ? v : 'analyze'
+  let v:string|null=null
+  try {v=localStorage.getItem(DOMAIN_KEY)}catch{/* unavailable browser storage */}
+  return v==='platform'?'develop':domains.some(d=>d.id===v)?v as DomainId:'home'
 }
 
 const domain = ref<DomainId>(readStoredDomain())
 
 function setDomain(id: DomainId) {
   domain.value = id
-  localStorage.setItem(DOMAIN_KEY, id)
-  if (activePath.value !== '/bi-admin/workbench' && pathDomain(activePath.value) !== id) {
-    const first = filterGroups(domainCatalog[id])[0]?.items[0]?.path
-    if (first) router.push(first)
+  try {localStorage.setItem(DOMAIN_KEY,id)}catch{/* navigation remains available */}
+  if(id==='system'||id==='monitor'){
+    const root=systemMenus.value.find(r=>r.path==='/'+id)
+    function firstLeaf(node:any,base:string):string|undefined{for(const child of node.children||[]){if(child.hidden)continue;const path=child.path.startsWith('/')?child.path:base.replace(/\/$/,'')+'/'+child.path;const found=child.children?.length?firstLeaf(child,path):path;if(found)return found}}
+    const target=root&&firstLeaf(root,root.path);if(target&&pathDomain(activePath.value)!==id)router.push(target);return
   }
+  const first=filterGroups(domainCatalog[id])[0]?.items[0]?.path
+  if(first && (pathDomain(activePath.value)!==id || id==='home')) router.push(first)
+
 }
 
 watch(activePath, (path) => {
   const d = pathDomain(path)
   if (d && d !== domain.value) {
     domain.value = d
-    localStorage.setItem(DOMAIN_KEY, d)
+    try {localStorage.setItem(DOMAIN_KEY,d)}catch{/* navigation remains available */}
   }
 }, { immediate: true })
 
 const visibleGroups = computed(() => filterGroups(domainCatalog[domain.value]))
-const domainLabel = computed(() => domains.find(d => d.id === domain.value)?.label || '分析')
+const domainLabel = computed(() => domains.find(d => d.id === domain.value)?.label || '工作台')
 const homePath = computed(() => {
   const hub = visibleGroups.value.flatMap(g => g.items).find(i => i.path === '/bi-admin/workbench')
   return hub?.path || visibleGroups.value[0]?.items[0]?.path || '/index'
@@ -257,88 +230,14 @@ async function handleAccountCommand(command: string) {
 </script>
 
 <style scoped>
-.bi-workspace{
-  --bi-content-height:calc(100dvh - 64px);
-  --el-color-primary:#3563e9;--el-color-primary-light-3:#7292f0;--el-color-primary-light-5:#9ab1f4;
-  --el-color-primary-light-7:#c2d0f8;--el-color-primary-light-8:#d7e0fb;--el-color-primary-light-9:#edf2ff;
-  --el-color-primary-dark-2:#2a4fba;--el-border-radius-base:6px;
-  --bi-surface:#fff;--bi-background:#f6f8fc;--bi-text:#182230;--bi-muted:#667085;--bi-border:#e6ebf3;
-  display:flex;min-height:100dvh;color:var(--bi-text);background:var(--bi-background);font-family:var(--bi-font)
-}
-.bi-workspace.is-editor{--bi-content-height:100dvh}
-.bi-workspace.is-editor .bi-workspace-main{margin-left:0}
-.bi-navigation{
-  padding:0;margin:0;line-height:normal;font-family:inherit;border-radius:0;width:200px;flex-shrink:0;
-  background:var(--bi-surface);border-right:1px solid var(--bi-border);position:fixed;inset:0 auto 0 0;z-index:20;
-  display:flex;flex-direction:column
-}
-.bi-brand-block{border-bottom:1px solid var(--bi-border);padding-bottom:10px}
-.bi-brand{height:56px;display:flex;align-items:center;gap:10px;padding:0 18px;font-weight:700;font-size:18px;color:var(--bi-text);white-space:nowrap}
-.bi-brand>.el-icon{font-size:26px;color:var(--el-color-primary)}
-.bi-domain-switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:0 12px;padding:3px;background:var(--bi-background);border-radius:8px}
-.bi-domain-btn{
-  border:0;background:transparent;border-radius:6px;height:30px;font:inherit;font-size:13px;color:var(--bi-muted);
-  cursor:pointer;transition:background .15s,color .15s,box-shadow .15s
-}
-.bi-domain-btn.active{background:var(--bi-surface);color:var(--el-color-primary);font-weight:600;box-shadow:0 1px 2px rgba(24,34,48,.08)}
-.bi-domain-btn:hover:not(.active){color:var(--bi-text)}
-.bi-navigation nav{padding:12px 8px 20px;overflow-y:auto;flex:1}
-.bi-nav-group-label{
-  margin:14px 12px 6px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--bi-muted);text-transform:none;user-select:none
-}
-.bi-nav-link{
-  display:flex;align-items:center;gap:12px;min-height:var(--bi-nav-item-height, 40px);padding:0 14px;margin:2px 0;border-radius:6px;
-  color:#526079;font-size:14px;position:relative;transition:background .15s,color .15s
-}
-.bi-nav-link>span{white-space:nowrap}.bi-nav-link>.el-icon{font-size:18px;flex-shrink:0}
-.bi-nav-link:hover{background:#f6f8fc;color:var(--el-color-primary)}
-.bi-nav-link.active{background:#edf3ff;color:var(--el-color-primary);font-weight:600}
-.bi-nav-link.active:before{content:'';position:absolute;width:3px;left:-8px;top:0;bottom:0;background:var(--el-color-primary)}
-.bi-admin-link{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--bi-muted);margin:12px 18px 20px;min-height:32px}
-.bi-admin-link:hover{color:var(--el-color-primary)}
-.bi-workspace-main{flex:1;min-width:0;margin-left:200px}
-.bi-topbar{height:64px;border-bottom:1px solid var(--bi-border);display:flex;align-items:center;justify-content:flex-end;padding:0 28px;background:var(--bi-surface);gap:16px}
-.bi-topbar-actions{display:flex;align-items:center;gap:20px;margin-left:auto}
-.bi-account{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:var(--bi-text);font:inherit;font-size:14px;cursor:pointer;padding:5px;border-radius:6px}
-.bi-account>.el-icon{font-size:12px;color:var(--bi-muted)}
-.bi-mobile-brand,.bi-mobile-domain{display:none}
-.bi-notifications :deep(.notice-trigger){display:grid;place-items:center;width:32px;height:32px;font-size:19px;color:#526079;cursor:pointer;border-radius:6px}
-.bi-notifications :deep(.notice-trigger:hover){background:var(--el-color-primary-light-9);color:var(--el-color-primary)}
-.bi-workspace :deep(.app-main){min-height:calc(100dvh - 64px);overflow:visible;padding-bottom:0}
-.bi-workspace.is-editor :deep(.app-main){min-height:100dvh}
-.bi-workspace :deep(.app-main>.copyright){display:none}
-.bi-account:focus-visible,.bi-nav-link:focus-visible,.bi-brand:focus-visible,.bi-admin-link:focus-visible,.bi-domain-btn:focus-visible{
-  outline:2px solid var(--el-color-primary);outline-offset:2px
-}
-:global(html.dark) .bi-workspace{--bi-surface:#1c2432;--bi-background:#121a27;--bi-text:#e8edf5;--bi-muted:#a0aec0;--bi-border:#303c50}
-:global(html.dark) .bi-nav-link{color:#b5c2d5}
-:global(html.dark) .bi-nav-link.active,:global(html.dark) .bi-nav-link:hover{background:#283a60;color:#a8c1ff}
-:global(html.dark) .bi-domain-switch{background:#121a27}
-:global(html.dark) .bi-domain-btn.active{background:#283a60;color:#a8c1ff}
-@media(min-width:1600px){.bi-navigation{width:220px}.bi-workspace-main{margin-left:220px}}
-@media(max-width:1100px) and (min-width:701px){
-  .bi-navigation{width:176px}.bi-workspace-main{margin-left:176px}
-  .bi-brand{font-size:16px;padding:0 14px}.bi-nav-link{padding:0 12px;gap:10px}
-}
-@media(max-width:700px){
-  .bi-workspace{--bi-content-height:calc(100dvh - 106px);display:block}
-  .bi-navigation{width:auto;position:static;border-right:0}
-  .bi-brand-block .bi-brand,.bi-brand-block .bi-domain-switch,.bi-admin-link{display:none}
-  .bi-brand-block{border:0;padding:0}
-  .bi-navigation nav{display:flex;overflow-x:auto;padding:6px 12px;border-bottom:1px solid var(--bi-border);gap:2px}
-  .bi-nav-group-label{display:none}
-  .bi-nav-link{white-space:nowrap;gap:7px;min-height:38px;padding:0 12px;margin:0}
-  .bi-nav-link>.el-icon{font-size:17px}
-  .bi-nav-link.active:before{display:none}
-  .bi-workspace-main{margin-left:0}
-  .bi-topbar{height:54px;padding:0 12px;justify-content:flex-start;flex-wrap:wrap;row-gap:6px}
-  .bi-mobile-brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700}
-  .bi-mobile-brand>.el-icon{color:var(--el-color-primary);font-size:20px}
-  .bi-mobile-domain{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:2px;background:var(--bi-background);border-radius:8px;min-width:140px}
-  .bi-mobile-domain .bi-domain-btn{height:28px;font-size:12px}
-  .bi-workspace :deep(.app-main){min-height:calc(100dvh - 106px)}
-}
-@media(prefers-reduced-motion:reduce){.bi-nav-link,.bi-domain-btn{transition:none}}
+.bi-workspace{--bi-content-height:calc(100dvh - 70px);min-height:100dvh;padding-top:70px;color:var(--bi-text);background:var(--bi-background);font-family:var(--bi-font)}.platform-header{position:fixed;inset:0 0 auto;height:70px;z-index:30;display:flex;align-items:center;gap:24px;padding:0 24px;border-bottom:1px solid var(--bi-border);background:var(--bi-surface)}.bi-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--bi-text);padding-right:25px;border-right:1px solid var(--bi-border);white-space:nowrap}.bi-brand>.el-icon{font-size:30px;color:var(--el-color-primary)}.bi-brand small{display:block;font-size:9px;letter-spacing:2px;font-weight:400;color:var(--bi-muted)}.platform-domains{height:100%;display:flex;gap:12px}.platform-domains button{background:none;border:0;border-bottom:3px solid transparent;color:var(--bi-muted);font:inherit;font-size:15px;padding:0 12px;white-space:nowrap;cursor:pointer}.platform-domains button.active{color:var(--el-color-primary);font-weight:600;border-bottom-color:var(--el-color-primary)}.platform-actions{display:flex;align-items:center;gap:20px;margin-left:auto}.platform-theme{width:130px}.bi-account{display:flex;align-items:center;gap:8px;background:none;color:var(--bi-text);border:0;cursor:pointer;font:inherit}.bi-navigation{position:fixed;inset:70px auto 0 0;width:210px;display:flex;flex-direction:column;padding-top:22px;border-right:1px solid var(--bi-border);background:var(--bi-surface);z-index:20}.platform-domain-label{padding:0 22px 12px;color:var(--bi-muted);font-size:11px}.bi-navigation nav{padding:8px 12px;overflow:auto;flex:1}.bi-nav-link{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 14px;margin:3px 0;border-radius:6px;color:var(--bi-muted);font-size:14px}.bi-nav-link>.el-icon{font-size:19px}.bi-nav-link.active,.bi-nav-link:hover{background:var(--el-color-primary-light-9);color:var(--el-color-primary)}.bi-admin-link{display:flex;gap:12px;padding:22px;border-top:1px solid var(--bi-border);color:var(--bi-muted)}.bi-workspace-main{margin-left:210px;min-width:0}.bi-workspace :deep(.app-main){min-height:var(--bi-content-height);overflow:visible;padding-bottom:0}.bi-workspace :deep(.app-main>.copyright){display:none}.bi-workspace.is-editor{padding-top:0;--bi-content-height:100dvh}.is-editor .bi-workspace-main{margin-left:0}.platform-domains button:focus-visible,.bi-nav-link:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:2px}
+@media(max-width:1200px){.platform-header{gap:12px;padding:0 14px}.platform-domains{gap:0}.platform-domains button{font-size:13px;padding:0 9px}.bi-brand{font-size:15px;padding-right:14px}.platform-actions{gap:10px}.bi-account>span{display:none}}@media(max-width:850px){.bi-brand span{display:none}.platform-theme{width:105px}.bi-navigation{width:160px}.bi-workspace-main{margin-left:160px}.platform-domains button{padding:0 8px}}@media(max-width:650px){.platform-header{height:98px;flex-wrap:wrap;padding:8px 12px;gap:5px}.bi-brand{display:none}.platform-domains{height:36px;order:2;width:100%;overflow:auto}.platform-actions{margin-left:auto}.bi-workspace{padding-top:98px;--bi-content-height:calc(100dvh - 98px)}.bi-navigation{inset:98px 0 auto;width:auto;padding:0;border-right:0}.platform-domain-label,.bi-admin-link{display:none}.bi-navigation nav{display:flex;padding:5px 10px;overflow:auto;flex:none;border-bottom:1px solid var(--bi-border)}.bi-nav-link{white-space:nowrap;min-height:35px;padding:0 11px;margin:0}.bi-workspace-main{margin-left:0;padding-top:46px}.is-editor .bi-workspace-main{padding-top:0}}
 </style>
 
 <style lang="scss" src="../../views/bi/components/BiTheme.scss"></style>
+
+<style scoped>.platform-system-menu{--el-menu-bg-color:var(--bi-surface);--el-menu-text-color:var(--bi-muted);--el-menu-hover-bg-color:var(--bi-soft);--el-menu-active-color:var(--el-color-primary);border:0;margin-top:14px;padding-top:10px;border-top:1px solid var(--bi-border)}.platform-system-menu :deep(.el-sub-menu__title){height:44px;border-radius:6px;padding-left:14px!important;font-size:14px}.platform-system-menu :deep(.el-menu-item){min-width:0;height:40px;border-radius:6px;font-size:13px}.platform-system-menu :deep(.nav-icon){width:18px;margin-right:12px}.platform-system-menu :deep(.is-active.el-menu-item){background:var(--el-color-primary-light-9)}</style>
+
+
+<style scoped>.wanfo-brand-icon{width:38px;height:38px;object-fit:contain;flex-shrink:0}</style>
+

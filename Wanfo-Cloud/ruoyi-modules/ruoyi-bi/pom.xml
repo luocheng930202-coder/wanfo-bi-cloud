@@ -182,6 +182,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration><systemPropertyVariables>
+                    <calcite.default.charset>UTF-8</calcite.default.charset>
+                    <calcite.default.nationalcharset>UTF-8</calcite.default.nationalcharset>
+                    <calcite.default.collation.name>UTF-8$en_US</calcite.default.collation.name>
+                </systemPropertyVariables></configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

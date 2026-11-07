@@ -76,11 +76,12 @@ public class DatasetModelService
         return out;
     }
 
-    @Transactional
+    @Transactional(rollbackFor=Exception.class)
     public Map<String, Object> applyJoin(Long datasetId, DatasetJoinModel model, String operator) throws Exception
     {
         BiDatasetTableDO row = requireTableDataset(datasetId);
         requireModelWrite(row);
+        if(!datasetMapper.countChartRefs(datasetId).isEmpty())throw new IllegalArgumentException("数据集已被图表或看板引用，请使用编辑数据集入口检查完整变更影响");
         if (model == null || model.normalizedJoins().isEmpty()) { throw new IllegalArgumentException("请至少配置一条关联"); }
         BiDatasource source = requireSource(row.getDatasourceId());
         List<BiDatasetFieldDO> existing = fieldMapper.selectByDatasetId(datasetId);
@@ -90,14 +91,17 @@ public class DatasetModelService
         List<String> leftFields = existing.stream()
                 .filter(f -> !"1".equals(f.getExtFlag()))
                 .filter(f -> !previousGenerated.contains(f.getOriginName()))
-                .filter(f -> !(previous.normalizedJoins().isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
+                .filter(f -> !(previous.getSourceSql()==null && previous.normalizedJoins().isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
                 .map(BiDatasetFieldDO::getOriginName)
                 .toList();
         if (leftFields.isEmpty())
         { throw new IllegalArgumentException("数据集没有可用的左表字段"); }
         List<DatasetJoinModel.JoinStep> joins = model.normalizedJoins();
         if (joins.size() > 8) throw new IllegalArgumentException("单个数据集最多配置 8 条关联");
-        String sql = catalog.savedPlan(source.getSchemaName(), row.getSourceCatalog(), row.getSourceTable(), leftFields).sql();
+        if(previous.getSourceSql()!=null)resources.requireAdministrator();
+        String sql = previous.getSourceSql()!=null ? DatasetSqlNodeService.project(previous.getSourceSql(),leftFields) : catalog.savedPlan(source.getSchemaName(), row.getSourceCatalog(), row.getSourceTable(), leftFields).sql();
+        model.setSourceSql(previous.getSourceSql());model.setSqlParameters(previous.getSqlParameters());
+        model.setDerivedFields(previous.getDerivedFields());
         Set<String> available = new LinkedHashSet<>(leftFields);
         List<Map<String,Object>> addedColumns = new ArrayList<>();
         Set<String> newGenerated = new LinkedHashSet<>();
@@ -117,12 +121,13 @@ public class DatasetModelService
             }
         }
         if (available.size() > 200) throw new IllegalArgumentException("关联后的数据集字段不能超过 200 个");
+        validateCalculatedReferences(existing,available);
         model.setJoins(joins);
         if (!joins.isEmpty()) {
             var first = joins.get(0); model.setJoinType(first.getJoinType()); model.setRightTable(first.getRightTable());
             model.setLeftKey(first.getLeftKey()); model.setRightKey(first.getRightKey()); model.setRightFields(first.getRightFields());
         }
-        removeGeneratedFields(existing, previousGenerated);
+        removeGeneratedFields(existing, previousGenerated,previous.getSourceSql()==null);
         int order = existing.stream().map(BiDatasetFieldDO::getOrderNum).filter(n -> n != null).mapToInt(Integer::intValue).max().orElse(-1) + 1;
         List<BiDatasetFieldDO> added = new ArrayList<>();
         for (Map<String, Object> col : addedColumns)
@@ -153,28 +158,45 @@ public class DatasetModelService
         return result;
     }
 
-    @Transactional
+    @Transactional(rollbackFor=Exception.class)
+    public void addDerivedFields(Long datasetId,List<com.wanfo.bi.domain.dataset.DatasetDerivedField> operations,String operator) throws Exception {
+        if(operations==null || operations.isEmpty())return;
+        var row=requireTableDataset(datasetId);requireModelWrite(row);
+        var additions=com.wanfo.bi.query.DatasetDerivedFields.compile(fieldMapper.selectByDatasetId(datasetId),operations);
+        for(var field:additions){field.setDatasetId(datasetId);fieldMapper.insert(field);}
+        var model=row.getModelJson()==null || row.getModelJson().isBlank()?new DatasetJoinModel():objectMapper.readValue(row.getModelJson(),DatasetJoinModel.class);
+        var definitions=new ArrayList<com.wanfo.bi.domain.dataset.DatasetDerivedField>(model.getDerivedFields()==null?List.of():model.getDerivedFields());definitions.addAll(operations);model.setDerivedFields(definitions);
+        datasetMapper.updateUnionAndModel(datasetId,row.getUnionSql(),objectMapper.writeValueAsString(model),operator);
+    }
+
+    @Transactional(rollbackFor=Exception.class)
     public Map<String, Object> clearJoin(Long datasetId, String operator) throws Exception
     {
         BiDatasetTableDO row = requireTableDataset(datasetId);
         requireModelWrite(row);
+        if(!datasetMapper.countChartRefs(datasetId).isEmpty())throw new IllegalArgumentException("数据集已被图表或看板引用，请使用编辑数据集入口检查完整变更影响");
         if (row.getModelJson() == null || row.getModelJson().isBlank())
         { return Map.of("cleared", false); }
         BiDatasource source = requireSource(row.getDatasourceId());
         List<BiDatasetFieldDO> existing = fieldMapper.selectByDatasetId(datasetId);
         DatasetJoinModel previous = objectMapper.readValue(row.getModelJson(), DatasetJoinModel.class);
-        removeGeneratedFields(existing, generatedFieldNames(previous));
+        var removed=generatedFieldNames(previous);
+        var remaining=existing.stream().filter(f->!"1".equals(f.getExtFlag())).filter(f->!removed.contains(f.getOriginName())).filter(f->!(previous.getSourceSql()==null && removed.isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX))).map(BiDatasetFieldDO::getOriginName).collect(Collectors.toCollection(LinkedHashSet::new));
+        validateCalculatedReferences(existing,remaining);
+        removeGeneratedFields(existing, removed,previous.getSourceSql()==null);
         List<String> leftFields = fieldMapper.selectByDatasetId(datasetId).stream()
                 .filter(f -> !"1".equals(f.getExtFlag()))
                 .map(BiDatasetFieldDO::getOriginName)
                 .toList();
-        CatalogService.TablePlan plan = catalog.savedPlan(source.getSchemaName(), row.getSourceCatalog(),
-                row.getSourceTable(), leftFields);
-        datasetMapper.updateUnionAndModel(datasetId, plan.sql(), null, operator);
-        return Map.of("cleared", true, "unionSql", plan.sql());
+        String base;
+        String retainedModel=null;
+        if(previous.getSourceSql()!=null){resources.requireAdministrator();base=DatasetSqlNodeService.project(previous.getSourceSql(),leftFields);var retained=new DatasetJoinModel();retained.setSourceSql(previous.getSourceSql());retained.setSqlParameters(previous.getSqlParameters());retained.setDerivedFields(previous.getDerivedFields());retainedModel=objectMapper.writeValueAsString(retained);}
+        else base=catalog.savedPlan(source.getSchemaName(),row.getSourceCatalog(),row.getSourceTable(),leftFields).sql();
+        datasetMapper.updateUnionAndModel(datasetId,base,retainedModel,operator);
+        return Map.of("cleared", true, "unionSql", base);
     }
 
-    @Transactional
+    @Transactional(rollbackFor=Exception.class)
     public Map<String, Object> addCalculatedField(Long datasetId, String originName, String showName,
                                                   String formula, String dimFlag, String operator)
     {
@@ -207,11 +229,12 @@ public class DatasetModelService
         return result;
     }
 
-    @Transactional
+    @Transactional(rollbackFor=Exception.class)
     public Map<String, Object> removeCalculatedField(Long datasetId, Long fieldId, String operator)
     {
         BiDatasetTableDO row = requireTableDataset(datasetId);
         requireModelWrite(row);
+        if(!datasetMapper.countChartRefs(datasetId).isEmpty())throw new IllegalArgumentException("数据集已被图表或看板引用，请使用编辑数据集入口检查完整变更影响");
         BiDatasetFieldDO field = fieldMapper.selectById(fieldId);
         if (field == null || !datasetId.equals(field.getDatasetId()) || !"1".equals(field.getExtFlag()))
         { throw new IllegalArgumentException("计算字段不存在"); }
@@ -223,7 +246,7 @@ public class DatasetModelService
         return Map.of("removed", true);
     }
 
-    @Transactional
+    @Transactional(rollbackFor=Exception.class)
     public Map<String,Object> orderCalculatedFields(Long datasetId,List<Long> orderedIds,String operator) {
         BiDatasetTableDO row=requireTableDataset(datasetId);requireModelWrite(row);
         List<BiDatasetFieldDO> all=fieldMapper.selectByDatasetId(datasetId);
@@ -238,12 +261,20 @@ public class DatasetModelService
         return Map.of("orderedIds",orderedIds,"replayedOnQuery",true);
     }
 
-    private void removeGeneratedFields(List<BiDatasetFieldDO> existing, Set<String> generated)
+    private void validateCalculatedReferences(List<BiDatasetFieldDO> fields,Set<String> physical){
+        Set<String> available=new LinkedHashSet<>(physical);
+        for(var field:fields)if("1".equals(field.getExtFlag())){
+            try{CalcFormulaCompiler.compile(field.getExtFormula(),available);}catch(IllegalArgumentException error){throw new IllegalArgumentException("关联调整会使派生字段失效："+field.getOriginName()+"，请先调整依赖字段",error);}
+            available.add(field.getOriginName());
+        }
+    }
+
+    private void removeGeneratedFields(List<BiDatasetFieldDO> existing, Set<String> generated,boolean legacyFallback)
     {
         for (BiDatasetFieldDO f : existing)
         {
             if (!"1".equals(f.getExtFlag()) && (generated.contains(f.getOriginName())
-                    || generated.isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
+                    || legacyFallback && generated.isEmpty() && f.getOriginName().startsWith(RIGHT_PREFIX)))
             { fieldMapper.deleteById(f.getId()); }
         }
     }
@@ -281,6 +312,7 @@ public class DatasetModelService
     private void requireModelWrite(BiDatasetTableDO row)
     {
         capabilities.require("bi:datasource:model");
+        if(DatasetSqlNodeService.isSqlNode(row))resources.requireAdministrator();
         long gid = row.getGroupId() == null ? 0L : row.getGroupId();
         if (gid != 0)
         { resources.require("dataset-group", gid, "edit"); }

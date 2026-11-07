@@ -16,6 +16,7 @@ export type TimeGrain = 'day'|'week'|'month'|'quarter'|'year'
 export type TimeFill = 'none'|'null'|'zero'
 export interface QueryDimension { field:string; alias?:string; timeGrain?:TimeGrain|null; timeFill?:TimeFill|null }
 export interface QueryModel {
+  sqlParameters?:Record<string,string[]>
   topN?:{count:number;metric:string;includeOther:boolean}
   timeComparison?:'previous'|'year'
   pivot?:{rows:string[];columns:string[]}

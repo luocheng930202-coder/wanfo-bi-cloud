@@ -1,5 +1,6 @@
 <template>
-   <div class="app-container bi-container bi-page">
+   <div class="app-container bi-container bi-page datasource-page">
+      <div class="bi-page-header"><div><div class="datasource-eyebrow">WANFO DATA / 数据开发</div><h1>数据源</h1><p class="bi-page-desc">连接数据库、API 与文件，管理分析数据的统一入口。</p></div></div>
       <el-alert
          type="info"
          :closable="false"
@@ -664,3 +665,5 @@ onMounted(() => {
 }
 </style>
 
+
+<style scoped>.datasource-page{color:var(--bi-text);background:var(--bi-background);min-height:var(--bi-content-height)}.datasource-eyebrow{font-size:10px;letter-spacing:1.2px;color:var(--bi-muted);margin-bottom:8px}.datasource-page :deep(.el-table){border-radius:8px;border:1px solid var(--bi-border)}.datasource-page>.el-form{padding:18px 20px 0;background:var(--bi-surface);border:1px solid var(--bi-border);border-radius:8px;margin-top:18px}</style>

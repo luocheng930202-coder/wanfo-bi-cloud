@@ -54,6 +54,7 @@ export interface DatasetGroupNode {
 }
 
 export interface DatasetSummary {
+  sourceKind?:'sql'|'table'
   id: number
   groupId: number
   name: string
@@ -67,6 +68,8 @@ export interface DatasetSummary {
 }
 
 export interface DatasetDetail extends DatasetSummary {
+  editable?:boolean
+  sqlParameters?:SqlParameterDefinition[]
   sqlText: string | null
   unionSql: string
   modelJson?: string | null
@@ -80,7 +83,7 @@ export interface WarehouseTableModelOption { id:number; modelCode:string; name:s
 export function listWarehouseTableModels():Promise<AjaxResult<WarehouseTableModelOption[]>>{return request({url:'/bi/warehouse/table-models'})}
 
 export interface DatasetJoinStep { joinType: 'LEFT' | 'INNER' | 'RIGHT'; rightTable: string; leftKey: string; rightKey: string; rightFields: string[] }
-export interface DatasetJoinModel extends Partial<DatasetJoinStep> { joins?: DatasetJoinStep[] }
+export interface DatasetJoinModel extends Partial<DatasetJoinStep> { sourceSql?:string; sqlParameters?:SqlParameterDefinition[]; derivedFields?:DatasetDerivedField[]; joins?: DatasetJoinStep[] }
 
 // ==================== 元数据目录 ====================
 
@@ -242,11 +245,11 @@ export interface PreviewResult {
   message?: string
 }
 
-export function previewDataset(id: number, maxRows = 100): Promise<AjaxResult<PreviewResult>> {
+export function previewDataset(id: number, maxRows = 100,parameterValues?:Record<string,string[]>): Promise<AjaxResult<PreviewResult>> {
   return request({
     url: '/bi/dataset/' + id + '/preview',
     method: 'post',
-    params: { maxRows }
+    params: { maxRows }, data:parameterValues ? {parameterValues} : undefined, timeout:60000
   })
 }
 
@@ -300,3 +303,28 @@ export function grantDataset(id: number, principalId: number, action: string): P
 export function revokeDatasetGrant(id: number, principalId: number, action: string): Promise<AjaxResult> {
   return request({ url: `/bi/dataset/${id}/grants/${principalId}/${action}`, method: 'delete' })
 }
+
+/** Creates base fields and relationships within one server transaction. */
+export function createWorkspaceDataset(dataset:TableDatasetForm,model:DatasetJoinModel,parameterValues?:Record<string,string[]>):Promise<AjaxResult<{id:number}>> {
+  return request({url:model.sqlParameters?.length?'/bi/dataset/table-workspace/v3':model.derivedFields?.length?'/bi/dataset/table-workspace/v2':'/bi/dataset/table-workspace',method:'post',data:{dataset,model,parameterValues},timeout:60000})
+}
+
+export interface SqlNodePreviewResult extends PreviewResult {fieldMetadata:CatalogColumn[];normalizedSql:string}
+export function previewSqlNode(data:{datasourceId:number;sourceCatalog?:string;sql:string;fields?:string[];model?:DatasetJoinModel;maxRows?:number;parameterValues?:Record<string,string[]>}):Promise<AjaxResult<SqlNodePreviewResult>>{
+  return request({url:data.model?.sqlParameters?.length?'/bi/dataset/sql-node/v3/preview':data.model?.derivedFields?.length?'/bi/dataset/sql-node/v2/preview':'/bi/dataset/sql-node/preview',method:'post',data,timeout:60000})
+}
+
+export function previewWorkspaceDataset(dataset:{datasourceId:number;sourceCatalog:string;sourceTable:string;fields:string[]},model:DatasetJoinModel):Promise<AjaxResult<SqlNodePreviewResult>>{
+  return request({url:model.derivedFields?.length?'/bi/dataset/table-workspace/v2/preview':'/bi/dataset/table-workspace/preview',method:'post',data:{dataset,model},timeout:60000})
+}
+
+export interface DatasetDerivedField {kind:'calc'|'group';originName:string;showName?:string;dimFlag?:'0'|'1';formula?:string;sourceField?:string;groups?:{label:string;values:string[]}[];otherLabel?:string}
+
+export interface SqlParameterDefinition {name:string;label?:string;type:'TEXT'|'NUMBER'|'DATE'|'DATETIME';multiple:boolean;required:boolean;defaultValues:string[];defaultScope:'EDIT'|'ALL'}
+
+export interface DatasetWorkspaceDefinition {dataset:DatasetDetail;model:DatasetJoinModel;fields:DatasetField[];baseFields:DatasetField[];revision:string}
+export interface DatasetEditDraft {dataset:Omit<TableDatasetForm,'fields'>;model:DatasetJoinModel;fields:{name:string;showName?:string;dimFlag?:string}[];parameterValues?:Record<string,string[]>;revision:string;impactToken?:string}
+export interface DatasetEditImpact {blockers:string[];warnings:string[];changedFields:string[];references:{type:string;id:number;name:string;visible:boolean;fields:string[]}[];token:string}
+export function getDatasetWorkspace(id:number):Promise<AjaxResult<DatasetWorkspaceDefinition>>{return request({url:`/bi/dataset/${id}/workspace`,timeout:60000})}
+export function checkDatasetWorkspace(id:number,data:DatasetEditDraft):Promise<AjaxResult<DatasetEditImpact>>{return request({url:`/bi/dataset/${id}/workspace/check`,method:'post',data,timeout:60000})}
+export function updateDatasetWorkspace(id:number,data:DatasetEditDraft):Promise<AjaxResult<{id:number}>>{return request({url:`/bi/dataset/${id}/workspace`,method:'put',data,timeout:60000})}

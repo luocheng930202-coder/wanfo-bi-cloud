@@ -46,3 +46,22 @@ test('invalid or unavailable session storage cannot break navigation',()=>{
   assert.deepEqual(helpers.readLibraryPosition('chart','1'),{search:'',filter:'all',page:1,scroll:0,display:'grid'})
   delete globalThis.sessionStorage
 })
+
+test('default entry and legacy home redirect to the platform workbench',()=>{assert.equal(router.resolve('/').matched[0].redirect,'/bi-admin/workbench');assert.equal(router.resolve('/index').matched.at(-1).redirect,'/bi-admin/workbench')})
+
+ test('dataset workspace keeps platform layout and dataset navigation active',()=>{
+  const route=router.resolve('/bi-admin/dataset-workspace/123/view')
+  assert.equal(route.matched.length,2)
+  assert.equal(route.name,'BiDatasetWorkspace')
+  assert.equal(route.params.id,'123')
+  assert.equal(route.meta.activeMenu,'/bi-admin/dataset')
+  assert.equal(route.meta.workspaceEditor,true)
+})
+
+test('dataset creation uses independent workspace and preserves source selection',()=>{
+ const route=router.resolve('/bi-admin/dataset-workspace/new?datasourceId=12&groupId=7')
+ assert.equal(route.name,'BiDatasetCreate')
+ assert.equal(route.meta.activeMenu,'/bi-admin/dataset')
+ assert.equal(route.meta.workspaceEditor,true)
+ assert.deepEqual(route.query,{datasourceId:'12',groupId:'7'})
+})

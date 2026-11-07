@@ -98,8 +98,11 @@ public class MetricSetService {
         if (metricIds.size() > 100) throw new IllegalArgumentException("单个指标集最多 100 个指标");
         int sort = 0;
         for (Long metricId : metricIds) {
-            if (metricId == null || metricId < 1 || metrics.get(metricId) == null)
+            var metric = metricId == null || metricId < 1 ? null : metrics.get(metricId);
+            if (metric == null)
                 throw new IllegalArgumentException("指标成员无效: " + metricId);
+            if (!"published".equals(metric.getPublishStatus()))
+                throw new IllegalArgumentException("指标集只能包含已发布指标: " + metric.getCode());
             resources.require("metric", metricId, "view");
             mapper.addMember(setId, metricId, sort++);
         }

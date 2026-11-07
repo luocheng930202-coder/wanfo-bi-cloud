@@ -38,6 +38,65 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DatasetService
 {
+    private DatasetSqlNodeService sqlNodes;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureSqlNodes(DatasetSqlNodeService value){sqlNodes=value;}
+
+    public Map<String,Object> previewSqlNode(Long datasourceId,String sql,String sourceCatalog,List<String> fields,
+            com.wanfo.bi.domain.dataset.DatasetJoinModel model,int maxRows) throws Exception {
+        return previewSqlNode(datasourceId,sql,sourceCatalog,fields,model,maxRows,Map.of());
+    }
+    public Map<String,Object> previewSqlNode(Long datasourceId,String sql,String sourceCatalog,List<String> fields,
+            com.wanfo.bi.domain.dataset.DatasetJoinModel model,int maxRows,Map<String,List<String>> values) throws Exception {
+        resources.requireAdministrator();
+        BiDatasource source=datasourceProvider.getById(datasourceId);
+        if(source==null || !"0".equals(source.getStatus()))throw new IllegalArgumentException("数据源不可用");
+        return values==null || values.isEmpty()?sqlNodes.inspect(source,sql,sourceCatalog,fields,model,maxRows):sqlNodes.inspect(source,sql,sourceCatalog,fields,model,maxRows,values,true);
+    }
+
+    public Map<String,Object> previewTableModel(Long datasourceId,String sourceCatalog,String table,List<FieldSelection> fields,
+            com.wanfo.bi.domain.dataset.DatasetJoinModel model) throws Exception {
+        resources.requireAdministrator();
+        BiDatasource source=datasourceProvider.getById(datasourceId);
+        if(source==null || !"0".equals(source.getStatus()))throw new IllegalArgumentException("数据源不可用");
+        List<String> names=fields.stream().map(FieldSelection::name).toList();
+        String base=catalog.plan(source.getSchemaName(),sourceCatalog,table,names).sql();
+        return sqlNodes.inspect(source,base,sourceCatalog,names,model,100);
+    }
+
+    @Transactional(rollbackFor=Exception.class)
+    @SuppressWarnings("unchecked")
+    public Map<String,Object> createSqlNodeDataset(BiDatasetTableDO form,List<FieldSelection> selections,String sql,String operator) throws Exception {
+        return createSqlNodeDataset(form,selections,sql,null,Map.of(),operator);
+    }
+    @Transactional(rollbackFor=Exception.class)
+    @SuppressWarnings("unchecked")
+    public Map<String,Object> createSqlNodeDataset(BiDatasetTableDO form,List<FieldSelection> selections,String sql,
+            com.wanfo.bi.domain.dataset.DatasetJoinModel incomingModel,Map<String,List<String>> values,String operator) throws Exception {
+        resources.requireAdministrator();
+        if(form.getName()==null || form.getName().isBlank() || form.getName().length()>200)throw new IllegalArgumentException("请填写有效的数据集名称");
+        long group=form.getGroupId()==null?0:form.getGroupId();if(group!=0)resources.require("dataset-group",group,"edit");
+        if(datasetMapper.countByName(group,form.getName())>0)throw new IllegalArgumentException("同目录下已存在同名数据集");
+        if(selections==null || selections.isEmpty() || selections.size()>200)throw new IllegalArgumentException("请选择 1～200 个字段");
+        var parameters=new com.wanfo.bi.domain.dataset.DatasetJoinModel();parameters.setSqlParameters(incomingModel==null?null:incomingModel.getSqlParameters());
+        Map<String,Object> probe=previewSqlNode(form.getDatasourceId(),sql,form.getSourceCatalog(),null,parameters.getSqlParameters()==null?null:parameters,1,values);
+        List<Map<String,Object>> actual=(List<Map<String,Object>>)probe.get("fieldMetadata");
+        List<BiDatasetFieldDO> fields=new ArrayList<>();Set<String> seen=new LinkedHashSet<>();
+        for(FieldSelection selection:selections){
+            Map<String,Object> col=actual.stream().filter(c->c.get("name").equals(selection.name())).findFirst().orElseThrow(()->new IllegalArgumentException("SQL 结果字段已改变，请重新执行并解析字段"));
+            if(!seen.add(selection.name()))throw new IllegalArgumentException("选用字段重复");
+            BiDatasetFieldDO field=new BiDatasetFieldDO();field.setOriginName(selection.name());field.setOriginType(String.valueOf(col.get("type")));
+            String label=selection.showName()==null || selection.showName().isBlank()?selection.name():selection.showName().trim();if(label.length()>200)throw new IllegalArgumentException("字段显示名称过长");field.setShowName(label);
+            String dim=selection.dimFlag();if(dim!=null && !Set.of("0","1").contains(dim))throw new IllegalArgumentException("字段角色无效");
+            field.setDimFlag(dim==null?("metric".equals(col.get("suggestAs"))?"0":"1"):dim);field.setExtFlag("0");field.setOrderNum(fields.size());field.setStatus("0");fields.add(field);
+        }
+        String normalized=String.valueOf(probe.get("normalizedSql"));var model=new com.wanfo.bi.domain.dataset.DatasetJoinModel();model.setSourceSql(normalized);model.setSqlParameters(parameters.getSqlParameters());
+        form.setModelJson(new tools.jackson.databind.ObjectMapper().writeValueAsString(model));form.setType("table");form.setSourceTable(null);form.setSqlText(null);form.setWarehouseModelId(null);form.setGroupId(group);form.setCacheEnabled("0");form.setCacheTtl(300);form.setCreateBy(operator);
+        form.setUnionSql(DatasetSqlNodeService.project(normalized,fields.stream().map(BiDatasetFieldDO::getOriginName).toList()));
+        datasetMapper.insert(form);datasetMapper.updateUnionAndModel(form.getId(),form.getUnionSql(),form.getModelJson(),operator);resources.register("dataset",form.getId());fields.forEach(f->f.setDatasetId(form.getId()));fieldMapper.insertBatch(fields);
+        return Map.of("id",form.getId(),"fieldCount",fields.size());
+    }
+
     /** JDBC 类型 -> BI 统一类型 */
     private static final Map<String, String> TYPE_MAP = new LinkedHashMap<>();
 
@@ -235,8 +294,9 @@ public class DatasetService
             m.put("datasourceId", row.getDatasourceId());
             m.put("warehouseModelId", row.getWarehouseModelId());
             m.put("sourceTable", row.getSourceTable());
+        m.put("sourceKind",DatasetSqlNodeService.isSqlNode(row)?"sql":"table");
             m.put("sourceCatalog", row.getSourceCatalog());
-            m.put("resourceActions", java.util.stream.Stream.of("query", "remove", "grant")
+            m.put("resourceActions", java.util.stream.Stream.of("query", "edit", "remove", "grant")
                     .filter(action -> resources.allowed("dataset", row.getId(), action)).toList());
             var scope=policies.resolve(row.getId());
             m.put("fieldCount", fieldMapper.selectByDatasetId(row.getId()).stream().filter(f -> !scope.denied().contains(f.getOriginName())).count());
@@ -263,13 +323,20 @@ public class DatasetService
         m.put("datasourceId", row.getDatasourceId());
         m.put("warehouseModelId", row.getWarehouseModelId());
         m.put("sourceTable", row.getSourceTable());
+        m.put("sourceKind",DatasetSqlNodeService.isSqlNode(row)?"sql":"table");
         m.put("sourceCatalog", row.getSourceCatalog());
         m.put("sqlText", row.getSqlText());
+        m.put("editable", Set.of("table","sql").contains(row.getType()) && capabilities.has("bi:datasource:model") && resources.allowed("dataset",id,"edit") && (!"sql".equals(row.getType()) && !DatasetSqlNodeService.isSqlNode(row) || capabilities.has("bi:resource:admin")));
         m.put("unionSql", capabilities.has("bi:resource:admin") ? row.getUnionSql() : null);
         m.put("cacheEnabled", row.getCacheEnabled());
         m.put("cacheTtl", row.getCacheTtl());
         m.put("remark", row.getRemark());
-        m.put("modelJson", row.getModelJson());
+        if(DatasetSqlNodeService.isSqlNode(row) && !capabilities.has("bi:resource:admin")) {
+            var mapper=new tools.jackson.databind.ObjectMapper();var visible=mapper.readValue(row.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class);visible.setSourceSql(null);if(visible.getSqlParameters()!=null)visible.setSqlParameters(visible.getSqlParameters().stream().map(com.wanfo.bi.domain.dataset.SqlParameterDefinition::publicView).toList());m.put("modelJson",mapper.writeValueAsString(visible));
+        } else m.put("modelJson", row.getModelJson());
+        var storedModel=row.getModelJson()==null || row.getModelJson().isBlank()?null:new tools.jackson.databind.ObjectMapper().readValue(row.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class);
+        var sqlDefinitions=storedModel==null || storedModel.getSqlParameters()==null?List.<com.wanfo.bi.domain.dataset.SqlParameterDefinition>of():storedModel.getSqlParameters();
+        m.put("sqlParameters",capabilities.has("bi:resource:admin")?sqlDefinitions:sqlDefinitions.stream().map(com.wanfo.bi.domain.dataset.SqlParameterDefinition::publicView).toList());
         var scope=policies.resolve(id);
         m.put("fields", fieldMapper.selectByDatasetId(id).stream().filter(f -> !scope.denied().contains(f.getOriginName())).toList());
         return m;
@@ -510,8 +577,11 @@ public class DatasetService
      */
     public Map<String, Object> preview(Long id, int maxRows) throws Exception
     {
+        return preview(id,maxRows,Map.of());
+    }
+    public Map<String,Object> preview(Long id,int maxRows,Map<String,List<String>> values) throws Exception {
         if (maxRows < 1 || maxRows > PREVIEW_MAX_ROWS) { throw new IllegalArgumentException("预览行数须在 1～100 之间"); }
-        return extractRows(id, maxRows, false, 10);
+        return extractRows(id,maxRows,false,10,values,true);
     }
 
     /**
@@ -523,10 +593,10 @@ public class DatasetService
         if (maxRows < 1 || maxRows > BOUNDED_EXTRACT_MAX_ROWS)
             throw new IllegalArgumentException("有界抽取行数须在 1～" + BOUNDED_EXTRACT_MAX_ROWS + " 之间");
         int timeout = Math.min(180, Math.max(30, maxRows / 500));
-        return extractRows(id, maxRows, true, timeout);
+        return extractRows(id, maxRows, true, timeout,Map.of(),false);
     }
 
-    private Map<String, Object> extractRows(Long id, int maxRows, boolean productionBound, int queryTimeoutSeconds) throws Exception
+    private Map<String, Object> extractRows(Long id, int maxRows, boolean productionBound, int queryTimeoutSeconds,Map<String,List<String>> parameterValues,boolean edit) throws Exception
     {
         resources.require("dataset", id, "view");
         resources.require("dataset", id, "query");
@@ -538,7 +608,7 @@ public class DatasetService
             if (source == null || !"0".equals(source.getStatus())) { throw new BiAccessException(403, "数据源不可用"); }
             if ((dataset.getModelJson() != null && !dataset.getModelJson().isBlank())
                     || fieldMapper.selectByDatasetId(id).stream().anyMatch(f -> "1".equals(f.getExtFlag()) || (f.getSourceName()!=null&&!f.getSourceName().isBlank())))
-            { return previewJoinedTable(dataset, id, maxRows, source, queryTimeoutSeconds); }
+            { return previewJoinedTable(dataset, id, maxRows, source, queryTimeoutSeconds,parameterValues,edit); }
             List<String> fields = fieldMapper.selectByDatasetId(id).stream().map(BiDatasetFieldDO::getOriginName).toList();
             Map<String,Object> result = productionBound
                     ? catalog.savedBoundedExtract(source.getSchemaName(), dataset.getSourceCatalog(), dataset.getSourceTable(),
@@ -559,7 +629,7 @@ public class DatasetService
     public Map<String,Object> qualityReport(Long id,boolean fullScan,int timeoutSeconds)throws Exception{
         if(timeoutSeconds<1||timeoutSeconds>120)throw new IllegalArgumentException("质量扫描超时须在 1～120 秒之间");
         if(fullScan)return fullQualityReport(id,timeoutSeconds);
-        Map<String,Object> sample=preview(id,100);Object rawColumns=sample.get("columns"),rawRows=sample.get("rows");
+        Map<String,Object> sample=extractRows(id,100,false,10,Map.of(),false);Object rawColumns=sample.get("columns"),rawRows=sample.get("rows");
         if(!(rawColumns instanceof List<?> columns)||!(rawRows instanceof List<?> rows))throw new IllegalStateException("数据质量检查结果格式无效");
         List<String> names=columns.stream().map(String::valueOf).toList();List<Map<String,Object>> records=new ArrayList<>();
         for(Object row:rows)if(row instanceof Map<?,?> map){Map<String,Object> values=new LinkedHashMap<>();map.forEach((k,v)->values.put(String.valueOf(k),v));records.add(values);}
@@ -576,11 +646,12 @@ public class DatasetService
             List<String> physicalFields=fields.stream().filter(f->!"1".equals(f.getExtFlag())).map(BiDatasetFieldDO::getOriginName).toList();
             Map<String,String> sourceMappings=physicalSourceMappings(fields);
             String physicalBase=dataset.getModelJson()!=null&&!dataset.getModelJson().isBlank()?dataset.getUnionSql():catalog.savedPlan(source.getSchemaName(),dataset.getSourceCatalog(),dataset.getSourceTable(),physicalFields,sourceMappings).sql();
-            conn=engine.borrowConnection(source.getSchemaName());
-            String quote=conn.getMetaData().getIdentifierQuoteString().trim();base=DatasetQueryBaseBuilder.expand(physicalBase,fields,quote);
+            conn=DatasetSqlNodeService.isSqlNode(dataset)?engine.open(List.of(source)):engine.borrowConnection(source.getSchemaName());
+            var bound=com.wanfo.bi.query.SqlTemplateParameters.compile(physicalBase,DatasetSqlNodeService.isSqlNode(dataset)?new tools.jackson.databind.ObjectMapper().readValue(dataset.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class).getSqlParameters():null,Map.of(),false);
+            String quote=conn.getMetaData().getIdentifierQuoteString().trim();base=DatasetQueryBaseBuilder.expand(bound.sql(),fields,quote);params=bound.params();
             Map<String,String> fieldTypes=new LinkedHashMap<>();for(BiDatasetFieldDO field:fields)fieldTypes.put(field.getOriginName(),String.valueOf(field.getOriginType()));
             var scope=policies.resolve(id);var access=DataPolicyCompiler.compile(new ArrayList<>(fieldTypes.keySet()),fieldTypes,quote,scope);
-            columns=access.columns();types=columns.stream().map(fieldTypes::get).toList();params=access.params();
+            columns=access.columns();types=columns.stream().map(fieldTypes::get).toList();var allParams=new ArrayList<Object>(params);allParams.addAll(access.params());params=allParams;
             base="SELECT "+access.projection()+" FROM ("+base+") AS quality_source"+(access.predicate().isBlank()?"":" WHERE "+access.predicate());
         }else{
             resources.requireAdministrator();BiDatasource source=datasourceProvider.getById(dataset.getDatasourceId());if(source==null||!"0".equals(source.getStatus()))throw new BiAccessException(403,"数据源不可用");
@@ -621,7 +692,7 @@ public class DatasetService
     private static boolean isTextType(String type){String normalized=type==null?"":type.toLowerCase(java.util.Locale.ROOT);return normalized.matches(".*(char|varchar|string|text).*");}
 
     private Map<String,Object> previewJoinedTable(BiDatasetTableDO dataset, Long id, int maxRows, BiDatasource source,
-            int queryTimeoutSeconds) throws Exception
+            int queryTimeoutSeconds,Map<String,List<String>> parameterValues,boolean edit) throws Exception
     {
         List<BiDatasetFieldDO> fields = fieldMapper.selectByDatasetId(id);
         String physicalBase = dataset.getModelJson()!=null && !dataset.getModelJson().isBlank()
@@ -635,9 +706,10 @@ public class DatasetService
             types.put(f.getOriginName(), String.valueOf(f.getOriginType()));
         }
         long start = System.currentTimeMillis();
-        try (Connection conn = engine.borrowConnection(source.getSchemaName()))
+        try (Connection conn = engine.open(List.of(source)))
         {
-            String base = DatasetQueryBaseBuilder.expand(physicalBase, fields,conn.getMetaData().getIdentifierQuoteString().trim());
+            var bound=com.wanfo.bi.query.SqlTemplateParameters.compile(physicalBase,DatasetSqlNodeService.isSqlNode(dataset)?new tools.jackson.databind.ObjectMapper().readValue(dataset.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class).getSqlParameters():null,parameterValues,edit);
+            String base = DatasetQueryBaseBuilder.expand(DatasetQueryBaseBuilder.forCalcite(bound.sql(),source.getSchemaName(),dataset.getSourceCatalog()), fields,conn.getMetaData().getIdentifierQuoteString().trim());
             var compiled = DataPolicyCompiler.compile(new ArrayList<>(types.keySet()), types,
                     conn.getMetaData().getIdentifierQuoteString().trim(), scope);
             String sql = "SELECT " + compiled.projection() + " FROM (" + base + ") AS policy_src"
@@ -646,8 +718,9 @@ public class DatasetService
             {
                 st.setMaxRows(maxRows);
                 st.setQueryTimeout(Math.max(10, Math.min(180, queryTimeoutSeconds)));
-                for (int p = 0; p < compiled.params().size(); p++)
-                { st.setObject(p + 1, compiled.params().get(p)); }
+                var params=new ArrayList<Object>(bound.params());params.addAll(compiled.params());
+                for (int p = 0; p < params.size(); p++)
+                { st.setObject(p + 1, params.get(p)); }
                 try (java.sql.ResultSet rs = st.executeQuery())
                 {
                     List<Map<String, Object>> rows = new ArrayList<>();

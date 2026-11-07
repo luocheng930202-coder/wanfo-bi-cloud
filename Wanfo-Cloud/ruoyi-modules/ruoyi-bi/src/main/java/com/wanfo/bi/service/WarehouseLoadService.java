@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
-/** Bounded full-refresh ingestion from an authorized JDBC source into the isolated ClickHouse ODS layer. */
+/** Bounded JDBC table copy into ClickHouse, Doris, or StarRocks. Source type is not filtered. */
 @Service
 public class WarehouseLoadService
 {
@@ -226,7 +226,6 @@ public class WarehouseLoadService
         BiDatasource target = requireEnabled(request.targetDatasourceId());
         resources.require("datasource", source.getId(), "model");
         resources.require("datasource", target.getId(), "model");
-        validateSource(source);
         poolGate.assertLaneRunnable("WAREHOUSE_LOAD", mapper.activeRunCount());
         String database = resolveTargetDatabase(target, request.targetLayer());
 
@@ -395,7 +394,6 @@ public class WarehouseLoadService
         BiDatasource targetDefinition = requireEnabled(targetId);
         resources.require("datasource", sourceId, "model");
         resources.require("datasource", targetId, "model");
-        validateSource(sourceDefinition);
         if (!validWarehouseLayer(targetDefinition, targetDatabase))
             throw new IllegalArgumentException("数仓目标层无效或目标数据源 schema 配置不正确");
         WarehousePublisher.Engine engine = WarehousePublisher.parseEngine(targetDefinition.getType());
@@ -607,17 +605,12 @@ public class WarehouseLoadService
     private BiDatasource requireEnabled(Long id)
     {
         BiDatasource source = sources.getById(id);
-        if (source == null || !"0".equals(source.getStatus()) || SnapshotRegistry.supports(source.getType()))
-            throw new IllegalArgumentException("数据源不存在、已停用或不支持 JDBC 入仓");
-        return source;
-    }
-
-    private void validateSource(BiDatasource source)
-    {
+        if (source == null || !"0".equals(source.getStatus()))
+            throw new IllegalArgumentException("数据源不存在或已停用");
         String type = source.getType() == null ? "" : source.getType().toLowerCase(Locale.ROOT);
-        if (!List.of("mysql", "mariadb", "postgresql", "pg", "sqlserver", "mssql", "oracle", "clickhouse", "ck", "doris", "starrocks", "tidb").contains(type))
-            throw new IllegalArgumentException("当前连接器不在入仓支持范围内");
-        if ("clickhouse".equals(type) || "ck".equals(type)) throw new IllegalArgumentException("ClickHouse 仅作为数仓目标，不能作为本期业务源");
+        if (SnapshotRegistry.supports(type) || Set.of("s3", "oss", "minio").contains(type))
+            throw new IllegalArgumentException("该数据源不是 JDBC 表，不能用于表装载");
+        return source;
     }
 
     private String resolveTargetDatabase(BiDatasource target, String targetLayer)
@@ -626,20 +619,15 @@ public class WarehouseLoadService
         boolean clickhouse = type.equals("clickhouse") || type.equals("ck");
         boolean mysqlProtocolWh = type.equals("doris") || type.equals("starrocks");
         if (!clickhouse && !mysqlProtocolWh)
-            throw new IllegalArgumentException("数仓目标须为 ClickHouse，或已评估可用的 Doris/StarRocks");
-        if (clickhouse && !"wanfo_wh_ods".equals(target.getSourceSchema()))
-            throw new IllegalArgumentException("ClickHouse 数仓目标 schema 须配置为 wanfo_wh_ods（可写入 ODS/DWD/DWS/ADS）");
-        if (mysqlProtocolWh && (target.getSourceSchema() == null || target.getSourceSchema().isBlank()))
-            throw new IllegalArgumentException("Doris/StarRocks 目标须配置默认库（sourceSchema）");
+            throw new IllegalArgumentException("原子写入目前只支持 ClickHouse、Doris、StarRocks");
+        String schema = target.getSourceSchema() == null ? "" : target.getSourceSchema().trim();
+        if (schema.isBlank())
+            throw new IllegalArgumentException("目标数据源须配置 schema / 默认库");
         String layer = targetLayer == null || targetLayer.isBlank() ? "ODS" : targetLayer.trim().toUpperCase(Locale.ROOT);
-        if (mysqlProtocolWh)
-        {
-            if (!Set.of("ODS", "DWD", "DWS", "ADS").contains(layer))
-                throw new IllegalArgumentException("目标逻辑层仅支持 ODS、DWD、DWS、ADS");
-            // Doris/StarRocks：逻辑层映射为同名库前缀，物理写入默认库下的 {layer_lower}_{table} 由调用方表名约定；
-            // 此处返回连接默认库，表名仍用 request.targetTable。
-            return target.getSourceSchema();
-        }
+        if (!Set.of("ODS", "DWD", "DWS", "ADS").contains(layer))
+            throw new IllegalArgumentException("目标逻辑层仅支持 ODS、DWD、DWS、ADS");
+        if (mysqlProtocolWh || !"wanfo_wh_ods".equals(schema))
+            return schema;
         String database = switch (layer) {
             case "ODS" -> "wanfo_wh_ods";
             case "DWD" -> "wanfo_wh_dwd";
@@ -665,11 +653,14 @@ public class WarehouseLoadService
     private static boolean validWarehouseLayer(BiDatasource target, String database)
     {
         String type = target.getType() == null ? "" : target.getType().toLowerCase(Locale.ROOT);
+        String schema = target.getSourceSchema() == null ? "" : target.getSourceSchema().trim();
         if (type.equals("doris") || type.equals("starrocks"))
-            return database != null && !database.isBlank() && database.equals(target.getSourceSchema());
-        return (type.equals("clickhouse") || type.equals("ck"))
-                && "wanfo_wh_ods".equals(target.getSourceSchema())
-                && List.of("wanfo_wh_ods", "wanfo_wh_dwd", "wanfo_wh_dws", "wanfo_wh_ads").contains(database);
+            return database != null && !database.isBlank() && database.equals(schema);
+        if (!(type.equals("clickhouse") || type.equals("ck")) || database == null || database.isBlank())
+            return false;
+        if ("wanfo_wh_ods".equals(schema))
+            return List.of("wanfo_wh_ods", "wanfo_wh_dwd", "wanfo_wh_dws", "wanfo_wh_ads").contains(database);
+        return database.equals(schema);
     }
 
     private static void requireSourceTable(Connection source, JdbcSourceScope scope, String table) throws SQLException

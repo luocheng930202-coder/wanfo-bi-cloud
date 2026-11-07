@@ -1,7 +1,7 @@
 package com.wanfo.common.core.utils;
 
-import java.util.Map;
 import java.util.Base64;
+import java.util.Map;
 import com.wanfo.common.core.constant.SecurityConstants;
 import com.wanfo.common.core.constant.TokenConstants;
 import com.wanfo.common.core.text.Convert;
@@ -16,6 +16,8 @@ import io.jsonwebtoken.SignatureAlgorithm;
  */
 public class JwtUtils
 {
+    public static String secret = TokenConstants.SECRET;
+
     private static String signingSecret()
     {
         String secret = System.getProperty("wanfo.jwt.secret", TokenConstants.SECRET);

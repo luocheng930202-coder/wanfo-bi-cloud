@@ -129,6 +129,9 @@ public class ChartQueryService
         String unionSql = "sql".equals(ds.getType())
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
+        var template=com.wanfo.bi.query.SqlTemplateParameters.compile(unionSql,
+            ds.getModelJson()==null || ds.getModelJson().isBlank()?null:new tools.jackson.databind.ObjectMapper().readValue(ds.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class).getSqlParameters(),model.getSqlParameters(),false);
+        unionSql=template.sql();
         var boundSource = datasourceProvider.getById(ds.getDatasourceId());
         unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
                 unionSql, boundSource == null ? null : boundSource.getSchemaName(), ds.getSourceCatalog());
@@ -138,7 +141,7 @@ public class ChartQueryService
         }
 
         var scope=policies.resolve(model.getDatasetId());
-        var restricted=restrictedBase(unionSql,fields,scope);
+        var restricted=restrictedBase(unionSql,fields,scope,template.params());
         scope.denied().forEach(valid::remove);scope.masked().forEach(valid::remove);
         var pivot=model.getPivot()==null?null:com.wanfo.bi.query.PivotQueryPlan.compile(model,restricted.sql(),valid,compiler,restricted.params());
         ChartQueryCompiler.Compiled compiled = pivot==null?compiler.compile(model, restricted.sql(), valid):pivot.query();
@@ -276,6 +279,9 @@ public class ChartQueryService
         String unionSql = "sql".equals(ds.getType())
                 ? stripTrailingSemicolon(ds.getSqlText())
                 : ds.getUnionSql();
+        var template=com.wanfo.bi.query.SqlTemplateParameters.compile(unionSql,
+            ds.getModelJson()==null || ds.getModelJson().isBlank()?null:new tools.jackson.databind.ObjectMapper().readValue(ds.getModelJson(),com.wanfo.bi.domain.dataset.DatasetJoinModel.class).getSqlParameters(),model.getSqlParameters(),false);
+        unionSql=template.sql();
         var boundSource = datasourceProvider.getById(ds.getDatasourceId());
         unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.forCalcite(
                 unionSql, boundSource == null ? null : boundSource.getSchemaName(), ds.getSourceCatalog());
@@ -284,7 +290,7 @@ public class ChartQueryService
             unionSql = com.wanfo.bi.query.DatasetQueryBaseBuilder.expand(unionSql, compileFields);
         }
         var scope=policies.resolve(model.getDatasetId());
-        var restricted=restrictedBase(unionSql, compileFields, scope);
+        var restricted=restrictedBase(unionSql, compileFields, scope,template.params());
         scope.denied().forEach(valid::remove);scope.masked().forEach(valid::remove);
         return model.getPivot()==null?compiler.compile(model, restricted.sql(), valid).sql:com.wanfo.bi.query.PivotQueryPlan.compile(model,restricted.sql(),valid,compiler,restricted.params()).query().sql;
     }
@@ -299,11 +305,12 @@ public class ChartQueryService
         if(source==null || !"0".equals(source.getStatus())) throw new BiAccessException(403,"数据源不可用");
     }
     private record Restricted(String sql,List<Object> params) { }
-    private Restricted restrictedBase(String sql,List<BiDatasetFieldDO> fields,DatasetDataPolicy.Scope scope) {
+    private Restricted restrictedBase(String sql,List<BiDatasetFieldDO> fields,DatasetDataPolicy.Scope scope,List<Object> sourceParams) {
         Map<String,String> types=new LinkedHashMap<>();
         for(var f:fields) types.put(f.getOriginName(),String.valueOf(f.getOriginType()));
         var plan=DataPolicyCompiler.compile(new ArrayList<>(types.keySet()),types,"\"",scope);
-        return new Restricted("SELECT "+plan.projection()+" FROM ("+sql+") AS policy_src"+(plan.predicate().isEmpty()?"":" WHERE "+plan.predicate()),plan.params());
+        var params=new ArrayList<Object>(sourceParams);params.addAll(plan.params());
+        return new Restricted("SELECT "+plan.projection()+" FROM ("+sql+") AS policy_src"+(plan.predicate().isEmpty()?"":" WHERE "+plan.predicate()),params);
     }
 
     private String stripTrailingSemicolon(String sql)

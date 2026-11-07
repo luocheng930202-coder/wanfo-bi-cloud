@@ -3,15 +3,18 @@
     <header class="page-head">
       <div>
         <h1>指标集</h1>
-        <p>按主题打包已授权指标，供分析与门户引用。</p>
+        <p>把已发布指标按主题打包，供分析和门户引用。草稿不能加入指标集。</p>
       </div>
-      <div>
+      <div class="head-actions">
+        <el-select v-model="themeFilter" clearable placeholder="按主题筛选" aria-label="主题" style="width:180px">
+          <el-option v-for="theme in themes" :key="theme" :label="theme" :value="theme" />
+        </el-select>
         <el-button @click="load">刷新</el-button>
         <el-button v-hasPermi="['bi:metric:add']" type="primary" @click="openCreate">新建指标集</el-button>
       </div>
     </header>
 
-    <el-table :data="rows" border>
+    <el-table :data="visibleRows" border>
       <el-table-column prop="setCode" label="编码" min-width="140" />
       <el-table-column prop="name" label="名称" min-width="160" />
       <el-table-column prop="theme" label="主题" width="120" />
@@ -45,8 +48,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="成员指标">
-          <el-select v-model="form.metricIds" multiple filterable style="width:100%" placeholder="选择有权查看的指标">
-            <el-option v-for="m in metrics" :key="m.id" :label="`${m.code} · ${m.name}`" :value="m.id" />
+          <el-select v-model="form.metricIds" multiple filterable style="width:100%" placeholder="只显示已发布指标">
+            <el-option v-for="m in memberOptions" :key="m.id" :label="memberLabel(m)" :value="m.id" :disabled="m.publishStatus !== 'published'" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -59,15 +62,19 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listMetrics, type MetricSummary } from '@/api/bi/metric'
 import { createMetricSet, deleteMetricSet, listMetricSets, updateMetricSet, type MetricSet } from '@/api/bi/metricSet'
 
 const loading = ref(false)
 const saving = ref(false)
+const themeFilter = ref('')
 const rows = ref<MetricSet[]>([])
 const metrics = ref<MetricSummary[]>([])
+const themes = computed(() => [...new Set(rows.value.map(row => row.theme).filter((theme): theme is string => !!theme))])
+const visibleRows = computed(() => themeFilter.value ? rows.value.filter(row => row.theme === themeFilter.value) : rows.value)
+const publishedMetrics = computed(() => metrics.value.filter(metric => metric.publishStatus === 'published'))
 const formVisible = ref(false)
 const form = reactive({
   id: 0 as number,
@@ -78,6 +85,19 @@ const form = reactive({
   status: 'ACTIVE',
   metricIds: [] as number[]
 })
+const memberOptions = computed(() => {
+  const selected = new Map(publishedMetrics.value.map(metric => [metric.id, metric]))
+  for (const id of form.metricIds) {
+    if (!selected.has(id)) {
+      const metric = metrics.value.find(item => item.id === id)
+      if (metric) selected.set(id, metric)
+    }
+  }
+  return [...selected.values()]
+})
+function memberLabel(metric: MetricSummary) {
+  return metric.publishStatus === 'published' ? `${metric.code} · ${metric.name}` : `${metric.code} · ${metric.name} · 未发布`
+}
 
 async function load() {
   loading.value = true
@@ -108,6 +128,9 @@ function openEdit(row: MetricSet) {
 
 async function save() {
   if (!form.setCode.trim() || !form.name.trim()) { ElMessage.warning('请填写编码与名称'); return }
+  if (form.metricIds.some(id => metrics.value.find(metric => metric.id === id)?.publishStatus !== 'published')) {
+    ElMessage.warning('指标集只能包含已发布指标'); return
+  }
   saving.value = true
   try {
     const payload = {
@@ -137,7 +160,8 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap }
+.page-head,.head-actions { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap }
+.head-actions { margin-bottom:0; align-items:center }
 .page-head h1 { margin:0; font-size:22px }
 .page-head p { margin:6px 0 0; color:#667085 }
 </style>

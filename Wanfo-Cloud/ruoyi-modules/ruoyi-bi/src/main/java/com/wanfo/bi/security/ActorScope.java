@@ -27,8 +27,8 @@ public final class ActorScope {
         if (bound == null || capability == null || capability.isBlank()) return false;
         for (String granted : bound.capabilities()) {
             if (granted == null || granted.isBlank()) continue;
-            if ("*:*:*".equals(granted) || granted.equals(capability)) return true;
-            if (granted.endsWith(":*") && capability.startsWith(granted.substring(0, granted.length() - 1))) return true;
+            if ("*:*:*".equals(granted) || granted.equals(capability)
+                    || org.springframework.util.PatternMatchUtils.simpleMatch(granted, capability)) return true;
         }
         return false;
     }

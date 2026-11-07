@@ -17,4 +17,12 @@ class ActorScopeTest {
   assertNull(ActorScope.actor());
   assertFalse(ActorScope.active());
  }
+ @Test void superPermissionMatchesResourceChecksInsideShareScope(){
+  BiActor actor=new BiActor("test",1L,"admin",null,Set.of());
+  ActorScope.run(actor,Set.of("*:*:*"),()->{
+   assertTrue(ActorScope.allows("bi:resource:admin"));
+   assertTrue(ActorScope.allows("bi:dashboard:consume"));
+  });
+  assertFalse(ActorScope.active());
+ }
 }

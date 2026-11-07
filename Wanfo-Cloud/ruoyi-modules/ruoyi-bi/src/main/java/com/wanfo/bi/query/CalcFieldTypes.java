@@ -13,7 +13,11 @@ public final class CalcFieldTypes {
 
     public static String infer(String formula, List<BiDatasetFieldDO> fields) {
         Map<String,String> physical=new LinkedHashMap<>();
-        fields.stream().filter(f->!"1".equals(f.getExtFlag())).forEach(f->physical.put(f.getOriginName(),f.getOriginType()));
+        for (BiDatasetFieldDO field : fields) {
+            String name = field == null ? null : field.getOriginName();
+            if (name == null || name.isBlank()) continue;
+            physical.put(name, field.getOriginType());
+        }
         String expression=CalcFormulaCompiler.compile(formula,physical.keySet());
         var dependencies=CalcFormulaCompiler.references(formula,physical.keySet());
         physical.keySet().retainAll(dependencies);
@@ -37,7 +41,7 @@ public final class CalcFieldTypes {
     }
 
     private static RelDataType sqlType(RelDataTypeFactory factory,String source) {
-        String raw=source==null?"":source.toUpperCase(Locale.ROOT).trim();
+        String raw=source==null?"":source.toUpperCase(Locale.ROOT).replace(" NOT NULL", "").trim();
         String name=raw.replaceAll("\\(.*", "").replace(" UNSIGNED", "").trim();
         SqlTypeName type=switch(name) {
             case "TINYINT","SMALLINT","MEDIUMINT","INT","INTEGER","INT2","INT4"->SqlTypeName.INTEGER;

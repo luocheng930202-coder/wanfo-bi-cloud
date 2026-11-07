@@ -79,6 +79,8 @@ public class CalciteQueryEngine
 
         try {
             for (BiDatasource ds : datasources) register(root, ds);
+            // A single-connector query resolves unqualified tables inside that connector.
+            if (datasources.size() == 1) conn.setSchema(datasources.get(0).getSchemaName());
             return conn;
         } catch(Exception e){conn.close();throw e;}
     }

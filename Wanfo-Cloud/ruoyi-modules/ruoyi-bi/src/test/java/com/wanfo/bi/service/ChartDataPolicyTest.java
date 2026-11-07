@@ -80,6 +80,15 @@ class ChartDataPolicyTest {
         var city=new BiDatasetFieldDO();city.setOriginName("city");city.setOriginType("VARCHAR");var id=new BiDatasetFieldDO();id.setOriginName("id");id.setOriginType("INT");when(fields.selectByDatasetId(9L)).thenReturn(List.of(city,id));
     }
     QueryModel model(String field) {var m=new QueryModel();m.setDatasetId(9L);m.addDimension(field,null);return m;}
+    @Test void sqlParametersPrecedeSecurityBindingsAndChartFilters() throws Exception {
+        var dataset=datasets.selectById(9L);dataset.setUnionSql("SELECT city,id FROM demo.orders WHERE $DE_PARAM{city='$[P]'}");
+        var joinModel=new com.wanfo.bi.domain.dataset.DatasetJoinModel();joinModel.setSqlParameters(List.of(new com.wanfo.bi.domain.dataset.SqlParameterDefinition("P","City","TEXT",false,false,List.of("default"),"ALL")));
+        dataset.setModelJson(new tools.jackson.databind.ObjectMapper().writeValueAsString(joinModel));
+        when(policies.resolve(9L)).thenReturn(new DatasetDataPolicy.Scope(List.of(new DatasetDataPolicy.Rule(1L,9L,1L,"city","EQ","authorized","admin")),Set.of(),Set.of()));
+        when(engine.open(anyList())).thenReturn(mock(java.sql.Connection.class));when(engine.queryWithParams(any(),anyString(),anyList(),anyInt(),anyInt())).thenReturn(new QueryResult());
+        var query=model("city");query.setSqlParameters(Map.of("P",List.of("chosen")));query.addFilter("id","GTE",1);service.query(query);
+        verify(engine).queryWithParams(any(),anyString(),eq(List.of("chosen","authorized",java.math.BigDecimal.ONE)),anyInt(),anyInt());
+    }
     @Test void tableQueryDoesNotConnectUnrelatedOfflineSources() throws Exception {
         when(sources.listEnabled()).thenThrow(new IllegalStateException("unrelated source offline"));
         when(policies.resolve(9L)).thenReturn(DatasetDataPolicy.Scope.unrestricted());

@@ -20,6 +20,10 @@ const isWhiteList = (path: string): boolean => {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
+  const legacyShare = to.hash.match(/^#\/bi-share\/([^/?#]+)/)
+  if (legacyShare) {
+    return { path: `/bi-share/${decodeURIComponent(legacyShare[1])}`, hash: '', replace: true }
+  }
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title as string)
     const isLock = useLockStore().isLock

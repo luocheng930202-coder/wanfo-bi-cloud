@@ -49,6 +49,10 @@ export const constantRoutes = [
     ]
   },
   {
+    path:'/bi-admin/dataset-workspace',component:Layout,hidden:true,
+    children:[{path:':id(\\d+)/edit',name:'BiDatasetEdit',component:()=>import('@/views/bi/dataset/DatasetCreateWorkspace.vue'),meta:{title:'编辑数据集',noCache:true,workspaceEditor:true,activeMenu:'/bi-admin/dataset'}},{path:'new',name:'BiDatasetCreate',component:()=>import('@/views/bi/dataset/DatasetCreateWorkspace.vue'),meta:{title:'新建数据集',noCache:true,workspaceEditor:true,activeMenu:'/bi-admin/dataset'}},{path:':id(\\d+)/view',name:'BiDatasetWorkspace',component:()=>import('@/views/bi/dataset/DatasetWorkspace.vue'),meta:{title:'数据集工作区',noCache:true,workspaceEditor:true,activeMenu:'/bi-admin/dataset'}}]
+  },
+  {
     path:'/bi-admin/chart-workspace',component:Layout,hidden:true,
     children:[
       {path:'new',name:'BiChartCreate',component:()=>import('@/views/bi/chart/index.vue'),meta:{title:'新建图表',noCache:true,workspaceEditor:true,chartWorkspace:true,activeMenu:'/bi-admin/chart'}},
@@ -101,10 +105,11 @@ export const constantRoutes = [
   {
     path: '',
     component: Layout,
-    redirect: '/index',
+    redirect: '/bi-admin/workbench',
     children: [
       {
         path: '/index',
+        redirect: '/bi-admin/workbench',
         component: () => import('@/views/index.vue'),
         name: 'Index',
         meta: { title: '首页', icon: 'dashboard', affix: true }

@@ -14,18 +14,18 @@
           <template #header><div class="toolbar">
             <span>{{ currentGroup?.name || '全部数据集' }}</span>
             <div>
-              <el-button v-if="checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" type="primary" @click="openCreate('table')">新建表数据集</el-button>
-              <el-button v-if="checkPermi(['bi:resource:admin'])" @click="openCreate('sql')">SQL 数据集</el-button>
+              <el-button v-if="checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" type="primary" @click="router.push({path:'/bi-admin/dataset-workspace/new',query:currentGroup ? {groupId:currentGroup.id} : {}})">新建数据集</el-button>
             </div>
           </div></template>
           <el-table :data="datasets" v-loading="loading" border>
-            <el-table-column prop="name" label="名称" min-width="150" />
+            <el-table-column label="名称" min-width="180"><template #default="{row}"><el-button link type="primary" @click="router.push(`/bi-admin/dataset-workspace/${row.id}/view`)">{{ row.name }}</el-button></template></el-table-column>
             <el-table-column prop="sourceCatalog" label="数据库" min-width="110" />
             <el-table-column prop="sourceTable" label="来源表" min-width="120" />
             <el-table-column label="消费门禁" width="130"><template #default="{row}">{{ row.warehouseModelId ? `模型 #${row.warehouseModelId}` : '未绑定' }}</template></el-table-column>
             <el-table-column prop="fieldCount" label="字段数" width="85" />
             <el-table-column label="操作" width="510" fixed="right"><template #default="{row}">
-              <el-button v-if="row.type==='table' && checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" link type="primary" @click="openModel(row)">建模</el-button>
+              <el-button v-if="row.resourceActions?.includes('edit') && ((row.type==='table' && row.sourceKind!=='sql') || checkPermi(['bi:resource:admin'])) && checkPermi(['bi:datasource:model'])" link type="primary" @click="router.push(`/bi-admin/dataset-workspace/${row.id}/edit`)">编辑</el-button>
+              <el-button v-if="row.type==='table' && (row.sourceKind!=='sql' || checkPermi(['bi:resource:admin'])) && checkPermi(['bi:datasource:model'])" v-hasPermi="['bi:dataset:add']" link type="primary" @click="openModel(row)">建模</el-button>
               <el-button v-if="row.resourceActions?.includes('query')" v-hasPermi="['bi:dataset:query']" link type="primary" @click="previewSaved(row)">预览</el-button>
               <el-button link @click="viewDefinition(row)">定义</el-button>
               <el-button v-if="row.type==='table' && row.resourceActions?.includes('query')" v-hasPermi="['bi:chart:add']" link type="primary" @click="router.push({path:'/bi-admin/chart',query:{datasetId:row.id}})">建图表</el-button>
@@ -275,7 +275,7 @@ async function removeDataset(row:DatasetSummary) {
   try { await ElMessageBox.confirm(`确定删除数据集「${row.name}」？`,'删除数据集',{type:'warning'}); await deleteDataset(row.id); await Promise.all([loadGroups(),loadDatasets()]) } catch { }
 }
 
-const grantActions:Record<string,string>={view:'查看',query:'查询/预览',consume:'看板消费（不可自由查询）',write:'填报写入',remove:'删除',grant:'授权管理'}
+const grantActions:Record<string,string>={view:'查看',edit:'编辑定义（需建模权限）',query:'查询/预览',consume:'看板消费（不可自由查询）',write:'填报写入',remove:'删除',grant:'授权管理'}
 const principalTypes:Record<string,string>={user:'用户',role:'角色',organization:'部门'}
 const grantDialog=reactive({visible:false,id:0,name:'',principalId:undefined as number | undefined,action:'view'})
 const principals=ref<GrantPrincipal[]>([]), grants=ref<ResourceGrant[]>([]), grantSaving=ref(false)
@@ -289,7 +289,7 @@ async function removeGrant(row:ResourceGrant) { await revokeDatasetGrant(grantDi
 onMounted(async()=>{
   await Promise.all([loadGroups(),loadDatasets()])
   const sourceId=Number(route.query.datasourceId)
-  if(sourceId && checkPermi(['bi:dataset:add']) && checkPermi(['bi:datasource:model'])) await openCreate('table',sourceId)
+  if(sourceId && checkPermi(['bi:dataset:add']) && checkPermi(['bi:datasource:model'])) await router.replace({path:'/bi-admin/dataset-workspace/new',query:{datasourceId:sourceId}})
 })
 </script>
 

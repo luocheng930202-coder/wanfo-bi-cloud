@@ -5,6 +5,15 @@ import java.util.List;
 /** Dataset relationship graph, serialized in bi_dataset_table.model_json. */
 public class DatasetJoinModel {
     /** Legacy single-join fields remain readable for existing saved models and clients. */
+    private List<DatasetDerivedField> derivedFields;
+    public List<DatasetDerivedField> getDerivedFields(){return derivedFields;}
+    public void setDerivedFields(List<DatasetDerivedField> value){derivedFields=value;}
+    private List<SqlParameterDefinition> sqlParameters;
+    public List<SqlParameterDefinition> getSqlParameters(){return sqlParameters;}
+    public void setSqlParameters(List<SqlParameterDefinition> value){sqlParameters=value;}
+    private String sourceSql;
+    public String getSourceSql() { return sourceSql; }
+    public void setSourceSql(String value) { sourceSql=value; }
     private String joinType;
     private String rightTable;
     private String leftKey;

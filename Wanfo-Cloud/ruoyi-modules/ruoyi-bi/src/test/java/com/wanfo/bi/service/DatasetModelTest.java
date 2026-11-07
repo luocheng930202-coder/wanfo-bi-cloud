@@ -83,4 +83,22 @@ class DatasetModelTest
         BiDatasetTableDO row=table(); row.setId(9L); when(datasets.selectAll(null)).thenReturn(List.of(row));
         assertTrue(service.list(null).isEmpty()); verifyNoInteractions(fields);
     }
+    @Test void sqlNodePreviewRequiresAdministratorBeforeResolvingSources() throws Exception {
+        doThrow(new BiAccessException(403,"denied")).when(resources).requireAdministrator();
+        assertThrows(BiAccessException.class,()->service.previewSqlNode(7L,"SELECT 1",null,null,null,10));
+        verifyNoInteractions(sources,engine,catalog,datasets,fields);
+    }
+
+    @Test void sqlNodeCreationPersistsResolvedFieldsAndItsReusableSourceModel() throws Exception {
+        source();var nodes=mock(DatasetSqlNodeService.class);service.configureSqlNodes(nodes);
+        when(nodes.inspect(any(),anyString(),any(),isNull(),isNull(),eq(1))).thenReturn(Map.of("normalizedSql","SELECT 1 AS id","fieldMetadata",List.of(Map.of("name","id","type","INTEGER","suggestAs","metric"))));
+        doAnswer(call->{((BiDatasetTableDO)call.getArgument(0)).setId(9L);return 1;}).when(datasets).insert(any());
+        var result=service.createSqlNodeDataset(table(),List.of(new DatasetService.FieldSelection("id","编号","1")),"SELECT 1 AS id","alice");
+        assertEquals(9L,result.get("id"));
+        verify(datasets).updateUnionAndModel(eq(9L),contains("bi_sql_node"),contains("sourceSql"),eq("alice"));
+        var capture=org.mockito.ArgumentCaptor.forClass(BiDatasetTableDO.class);verify(datasets).insert(capture.capture());
+        assertEquals("table",capture.getValue().getType());assertNull(capture.getValue().getSourceTable());
+        verify(fields).insertBatch(argThat(values->values.size()==1 && "编号".equals(values.get(0).getShowName()) && "1".equals(values.get(0).getDimFlag())));
+    }
+
 }

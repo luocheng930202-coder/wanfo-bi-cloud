@@ -13,7 +13,7 @@ public class BiResourceAuthorizer
 {
     private static final Map<String, Set<String>> ACTIONS = Map.ofEntries(
             Map.entry("datasource", Set.of("view", "edit", "test", "remove", "grant", "model")),
-            Map.entry("dataset", Set.of("view", "query", "consume", "write", "remove", "grant")),
+            Map.entry("dataset", Set.of("view", "edit", "query", "consume", "write", "remove", "grant")),
             Map.entry("chart", Set.of("view", "edit", "query", "remove", "grant")),
             Map.entry("metric", Set.of("view", "edit", "query", "publish", "remove", "grant")),
             Map.entry("dashboard", Set.of("view", "edit", "publish", "consume", "remove", "grant")),

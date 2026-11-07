@@ -37,6 +37,9 @@ public class QueryModel implements Serializable
 
     /** 数据集 ID */
     private Long datasetId;
+    private java.util.Map<String,List<String>> sqlParameters;
+    public java.util.Map<String,List<String>> getSqlParameters(){return sqlParameters;}
+    public void setSqlParameters(java.util.Map<String,List<String>> value){sqlParameters=value;}
 
     /** 图表类型 */
     private String chartType;

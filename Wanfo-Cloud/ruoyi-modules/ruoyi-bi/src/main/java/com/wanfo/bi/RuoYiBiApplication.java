@@ -26,6 +26,10 @@ public class RuoYiBiApplication
 {
     public static void main(String[] args)
     {
+        // Configure before Calcite's charset/collation constants are initialized.
+        System.setProperty("calcite.default.charset", "UTF-8");
+        System.setProperty("calcite.default.nationalcharset", "UTF-8");
+        System.setProperty("calcite.default.collation.name", "UTF-8$en_US");
         SpringApplication.run(RuoYiBiApplication.class, args);
         System.out.println("==================================================");
         System.out.println("  BI 报表平台模块启动成功 (RuoYi-Cloud-BI)");

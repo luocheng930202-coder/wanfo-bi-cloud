@@ -115,6 +115,41 @@ public class DatasetController
         return service.createTableDataset(form, parseFieldSelections(body.get("fields")), actors.currentActor().username());
     }
 
+    public record WorkspaceCreateRequest(Map<String, Object> dataset, DatasetJoinModel model,Map<String,List<String>> parameterValues) { public WorkspaceCreateRequest(Map<String,Object> dataset,DatasetJoinModel model){this(dataset,model,Map.of());} }
+
+    @Operation(summary = "原子创建画布数据集及关联定义")
+    @PostMapping({"/table-workspace","/table-workspace/v2","/table-workspace/v3"})
+    @BiPermission("bi:dataset:add")
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> createWorkspaceDataset(@RequestBody WorkspaceCreateRequest request) throws Exception
+    {
+        if (request.dataset() == null) throw new IllegalArgumentException("数据集定义不能为空");
+        Map<String,Object> result;
+        if(request.model()!=null && request.model().getSourceSql()!=null){
+            Map<String,Object> body=request.dataset();BiDatasetTableDO form=new BiDatasetTableDO();form.setName((String)body.get("name"));form.setGroupId(toLong(body.get("groupId")));form.setDatasourceId(toLong(body.get("datasourceId")));form.setSourceCatalog((String)body.get("sourceCatalog"));form.setRemark((String)body.get("remark"));
+            result=service.createSqlNodeDataset(form,parseFieldSelections(body.get("fields")),request.model().getSourceSql(),request.model(),request.parameterValues(),actors.currentActor().username());
+        } else result = createTableDataset(request.dataset());
+        if (request.model() != null && !request.model().normalizedJoins().isEmpty()) {
+            modelService.applyJoin(toLong(result.get("id")), request.model(), actors.currentActor().username());
+        }
+        modelService.addDerivedFields(toLong(result.get("id")),request.model()==null?null:request.model().getDerivedFields(),actors.currentActor().username());
+        return result;
+    }
+
+    @PostMapping({"/table-workspace/preview","/table-workspace/v2/preview"})
+    @BiPermission("bi:resource:admin")
+    public Map<String,Object> previewWorkspace(@RequestBody WorkspaceCreateRequest request) throws Exception {
+        var body=request.dataset();if(body==null)throw new IllegalArgumentException("数据集定义不能为空");
+        return service.previewTableModel(toLong(body.get("datasourceId")),(String)body.get("sourceCatalog"),(String)body.get("sourceTable"),parseFieldSelections(body.get("fields")),request.model());
+    }
+
+    public record SqlNodePreviewRequest(Long datasourceId,String sourceCatalog,String sql,List<String> fields,DatasetJoinModel model,Integer maxRows,Map<String,List<String>> parameterValues){}
+    @PostMapping({"/sql-node/preview","/sql-node/v2/preview","/sql-node/v3/preview"})
+    @BiPermission("bi:resource:admin")
+    public Map<String,Object> previewSqlNode(@RequestBody SqlNodePreviewRequest request) throws Exception {
+        return service.previewSqlNode(request.datasourceId(),request.sql(),request.sourceCatalog(),request.fields(),request.model(),request.maxRows()==null?100:request.maxRows(),request.parameterValues());
+    }
+
     private static List<DatasetService.FieldSelection> parseFieldSelections(Object raw)
     {
         if (raw == null) {
@@ -244,10 +279,11 @@ public class DatasetController
     @PostMapping("/{id}/preview")
     @BiPermission("bi:dataset:query")
     public Map<String, Object> preview(@PathVariable Long id,
-                                       @RequestParam(defaultValue = "100") int maxRows) throws Exception
+                                       @RequestParam(defaultValue = "100") int maxRows,@RequestBody(required=false) DatasetPreviewOptions options) throws Exception
     {
-        return service.preview(id, maxRows);
+        return options==null?service.preview(id,maxRows):service.preview(id,maxRows,options.parameterValues());
     }
+    public record DatasetPreviewOptions(Map<String,List<String>> parameterValues){}
 
     @Operation(summary = "数据集质量检查（样本或全量精确扫描）")
     @GetMapping("/{id}/quality")

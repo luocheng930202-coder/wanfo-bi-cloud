@@ -20,7 +20,7 @@
       </div>
       <DashboardCanvas :scene="view.scene" :panels="visiblePanels" :appearance="view.appearance" readonly>
         <template #default="{ panel }">
-          <DashboardCard :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshPanel(panel.key)" :linkable="view.links?.some(l => l.sourcePanel === panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v => selectLink(panel.key, v)" @drill="p => drillDown(panel.key, p.field, p.value)" @drill-up="(lvl:number) => drillUp(panel.key, lvl)" />
+          <DashboardCard scene-interactive :data-bound="panel.dataBound" :title="panel.title" :component-type="panel.componentType" :content="panel.content" :panel-style="panel.style" :appearance="view.appearance" :payload="payloads[panel.key]" :error="panelErrors[panel.key]" :loading="panelLoading[panel.key]" @refresh="refreshPanel(panel.key)" :linkable="view.links?.some(l => l.sourcePanel === panel.key)" :drill-fields="panel.drillFields" :drill-path="drillPath(panel.key)" @select="v => selectLink(panel.key, v)" @drill="p => drillDown(panel.key, p.field, p.value)" @drill-up="(lvl:number) => drillUp(panel.key, lvl)" />
         </template>
       </DashboardCanvas>
     </el-card>
@@ -37,6 +37,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { runPanelQueue } from '@/utils/biPanelQueue'
 import { getShareDashboardView, shareDashboardPanelData, shareDashboardControlOptions, type ShareDashboardView } from '@/api/bi/share'
+import { queryErrorText } from '@/utils/biQueryError'
 import type { PanelResult, FilterValue, DashboardInput, DrillPathSegment } from '@/api/bi/dashboard'
 import { appendDrillSegment, mergeDashboardInput, truncateDrillPath } from '@/utils/biDrill'
 import DashboardCanvas from './DashboardCanvas.vue'
@@ -134,15 +135,16 @@ async function refreshPanel(key: string, internal = false) {
   if (!internal && panelLoading[key]) return
   const current = view.value
   if (!current) return
-  const type = current.panels.find(p => p.key === key)?.componentType
-  if (type && !['chart', 'kpi'].includes(type)) return
+  const panel = current.panels.find(p => p.key === key)
+  const type = panel?.componentType
+  if (type && !['chart', 'kpi'].includes(type) && !(type === 'scene3d' && panel?.dataBound)) return
   panelLoading[key] = true
   delete panelErrors[key]
   try {
     const r = await shareDashboardPanelData(token.value, key, current.revision, runtimeInput(), password.value || undefined)
     payloads[key] = r.data
-  } catch {
-    panelErrors[key] = '组件加载失败，请检查数据权限或分享范围'
+  } catch (e) {
+    panelErrors[key] = queryErrorText(e)
   } finally { panelLoading[key] = false }
 }
 

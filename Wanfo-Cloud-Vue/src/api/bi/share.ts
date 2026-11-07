@@ -48,6 +48,6 @@ export function shareDashboardControlOptions(token: string, key: string, revisio
 }
 
 export function shareLinkUrl(token: string): string {
-  const base = window.location.origin + window.location.pathname.replace(/\/$/, '')
-  return `${base}#/bi-share/${token}`
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+  return `${window.location.origin}${base}/bi-share/${encodeURIComponent(token)}`
 }

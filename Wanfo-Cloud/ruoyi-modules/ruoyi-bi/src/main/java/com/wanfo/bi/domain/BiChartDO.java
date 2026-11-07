@@ -4,6 +4,7 @@ public class BiChartDO {
     private Long id,datasetId;
     private String name,type,definitionJson,createBy,updateBy;
     private Integer version;
+    private java.util.Date updateTime;
     public Long getId(){return id;} public void setId(Long v){id=v;}
     public Long getDatasetId(){return datasetId;} public void setDatasetId(Long v){datasetId=v;}
     public String getName(){return name;} public void setName(String v){name=v;}
@@ -12,4 +13,5 @@ public class BiChartDO {
     public String getCreateBy(){return createBy;} public void setCreateBy(String v){createBy=v;}
     public String getUpdateBy(){return updateBy;} public void setUpdateBy(String v){updateBy=v;}
     public Integer getVersion(){return version;} public void setVersion(Integer v){version=v;}
+    public java.util.Date getUpdateTime(){return updateTime;} public void setUpdateTime(java.util.Date v){updateTime=v;}
 }

@@ -32,7 +32,16 @@ public class LineageService
     @Transactional(rollbackFor=Exception.class)
     public Map<String,Object> save(Map<String,Object> input)
     {
-        requireAdmin();Long source=number(input.get("sourceAssetId")),target=number(input.get("targetAssetId"));
+        requireAdmin();return persist(input);
+    }
+
+    /** Derived edges written by the collector. Callers must already be inside a trusted rebuild. */
+    @Transactional(rollbackFor=Exception.class)
+    Map<String,Object> persistGenerated(Map<String,Object> input){return persist(input);}
+
+    private Map<String,Object> persist(Map<String,Object> input)
+    {
+        Long source=number(input.get("sourceAssetId")),target=number(input.get("targetAssetId"));
         String level=upper(input.get("lineageLevel")),kind=upper(input.get("edgeKind")),method=upper(input.get("sourceMethod"));
         BigDecimal confidence=decimal(input.get("confidence"));
         validate(source,target,level,kind,method,confidence);
@@ -61,7 +70,15 @@ public class LineageService
     @Transactional(rollbackFor=Exception.class)
     public Map<String,Object> invalidate(Long id,String status)
     {
-        requireAdmin();if(!Set.of("STALE","REVOKED").contains(status))throw new IllegalArgumentException("失效状态无效");
+        requireAdmin();return mark(id,status);
+    }
+
+    @Transactional(rollbackFor=Exception.class)
+    void markGenerated(Long id,String status){mark(id,status);}
+
+    private Map<String,Object> mark(Long id,String status)
+    {
+        if(!Set.of("STALE","REVOKED").contains(status))throw new IllegalArgumentException("失效状态无效");
         Map<String,Object> current=requireEdge(id);if("REVOKED".equals(current.get("status")))throw new IllegalArgumentException("关系已撤销");
         String actor=actors.currentActor().username();if(mapper.updateStatus(id,status,actor)!=1)throw new IllegalStateException("血缘关系状态未更新");
         writeRevision(id,"STALE".equals(status)?"INVALIDATED":"REVOKED",actor);return mapper.edge(id);
@@ -91,8 +108,16 @@ public class LineageService
         if(source==null||target==null||source.equals(target)||!LEVELS.contains(level)||!KINDS.contains(kind)||!METHODS.contains(method)||confidence==null||confidence.compareTo(BigDecimal.ZERO)<0||confidence.compareTo(BigDecimal.ONE)>0)
             throw new IllegalArgumentException("请提供不同的有效资产、关系层级/类型、来源方式和 0～1 置信度");
         Map<String,Object> s=requireAsset(source),t=requireAsset(target);
-        boolean sc=COLUMN_TYPES.contains(String.valueOf(s.get("assetType"))),tc=COLUMN_TYPES.contains(String.valueOf(t.get("assetType")));
-        if("COLUMN".equals(level)?(!sc||!tc):(sc||tc))throw new IllegalArgumentException("血缘层级必须与两端资产类型一致");
+        if(!endpointsCompatible(level,kind,String.valueOf(s.get("assetType")),String.valueOf(t.get("assetType"))))
+            throw new IllegalArgumentException("血缘层级必须与两端资产类型一致");
+    }
+    static boolean endpointsCompatible(String level,String kind,String sourceType,String targetType){
+        boolean sourceColumn=COLUMN_TYPES.contains(sourceType),targetColumn=COLUMN_TYPES.contains(targetType);
+        if("CONTAINS".equals(kind)&&"TABLE".equals(level)&&(
+                ("TABLE".equals(sourceType)&&"COLUMN".equals(targetType))
+                ||("DATASET".equals(sourceType)&&"DATASET_FIELD".equals(targetType))))return true;
+        if("COLUMN".equals(level)&&"REFERENCES".equals(kind)&&sourceColumn&&"METRIC".equals(targetType))return true;
+        return "COLUMN".equals(level)?sourceColumn&&targetColumn:!sourceColumn&&!targetColumn;
     }
     private Map<String,Object> requireAsset(Long id){Map<String,Object> row=mapper.asset(id);if(row==null||!"ACTIVE".equals(row.get("status")))throw new BiAccessException(404,"血缘资产不存在或已失效");return row;}
     private Map<String,Object> requireEdge(Long id){Map<String,Object> edge=mapper.edge(id);if(edge==null)throw new BiAccessException(404,"血缘关系不存在");return edge;}

@@ -22,10 +22,11 @@ public class BiSecurityInterceptor implements HandlerInterceptor
         if (handler instanceof HandlerMethod method)
         {
             if (method.getMethodAnnotation(BiApiKeyAccess.class) != null) return true;
-            // All BI endpoints require a verified session, even those awaiting resource authorization.
-            if (method.getMethodAnnotation(BiShareAccess.class) != null)
+            // Publisher-scope links and the boundary files they draw may arrive without a session.
+            // Viewer scope is rejected in the share service. Other endpoints still require a verified session.
+            if (method.getMethodAnnotation(BiShareAccess.class) != null
+                    || com.wanfo.common.core.utils.ShareAnonymousPaths.allows(request.getRequestURI()))
             {
-                actors.currentActor();
                 return true;
             }
             BiPermission permission = method.getMethodAnnotation(BiPermission.class);

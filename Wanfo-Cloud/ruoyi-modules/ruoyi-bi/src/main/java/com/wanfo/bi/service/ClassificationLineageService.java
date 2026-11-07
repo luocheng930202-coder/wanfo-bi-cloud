@@ -32,6 +32,11 @@ public class ClassificationLineageService {
     @Transactional
     public Map<String, Object> recomputeInheritance() {
         capabilities.require("bi:resource:admin");
+        return recomputeGenerated();
+    }
+
+    @Transactional
+    Map<String, Object> recomputeGenerated() {
         String actor = actors.currentActor().username();
         List<Map<String, Object>> edges = mapper.activeColumnEdges();
         int updated = 0;

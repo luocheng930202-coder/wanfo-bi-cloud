@@ -39,6 +39,7 @@
             <el-option label="图表" value="CHART" />
             <el-option label="看板 / 大屏" value="DASHBOARD" />
             <el-option label="指标" value="METRIC" />
+            <el-option label="Data API" value="DATA_API" />
           </template>
         </el-select>
         <el-input v-model="filters.query" clearable placeholder="搜索资产名称或完整名称" class="asset-search" @keyup.enter="search" @clear="search">
@@ -58,6 +59,7 @@
           </template>
         </el-table-column>
         <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag effect="plain" size="small">{{ typeLabel(row.assetType) }}</el-tag></template></el-table-column>
+        <el-table-column label="来源注释" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.description || '—' }}</template></el-table-column>
         <el-table-column label="来源" width="180"><template #default="{ row }">{{ row.sourceKind === 'BI_RESOURCE' ? biSourceLabel(row.assetType) : sourceName(row.sourceId) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">{{ row.status === 'ACTIVE' ? '正常' : '已变化' }}</el-tag></template></el-table-column>
         <el-table-column label="最近发现" width="175"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column>
@@ -82,7 +84,7 @@
           <el-descriptions-item label="类型">{{ typeLabel(detailAsset.assetType) }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ detailAsset.sourceKind === 'BI_RESOURCE' ? biSourceLabel(detailAsset.assetType) : sourceName(detailAsset.sourceId) }}</el-descriptions-item>
           <el-descriptions-item label="完整名称">{{ detailAsset.qualifiedName || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="说明">{{ detailAsset.description || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="来源注释">{{ detailAsset.description || '—' }}<small class="comment-note">源库备注，不是已认证口径。重新扫描后更新。</small></el-descriptions-item>
           <el-descriptions-item label="状态">{{ detailAsset.status === 'ACTIVE' ? '正常' : '已变化' }}</el-descriptions-item>
           <el-descriptions-item label="最近发现">{{ formatTime(detailAsset.lastSeenAt) }}</el-descriptions-item>
           <el-descriptions-item label="URN"><code class="urn-value">{{ detailAsset.urn }}</code></el-descriptions-item>
@@ -97,10 +99,17 @@
         <section class="metadata-section">
           <div class="section-title"><h3>当前元数据</h3><span v-if="detailVersions[0]">版本 v{{ detailVersions[0].versionNo }}</span></div>
           <el-empty v-if="!detailVersions.length" description="尚无已保存的元数据版本" :image-size="72" />
+          <template v-else>
+          <el-table v-if="columnRows(detailVersions[0].metadata).length" :data="columnRows(detailVersions[0].metadata)" size="small" max-height="420">
+            <el-table-column prop="name" label="字段" min-width="140" />
+            <el-table-column prop="type" label="类型" width="140" />
+            <el-table-column prop="comment" label="来源注释" min-width="180" show-overflow-tooltip />
+          </el-table>
           <el-table v-else :data="metadataRows(detailVersions[0].metadata)" size="small" max-height="420">
             <el-table-column prop="key" label="属性" width="180" />
             <el-table-column prop="value" label="值" min-width="220" show-overflow-tooltip />
           </el-table>
+          </template>
         </section>
       </template>
     </el-drawer>
@@ -211,7 +220,7 @@
       <div v-if="lineageGraph?.edges.length" class="lineage-list">
         <div v-for="edge in lineageGraph.edges" :key="edge.id" class="lineage-edge-row">
           <div class="lineage-node"><strong>{{ lineageNodeName(edge.sourceAssetId) }}</strong><small>{{ typeLabel(lineageNodes.get(edge.sourceAssetId)?.assetType || '') }}</small></div>
-          <div class="lineage-relation"><span>{{ lineageKindLabel(edge.edgeKind) }}</span><el-icon><Right /></el-icon><small>{{ edge.sourceMethod }} · 置信度 {{ Math.round(Number(edge.confidence) * 100) }}%</small></div>
+          <div class="lineage-relation"><span>{{ lineageKindLabel(edge.edgeKind) }}</span><el-icon><Right /></el-icon><small>{{ edge.sourceMethod }} · 置信度 {{ Math.round(Number(edge.confidence) * 100) }}%</small><small v-if="edge.relationNote">{{ edge.relationNote }}</small></div>
           <div class="lineage-node"><strong>{{ lineageNodeName(edge.targetAssetId) }}</strong><small>{{ typeLabel(lineageNodes.get(edge.targetAssetId)?.assetType || '') }}</small></div>
           <el-tag size="small" :type="edge.effectiveStatus === 'ACTIVE' ? 'success' : 'warning'">{{ edge.effectiveStatus === 'ACTIVE' ? '有效' : '已失效' }}</el-tag>
         </div>
@@ -504,7 +513,7 @@ async function previewBackfill() {
   backfillLoading.value = true
   try {
     const preview = unwrap<import('@/api/bi/catalog').CatalogBackfillPreview>(await previewCatalogBackfill())
-    const breakdown = [`数据源 ${preview.DATASOURCE}`, `API 快照 ${preview.API_SOURCE}`, `数据集 ${preview.DATASET}`, `字段 ${preview.DATASET_FIELD}`, `图表 ${preview.CHART}`, `看板/大屏 ${preview.DASHBOARD}`, `指标 ${preview.METRIC}`].join('，')
+    const breakdown = [`数据源 ${preview.DATASOURCE}`, `API 快照 ${preview.API_SOURCE}`, `数据集 ${preview.DATASET}`, `字段 ${preview.DATASET_FIELD}`, `图表 ${preview.CHART}`, `看板/大屏 ${preview.DASHBOARD}`, `指标 ${preview.METRIC}`, `Data API ${preview.DATA_API}`].join('，')
     await ElMessageBox.confirm(`预计处理 ${preview.total} 项（${breakdown}）。仅回填资源名称、类型和引用 ID，不复制 SQL、图表定义或凭据。继续执行幂等回填？`, 'BI 资源目录回填', { type: 'info', confirmButtonText: '执行回填' })
     const result = unwrap<{ assetsProcessed: number; versionsCreated: number }>(await runCatalogBackfill())
     ElMessage.success(`回填完成：处理 ${result.assetsProcessed} 项，新增 ${result.versionsCreated} 个版本`)
@@ -710,13 +719,18 @@ function search() { page.value = 1; void loadAssets() }
 function switchSourceKind() { filters.datasourceId = undefined; filters.type = undefined; page.value = 1; void loadAssets() }
 function resetFilters() { filters.datasourceId = undefined; filters.type = undefined; filters.query = ''; search() }
 function sourceName(id: number) { return sourceNames.value.get(id) || `数据源 #${id}` }
-function biSourceLabel(type: string) { return ({ DATASOURCE: 'BI 数据源', API_SOURCE: 'API 数据源快照', DATASET: 'BI 数据集', DATASET_FIELD: 'BI 数据集字段', CHART: 'BI 图表', DASHBOARD: 'BI 看板 / 大屏', METRIC: 'BI 指标' } as Record<string, string>)[type] || 'BI 资源' }
+function biSourceLabel(type: string) { return ({ DATASOURCE: 'BI 数据源', API_SOURCE: 'API 数据源快照', DATASET: 'BI 数据集', DATASET_FIELD: 'BI 数据集字段', CHART: 'BI 图表', DASHBOARD: 'BI 看板 / 大屏', METRIC: 'BI 指标', DATA_API: 'Data API' } as Record<string, string>)[type] || 'BI 资源' }
 function openSource(id: number) { void router.push({ path: '/bi-admin/datasource', query: { datasourceId: String(id) } }) }
-function typeLabel(type: string) { return ({ SCHEMA: 'Schema', TABLE: '数据表', COLUMN: '字段', DATASOURCE: '数据源', API_SOURCE: 'API 快照', DATASET: '数据集', DATASET_FIELD: '数据集字段', CHART: '图表', DASHBOARD: '看板 / 大屏', METRIC: '指标' } as Record<string, string>)[type] || type }
+function typeLabel(type: string) { return ({ SCHEMA: 'Schema', TABLE: '数据表', COLUMN: '字段', DATASOURCE: '数据源', API_SOURCE: 'API 快照', DATASET: '数据集', DATASET_FIELD: '数据集字段', CHART: '图表', DASHBOARD: '看板 / 大屏', METRIC: '指标', DATA_API: 'Data API' } as Record<string, string>)[type] || type }
 function assetIcon(type: string) { return type === 'SCHEMA' ? Coin : type === 'TABLE' ? Grid : Tickets }
 function formatTime(value?: string) { if (!value) return '—'; const date = new Date(value.replace(' ', 'T')); return Number.isNaN(date.getTime()) ? value : date.toLocaleString() }
 function metadataRows(metadata?: Record<string, unknown>) {
-  return Object.entries(metadata || {}).map(([key, value]) => ({ key, value: value === null || value === undefined ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value) }))
+  return Object.entries(metadata || {}).filter(([key]) => key !== 'columns').map(([key, value]) => ({ key, value: value === null || value === undefined ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value) }))
+}
+function columnRows(metadata?: Record<string, unknown>) {
+  const columns = metadata?.columns
+  if (!Array.isArray(columns)) return []
+  return columns.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object').map(item => ({ name: String(item.name ?? ''), type: String(item.type ?? ''), comment: item.comment == null || item.comment === '' ? '—' : String(item.comment) }))
 }
 function changeTypeLabel(type?: string) { return type === 'CREATED' ? '首次发现' : type === 'METADATA_CHANGED' ? '结构变更' : type || '元数据快照' }
 function lineageNodeName(id: number) { return lineageNodes.value.get(id)?.name || `资产 #${id}` }
@@ -731,6 +745,7 @@ function schemaChangeLabels(event: SchemaChangeEvent) {
     if (field && typeof field === 'object') { const value = field as Record<string, unknown>; labels.push(`类型 ${String(value.field)}：${String(value.beforeType)} → ${String(value.afterType)}`) }
   }
   for (const field of Array.isArray(fields.changed) ? fields.changed : []) labels.push(`属性变化 ${String(field)}`)
+  for (const field of Array.isArray(fields.commentChanges) ? fields.commentChanges : []) labels.push(`注释 ${String(field)}`)
   return labels.length ? labels.slice(0, 8) : ['表结构变化']
 }
 function fieldImpactLabel(status: string) { return ({ SOURCE_FIELD_ADDED: '源端新增', SOURCE_FIELD_REMOVED: '源端已删除', SOURCE_TYPE_CHANGED: '类型已变化', SOURCE_FIELD_METADATA_CHANGED: '字段属性已变化', NOT_IN_DATASET_MODEL: '尚未加入数据集' } as Record<string, string>)[status] || status }
@@ -842,7 +857,7 @@ async function loadLineage() {
 
 async function rebuildLineage() {
   try {
-    await ElMessageBox.confirm('将依据目录层级和已登记的 BI 资源引用重建表级血缘；不读取或修改业务表数据。继续吗？', '重建数据血缘', { type: 'info', confirmButtonText: '开始重建' })
+    await ElMessageBox.confirm('将依据目录层级、已登记引用、能确定的源表，以及管道、对象入仓和 CDC 的成功写入重建血缘。解析不全的 SQL 会标成不完整，不补猜高置信边。继续吗？', '重建数据血缘', { type: 'info', confirmButtonText: '开始重建' })
     lineageRebuildLoading.value = true
     const result = unwrap<Record<string, unknown>>(await rebuildCatalogLineage())
     ElMessage.success(`血缘重建完成：扫描 ${Number(result.assetsScanned || 0)} 项资产，当前关系 ${Number(result.activeEdgesObserved || 0)} 条`)
@@ -1035,7 +1050,7 @@ onUnmounted(() => { stopPolling(); stopWarehousePolling() })
 .catalog-table{border:1px solid var(--bi-border,#e6ebf3);border-radius:var(--bi-radius-lg,10px);--el-table-header-bg-color:var(--bi-surface,#fff);--el-table-bg-color:var(--bi-surface,#fff);--el-table-tr-bg-color:var(--bi-surface,#fff);--el-table-border-color:var(--bi-border,#e6ebf3)}.catalog-table :deep(th.el-table__cell){height:50px;color:var(--bi-muted,#667085);font-weight:600}.catalog-table :deep(td.el-table__cell){height:68px}
 .asset-name{display:flex;align-items:center;gap:12px;min-width:0}.asset-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:9px;background:#eef3ff;color:#3563e9;font-size:18px;flex:none}.asset-icon.SCHEMA{background:#f1edff;color:#6941c6}.asset-icon.COLUMN{background:#e9f8f4;color:#14866d}.asset-name-text{display:grid;gap:3px;min-width:0}.asset-name-text strong,.asset-name-text small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.asset-name-text strong{font-weight:600}.asset-name-text small{font-size:12px;color:var(--bi-muted,#667085)}
 .catalog-pagination{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 2px;color:var(--bi-muted,#667085);font-size:13px}.detail-actions{display:flex;justify-content:flex-end;margin-top:16px}.metadata-section{margin-top:26px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.section-title h3{margin:0;font-size:16px;font-weight:650}.section-title span,.muted{color:var(--bi-muted,#667085);font-size:12px}.urn-value{word-break:break-all;white-space:normal;font-size:12px;color:#526174}
-.lineage-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}.lineage-depth{width:110px}.lineage-limit-note{margin-bottom:14px}.lineage-list{display:grid;gap:10px;max-height:58vh;overflow:auto}.lineage-edge-row{display:grid;grid-template-columns:minmax(0,1fr) 190px minmax(0,1fr) 78px;align-items:center;gap:14px;padding:14px;border:1px solid var(--bi-border,#e6ebf3);border-radius:10px;background:var(--bi-surface,#fff)}.lineage-node{display:grid;gap:5px;min-width:0}.lineage-node strong,.lineage-node small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lineage-node strong{font-size:13px}.lineage-node small,.lineage-relation small{font-size:11px;color:var(--bi-muted,#667085)}.lineage-relation{display:grid;grid-template-columns:auto 18px;align-items:center;gap:5px 8px;color:#3563e9;font-size:12px;font-weight:600}.lineage-relation small{grid-column:1/-1;font-weight:400}.lineage-footer{margin-right:auto;color:var(--bi-muted,#667085);font-size:12px}
+.comment-note{display:block;margin-top:4px;color:var(--bi-muted,#667085);font-size:12px}.lineage-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}.lineage-depth{width:110px}.lineage-limit-note{margin-bottom:14px}.lineage-list{display:grid;gap:10px;max-height:58vh;overflow:auto}.lineage-edge-row{display:grid;grid-template-columns:minmax(0,1fr) 190px minmax(0,1fr) 78px;align-items:center;gap:14px;padding:14px;border:1px solid var(--bi-border,#e6ebf3);border-radius:10px;background:var(--bi-surface,#fff)}.lineage-node{display:grid;gap:5px;min-width:0}.lineage-node strong,.lineage-node small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lineage-node strong{font-size:13px}.lineage-node small,.lineage-relation small{font-size:11px;color:var(--bi-muted,#667085)}.lineage-relation{display:grid;grid-template-columns:auto 18px;align-items:center;gap:5px 8px;color:#3563e9;font-size:12px;font-weight:600}.lineage-relation small{grid-column:1/-1;font-weight:400}.lineage-footer{margin-right:auto;color:var(--bi-muted,#667085);font-size:12px}
 .audit-pagination{display:flex;align-items:center;justify-content:space-between;padding-top:16px;color:var(--bi-muted,#667085);font-size:13px}
 .audit-filter-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px}.audit-filter-input{width:160px}.audit-filter-date{width:205px}.audit-retention{margin-bottom:14px}.audit-retention-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.audit-retention-controls .el-input-number{width:150px}.audit-retention-meta{color:var(--bi-muted,#667085);font-size:12px}
 .version-timeline{padding:8px 8px 0}.version-card{border-color:var(--bi-border,#e6ebf3)}.version-card :deep(.el-card__body){padding:14px 16px}.version-heading{display:flex;align-items:center;gap:10px}.change-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.version-hash{margin-top:12px;font:11px/1.6 ui-monospace,monospace;color:var(--bi-muted,#667085);word-break:break-all}

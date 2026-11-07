@@ -20,6 +20,7 @@ import com.wanfo.bi.mapper.BiDatasetTableMapper;
 import com.wanfo.bi.query.CalcFormulaCompiler;
 import com.wanfo.bi.security.BiResourceAuthorizer;
 import com.wanfo.bi.security.CapabilityProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,8 @@ public class DatasetModelService
     private final BiResourceAuthorizer resources;
     private final CapabilityProvider capabilities;
     private final ObjectMapper objectMapper;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
 
     public DatasetModelService(BiDatasetTableMapper datasetMapper,
                                BiDatasetFieldMapper fieldMapper,
@@ -155,6 +158,7 @@ public class DatasetModelService
         result.put("unionSql", sql);
         result.put("rightFieldCount", added.size());
         result.put("joinCount", joins.size());
+        if (lineageRebuild != null) lineageRebuild.afterChange();
         return result;
     }
 

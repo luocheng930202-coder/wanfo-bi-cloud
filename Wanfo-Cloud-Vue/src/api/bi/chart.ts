@@ -157,7 +157,7 @@ export interface ChartDefinition {
   style?: ChartVisualStyle
   advanced?: ChartAdvancedOptions
 }
-export interface ChartSummary { id: number; name: string; type: ChartDefinition['type']; datasetId: number; version: number; resourceActions: string[] }
+export interface ChartSummary { id: number; name: string; type: ChartDefinition['type']; datasetId: number; version: number; updateTime?: string; coverUrl?: string; resourceActions: string[] }
 export interface MapContext {fieldLabel?:string;scope:string;rootScope:string;rootName:string;field:string;canDrillDown:boolean;drillableRegions:string[];breadcrumbs:{name:string;code:string}[]}
 export interface PivotTotals {status:'complete'|'unavailable';scope:'filtered';rowFields:string[];colFields:string[];metricKeys:string[];detailTruncated:boolean;reason?:string;cells:{rowDepth:number;colDepth:number;dimensions:Record<string,unknown>;values:Record<string,unknown>}[]}
 export interface ComparisonField {key:string;baseline:string;difference:string;rate:string}

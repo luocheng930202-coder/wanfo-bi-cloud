@@ -332,7 +332,7 @@ flowchart LR
 
 - 扫描表/列有上限（服务内常量）  
 - 跨引擎完备依赖仍 backlog  
-- 表/字段来源注释尚未采集，目录也不按字段展示；仅注释变更不得并入结构阻断。见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.1  
+- 表/字段来源注释来自 MySQL 协议连接的 `REMARKS`，目录列表和表详情按字段展示。只改注释记为说明变更，不升为结构阻断，即使下游仍有使用中的 Data API。注释不是已认证口径。已有资产需重新扫描后才有注释。  
 
 ### 4.8 延伸阅读
 
@@ -669,7 +669,7 @@ flowchart TB
 ### 9.7 已知边界
 
 - 自动建变更单、独立 override 审批流 backlog  
-- 血缘采集仍缺物理字段边、多表/SQL 源表、管道/对象入仓/CDC、Data API 边，以及扫描或发布后的自动重建。见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.2  
+- 血缘采集覆盖物理字段、能唯一确定的关联/SQL 源表、管道生产、对象入仓和 CDC 写入，以及指标到 Data API。解析不全标成不完整，不写高置信边。指标字段边仍表示该数据集的全部字段。跨引擎任意 SQL 的列级血缘不做。扫描成功、数据集保存、管道发布、生产写入和 Data API 发布后自动重建，手工「重建血缘」保留。见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.2  
 
 ### 9.8 延伸阅读
 
@@ -935,7 +935,7 @@ Service：`BackupDrillService`；API：`/bi/ops/backup-drills`；前端：`/bi-a
 
 - **是**：分析消费与投递  
 - **不是**：本文展开全部图表视觉/模板市场设计（见专题）  
-- 图表/看板/大屏列表封面仍按卡片现场取数。待优化见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.4：布局缩略图存元库，不进素材库，不为此引入对象存储。  
+- 图表/看板/大屏列表只返回摘要。封面是保存或发布时对当前画面的截图（PNG/JPEG/WebP，≤512KB），存在 `bi_resource_cover`，按资源类型、ID 和版本覆盖；读取走原资源查看权限。截图里是保存者当时看到的图形，打开资源后仍按访问者权限重新取数。没有封面时用类型图标。不进素材库，不为此使用对象存储。  
 
 ### 15.2 主路径与衔接
 
@@ -979,7 +979,7 @@ flowchart LR
 |---|---|---|
 | 图表 | `/bi/chart` | `/bi-admin/chart`、`chart-workspace` |
 | 看板 | `/bi/dashboard` | `/bi-admin/dashboard*` |
-| 分享大屏/看板 | `/bi/share/{token}` | `/bi-share/{token}`。链接是 history 路径；旧的 `#/bi-share/` 会转到该路径。打开后仍须登录。取数沿用分享身份；`*:*:*` 在该执行范围内同样放行资源权限。创建者范围免登录见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.5，尚未实现 |
+| 分享大屏/看板 | `/bi/share/{token}` | `/bi-share/{token}`。链接是 history 路径；旧的 `#/bi-share/` 会转到该路径。创建者数据权限可以不登录打开，取数用创建时保存的创建者身份；网关只放行查看、组件取数、筛选候选值和行政区边界 `/bi/geo/{scope}`。访问者数据权限仍须登录。边界数据不含业务数。密码试错按链接计数。`*:*:*` 在分享执行范围内同样放行资源权限 |
 | 订阅 | `/bi/subscription` | `/bi-admin/subscription` |
 | 导出 | `/bi/export` | `/bi-admin/export` |
 
@@ -1075,6 +1075,10 @@ flowchart LR
 | 2026-11-07 | 分享链接改为 `/bi-share/{token}`；地址栏中的 `#/bi-share/` 会转到该页，不再停在看板列表 |
 | 2026-11-07 | 分享取数：执行身份内的 `*:*:*` 同样放行资源权限；大屏分享补查已绑定的 3D 场景数据 |
 | 2026-11-07 | 未来优化登记（未实现）：创建者数据权限的分享链接免登录。见路线图 §10.5 |
+| 2026-11-07 | 资产来源注释随 MySQL 协议扫描写入说明；仅注释变更不阻断。列表封面改存布局图。创建者范围分享可免登录 |
+| 2026-11-07 | 列表封面改为保存时截取当前画面（JPEG，≤512KB），不再使用色块示意图 |
+| 2026-11-07 | 创建者分享免登录时可读取行政区边界；分享页不再把该请求的 401 当成登录过期 |
+| 2026-11-07 | 血缘采集补齐：物理字段、能确定的源表、管道/对象入仓/CDC 写入和指标到 Data API；解析不全标不完整。扫描或发布后自动重建 |
 
 ---
 

@@ -174,10 +174,13 @@ public class SchemaChangeImpactService
         boolean hasLiveApi = list(consumers.get("dataApis")).stream()
                 .anyMatch(v -> v instanceof Map<?, ?> m && Set.of("ACTIVE", "DEPRECATED")
                         .contains(String.valueOf(m.get("status")).toUpperCase(java.util.Locale.ROOT)));
-        String severity = hasBlockingDiff(fieldDiff) || hasLiveApi ? "BLOCKING"
-                : (!joinSqlDatasets.isEmpty() || !list(consumers.get("metrics")).isEmpty() ? "REVIEW" : "COMPATIBLE");
+        boolean commentOnly = Boolean.TRUE.equals(fieldDiff.get("commentOnly"));
+        boolean structural = hasBlockingDiff(fieldDiff);
+        String severity = AssetMetadataDiff.impactSeverity(structural, commentOnly, hasLiveApi,
+                !joinSqlDatasets.isEmpty(), !list(consumers.get("metrics")).isEmpty());
         result.put("severity", severity);
-        result.put("reviewRequired", hasBlockingDiff(fieldDiff) || !joinSqlDatasets.isEmpty() || hasLiveApi);
+        result.put("commentOnly", commentOnly);
+        result.put("reviewRequired", "BLOCKING".equals(severity) || "REVIEW".equals(severity));
         result.put("truncated", graph.get("truncated"));
         result.put("counts", Map.of("assets", downstream.size(), "datasetFields", datasetFields.size(),
                 "qualityRules", qualityRules.size(), "qualityTasks", qualityTasks.size(), "pipelines", pipelines.size(),

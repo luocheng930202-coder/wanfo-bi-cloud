@@ -46,8 +46,8 @@ public class AuthFilter implements GlobalFilter, Ordered
         ServerHttpRequest.Builder mutate = request.mutate();
 
         String url = request.getURI().getPath();
-        // 跳过不需要验证的路径
-        if (StringUtils.matches(url, ignoreWhite.getWhites()))
+        // 跳过不需要验证的路径。创建者范围的分享读接口在此放行，访问者范围仍由 BI 要求登录。
+        if (StringUtils.matches(url, ignoreWhite.getWhites()) || com.wanfo.common.core.utils.ShareAnonymousPaths.allows(url))
         {
             return chain.filter(exchange);
         }

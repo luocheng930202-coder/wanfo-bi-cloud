@@ -164,20 +164,23 @@ public class DashboardShareService
         {
             throw new BiAccessException(403, "分享链接已过期");
         }
-        try{live.resolve(actors.currentActor());}catch(BiAccessException ex){audit(row,"ACCESS_DENIED");throw ex;}
+        if (!"publisher".equals(row.getDataScope()))
+        {
+            try { live.resolve(actors.currentActor()); }
+            catch (BiAccessException ex) { audit(row, "ACCESS_DENIED"); throw new BiAccessException(401, "请先登录后再打开访问者数据权限的分享"); }
+        }
         if (row.getPasswordHash() != null && !row.getPasswordHash().isBlank())
         {
             if(password==null||password.isBlank())throw new BiAccessException(401,"需要访问密码");
-            Long viewer=actors.currentActor().userId();
-            if(shareMapper.passwordAttempts(row.getId(),viewer)>=5){audit(row,"THROTTLED");throw new BiAccessException(429,"密码尝试过多，请10分钟后重试");}
+            if(shareMapper.passwordAttempts(row.getId())>=5){audit(row,"THROTTLED");throw new BiAccessException(429,"密码尝试过多，请10分钟后重试");}
             if (!matchesPassword(password,row.getPasswordHash()))
             {
-                shareMapper.passwordAttempt(row.getId(),viewer);
+                shareMapper.passwordAttempt(row.getId());
                 audit(row,"PASSWORD_REJECTED");
                 throw new BiAccessException(401, "需要访问密码");
             }
             if(!row.getPasswordHash().startsWith(HASH_PREFIX))shareMapper.upgradePassword(row.getId(),row.getPasswordHash(),hashPassword(password));
-            shareMapper.clearPasswordAttempts(row.getId(),viewer);
+            shareMapper.clearPasswordAttempts(row.getId());
         }
         return row;
     }
@@ -215,7 +218,8 @@ public class DashboardShareService
         if(stored.startsWith(HASH_PREFIX))return PASSWORDS.matches(digest,stored.substring(HASH_PREFIX.length()));
         return stored.matches("[0-9a-f]{64}")&&MessageDigest.isEqual(stored.getBytes(StandardCharsets.US_ASCII),digest.getBytes(StandardCharsets.US_ASCII));
     }
-    private void audit(BiDashboardShareDO share,String event){shareMapper.auditAccess(share.getId(),actors.currentActor().userId(),event);}
+    private void audit(BiDashboardShareDO share,String event){shareMapper.auditAccess(share.getId(),viewerId(),event);}
+    private Long viewerId(){try{return actors.currentActor().userId();}catch(RuntimeException ex){return null;}}
 
     private <T> T withDataScope(BiDashboardShareDO share, ThrowingSupplier<T> task) throws Exception
     {
@@ -225,11 +229,11 @@ public class DashboardShareService
     private <T> T withDataScopeCurrent(BiDashboardShareDO share, ThrowingSupplier<T> task) throws Exception
     {
         boolean publisher="publisher".equals(share.getDataScope());
-        BiActor reference=actors.currentActor();
+        BiActor reference;
         if(publisher){
             if(share.getPublisherActorJson()==null||share.getPublisherActorJson().isBlank())throw new BiAccessException(403,"分享配置缺少创建者身份");
             reference=json.readValue(share.getPublisherActorJson(),BiActor.class);
-        }
+        } else reference=actors.currentActor();
         var identity=live.resolve(reference);
         identity.require("bi:dashboard:consume");
         if(publisher)identity.require("bi:dashboard:publish");

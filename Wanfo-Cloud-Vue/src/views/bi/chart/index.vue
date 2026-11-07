@@ -17,7 +17,7 @@
     <section v-loading="listLoading" class="library-content" aria-label="图表列表" :aria-busy="listLoading">
       <div v-if="displayMode==='grid' && pageCharts.length" class="board-grid">
         <article v-for="row in pageCharts" :key="row.id" class="board-card">
-          <div class="chart-cover"><BiResourceThumbnail kind="chart" :id="row.id" :name="row.name" :version="row.version" :actions="row.resourceActions" :refresh-key="thumbnailRefresh"/><div class="chart-cover-action"><el-button :icon="View" tag="a" :href="workspaceHref(row.id)" @click.prevent="openWindow(row.id)">打开图表</el-button></div></div>
+          <div class="chart-cover"><BiResourceThumbnail kind="chart" :id="row.id" :name="row.name" :version="row.version" :cover-url="row.coverUrl" :actions="row.resourceActions" :refresh-key="thumbnailRefresh"/><div class="chart-cover-action"><el-button :icon="View" tag="a" :href="workspaceHref(row.id)" @click.prevent="openWindow(row.id)">打开图表</el-button></div></div>
           <div class="board-card-details"><div class="board-card-heading"><h2 :title="row.name">{{ row.name }}</h2><ChartActions :chart="row" :disabled="busy" @action="command=>handleChartAction(command,row)"/></div><span class="chart-type">{{ chartTypeLabel(row.type) }}</span><p class="board-card-meta">版本 v{{ row.version }}<span class="meta-divider">·</span>{{ datasetName(row.datasetId) }}</p></div>
         </article>
       </div>
@@ -78,6 +78,8 @@ import { BI_SAVED_EVENT } from '@/utils/biThumbnail'
 import { chartWorkspacePath,readLibraryPosition,saveLibraryPosition } from '@/utils/biWorkspaceNavigation'
 import useUserStore from '@/store/modules/user'
 import BiResourceThumbnail from '../components/BiResourceThumbnail.vue'
+import { captureResourceCover } from '@/utils/biLayoutCover'
+import { saveResourceCover } from '@/api/bi/resourceCover'
 import { Search, Refresh, Grid, List, Plus, Histogram, View, Close, MoreFilled, ArrowDown, Lock } from '@element-plus/icons-vue'
 import { CHART_TYPE_LABELS, applyTypeDefaults, isChartType, metricAddDisabled, validateChartQueryShape } from '@/utils/biChartTypes'
 import { defaultChartAdvanced, defaultChartStyle, ensureChartPresentation,validateChartMetricPresentation,nextChartMetricAlias } from '@/utils/biChartPresentation'
@@ -261,7 +263,7 @@ async function save(){
   const presentationError=validateChartMetricPresentation(definition) || validateTimeGrain(definition,fields.value);if(presentationError){ElMessage.warning(presentationError);return}
   if(!definition.name.trim()){ElMessage.warning('请填写图表名称');return}
   const snapshot=JSON.parse(fingerprint()) as ChartDefinition;snapshot.name=snapshot.name.trim();saving.value=true;error.value=''
-  try {const r=await saveChart(snapshot,currentId.value,version.value);currentId.value=r.data.id;version.value=r.data.version;Object.assign(definition,snapshot);await nextTick();baseline.value=fingerprint();baselineQuery.value=queryFingerprint();await refresh();if(standalone.value && route.path==='/bi-admin/chart-workspace/new')await router.replace(chartWorkspacePath(currentId.value,'edit'));ElMessage.success('图表已保存')}
+  try {const r=await saveChart(snapshot,currentId.value,version.value);currentId.value=r.data.id;version.value=r.data.version;Object.assign(definition,snapshot);await nextTick();baseline.value=fingerprint();baselineQuery.value=queryFingerprint();try{const image=await captureResourceCover();if(image)await saveResourceCover('chart',r.data.id,r.data.version,image)}catch{/* 封面失败不影响已保存的图表 */}await refresh();if(standalone.value && route.path==='/bi-admin/chart-workspace/new')await router.replace(chartWorkspacePath(currentId.value,'edit'));ElMessage.success('图表已保存')}
   catch{error.value='保存未完成。若提示版本冲突，请重新打开图表核对后再保存'}finally{saving.value=false}
 }
 async function removeChart(row:ChartSummary){

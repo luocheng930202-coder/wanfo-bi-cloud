@@ -43,6 +43,7 @@ export interface CatalogBackfillPreview {
   CHART: number
   DASHBOARD: number
   METRIC: number
+  DATA_API: number
   total: number
   mode: 'DRY_RUN'
   copiedDefinitions: false
@@ -80,6 +81,7 @@ export interface LineageEdge {
   sourceMethod: string
   confidence: number
   effectiveStatus: string
+  relationNote?: string
 }
 
 export interface LineageGraph {

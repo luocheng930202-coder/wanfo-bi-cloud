@@ -10,6 +10,7 @@ import com.wanfo.bi.mapper.*;
 import com.wanfo.bi.datasource.*;
 import com.wanfo.bi.query.*;
 import com.wanfo.bi.security.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +33,8 @@ public class DatasetWorkspaceService {
     private final CapabilityProvider caps;
     private final UserQueryCache cache;
     private final ObjectMapper json=new ObjectMapper();
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
 
     public DatasetWorkspaceService(BiDatasetTableMapper datasets,BiDatasetFieldMapper fields,DatasetWorkspaceMapper writes,
             SchemaMigrationMapper dependencies,DataSourceProvider sources,CatalogService catalog,DatasetSqlNodeService nodes,
@@ -105,6 +108,7 @@ public class DatasetWorkspaceService {
         if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
             org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization(){@Override public void afterCommit(){cache.clear(id);}});
         else cache.clear(id);
+        if(lineageRebuild!=null)lineageRebuild.afterChange();
         return Map.of("id",id,"fieldCount",plan.fields().size());
     }
 

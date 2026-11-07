@@ -22,7 +22,7 @@ public interface LineageMapper
     @Select("SELECT id FROM dp_lineage_edge WHERE edge_key=#{edgeKey}")
     Long edgeIdByKey(String edgeKey);
 
-    @Select("SELECT id,edge_key AS edgeKey,status FROM dp_lineage_edge WHERE source_method IN ('CATALOG','RESOURCE_BINDING') AND status='ACTIVE'")
+    @Select("SELECT id,edge_key AS edgeKey,status FROM dp_lineage_edge WHERE source_method IN ('CATALOG','RESOURCE_BINDING','AUTO_SQL','PIPELINE') AND status='ACTIVE'")
     List<Map<String,Object>> generatedEdges();
 
     @Select("SELECT a.id,a.asset_type AS assetType,a.source_kind AS sourceKind,a.source_id AS sourceId,a.parent_id AS parentId,p.source_id AS parentSourceId,a.name,a.qualified_name AS qualifiedName,a.status,a.current_version_id AS currentVersionId,v.metadata_json AS metadataJson FROM dp_asset a LEFT JOIN dp_asset p ON p.id=a.parent_id LEFT JOIN dp_asset_version v ON v.id=a.current_version_id WHERE a.status IN ('ACTIVE','STALE') ORDER BY a.id LIMIT 10001")
@@ -44,10 +44,33 @@ public interface LineageMapper
             """)
     List<Map<String,Object>> warehousePublishBindings();
 
+    @Select("SELECT id,datasource_id AS datasourceId,source_table AS sourceTable,sql_text AS sqlText,model_json AS modelJson FROM bi_dataset_table WHERE del_flag='0' ORDER BY id LIMIT 5001")
+    List<Map<String,Object>> datasetDefinitions();
+
+    @Select("""
+            SELECT CAST(JSON_UNQUOTE(JSON_EXTRACT(n.summary_json,'$.targetDatasourceId')) AS UNSIGNED) AS targetDatasourceId,
+                   JSON_UNQUOTE(JSON_EXTRACT(n.summary_json,'$.targetTable')) AS targetTable,
+                   CAST(JSON_UNQUOTE(JSON_EXTRACT(src.config_json,'$.datasetId')) AS UNSIGNED) AS datasetId
+            FROM dp_pipeline_node_run n
+            JOIN dp_pipeline_run r ON r.id=n.run_id AND r.status='SUCCEEDED' AND r.run_mode='PRODUCTION'
+            JOIN dp_pipeline_node src ON src.revision_id=r.revision_id AND src.node_type='SOURCE_DATASET'
+            WHERE n.node_type='WAREHOUSE_PUBLISH' AND n.status='SUCCEEDED'
+              AND JSON_UNQUOTE(JSON_EXTRACT(n.summary_json,'$.targetTable')) IS NOT NULL
+              AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(n.summary_json,'$.previewOnly')),'false')='false'
+            ORDER BY n.id DESC LIMIT 2000
+            """)
+    List<Map<String,Object>> pipelineWrites();
+
+    @Select("SELECT datasource_id AS sourceDatasourceId,target_datasource_id AS targetDatasourceId,target_table AS targetTable FROM dp_object_storage_load_run WHERE status='SUCCEEDED' ORDER BY id DESC LIMIT 500")
+    List<Map<String,Object>> objectLoadWrites();
+
+    @Select("SELECT source_datasource_id AS sourceDatasourceId,staging_table AS stagingTable,target_datasource_id AS targetDatasourceId,target_table AS targetTable FROM dp_cdc_ingest_job WHERE last_run_at IS NOT NULL AND (last_error IS NULL OR last_error='') ORDER BY id DESC LIMIT 500")
+    List<Map<String,Object>> cdcWrites();
+
     @Select("<script>SELECT a.id AS id,a.asset_type AS assetType,a.source_kind AS sourceKind,a.source_id AS sourceId,a.parent_id AS parentId,p.source_id AS parentSourceId,a.name,a.qualified_name AS qualifiedName,a.status,a.current_version_id AS currentVersionId FROM dp_asset a LEFT JOIN dp_asset p ON p.id=a.parent_id WHERE a.id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     List<Map<String,Object>> assets(@Param("ids") List<Long> ids);
 
-    @Select("<script>SELECT e.id,e.edge_key AS edgeKey,e.source_asset_id AS sourceAssetId,e.target_asset_id AS targetAssetId,e.lineage_level AS lineageLevel,e.edge_kind AS edgeKind,e.source_method AS sourceMethod,e.confidence,e.source_version_id AS sourceVersionId,e.target_version_id AS targetVersionId,e.status,CASE WHEN e.status='ACTIVE' AND ((e.source_version_id IS NOT NULL AND e.source_version_id&lt;&gt;s.current_version_id) OR (e.target_version_id IS NOT NULL AND e.target_version_id&lt;&gt;t.current_version_id)) THEN 'STALE' ELSE e.status END AS effectiveStatus FROM dp_lineage_edge e JOIN dp_asset s ON s.id=e.source_asset_id JOIN dp_asset t ON t.id=e.target_asset_id WHERE e.status&lt;&gt;'REVOKED' AND (e.source_asset_id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> OR e.target_asset_id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>) ORDER BY e.id LIMIT #{limit}</script>")
+    @Select("<script>SELECT e.id,e.edge_key AS edgeKey,e.source_asset_id AS sourceAssetId,e.target_asset_id AS targetAssetId,e.lineage_level AS lineageLevel,e.edge_kind AS edgeKind,e.source_method AS sourceMethod,e.confidence,e.source_version_id AS sourceVersionId,e.target_version_id AS targetVersionId,e.evidence_json AS evidenceJson,e.status,CASE WHEN e.status='ACTIVE' AND ((e.source_version_id IS NOT NULL AND e.source_version_id&lt;&gt;s.current_version_id) OR (e.target_version_id IS NOT NULL AND e.target_version_id&lt;&gt;t.current_version_id)) THEN 'STALE' ELSE e.status END AS effectiveStatus FROM dp_lineage_edge e JOIN dp_asset s ON s.id=e.source_asset_id JOIN dp_asset t ON t.id=e.target_asset_id WHERE e.status&lt;&gt;'REVOKED' AND (e.source_asset_id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> OR e.target_asset_id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>) ORDER BY e.id LIMIT #{limit}</script>")
     List<Map<String,Object>> touchingEdges(@Param("ids") List<Long> ids,@Param("limit") int limit);
 
     @Select("<script>SELECT id,edge_key AS edgeKey,source_asset_id AS sourceAssetId,target_asset_id AS targetAssetId,lineage_level AS lineageLevel,edge_kind AS edgeKind,source_method AS sourceMethod,confidence,source_version_id AS sourceVersionId,target_version_id AS targetVersionId,evidence_json AS evidenceJson,status,revision_no AS revisionNo,observed_at AS observedAt,create_by AS createBy,update_by AS updateBy,update_time AS updateTime FROM dp_lineage_edge WHERE (source_asset_id=#{assetId} OR target_asset_id=#{assetId}) <if test='activeOnly'>AND status='ACTIVE'</if> ORDER BY id DESC LIMIT 500</script>")

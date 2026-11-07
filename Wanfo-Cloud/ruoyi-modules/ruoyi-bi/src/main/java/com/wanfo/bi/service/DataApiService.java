@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +58,8 @@ public class DataApiService
     private final DataApiMapper mapper; private final DataApiCallerMapper callers; private final BiMetricMapper metricsMapper; private final MetricDefinitionService metrics;
     private final CapabilityProvider capabilities; private final CurrentActorProvider actors; private final LiveActorResolver live;
     private final BiResourceAuthorizer resources; private final CatalogAuditService audit; private final ObjectMapper json;
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
     private final SecureRandom random=new SecureRandom();
     private final int callSampleRatePercent;
     public DataApiService(DataApiMapper mapper,DataApiCallerMapper callers,BiMetricMapper metricsMapper,MetricDefinitionService metrics,CapabilityProvider capabilities,
@@ -489,6 +492,7 @@ public class DataApiService
         revision(id,"PUBLISH");
         String key=createKey(id,null,null);
         audit.record("DATA_API_PUBLISH","DATA_API",id,null,Map.of("metricId",metric.getId(),"metricVersion",metric.getPublishedVersion(),"contractColumns",report.proposed().columns().size(),"sampleRows",probe.sampleRows()));
+        if(lineageRebuild!=null)lineageRebuild.afterChange();
         Map<String,Object> result=get(id);result.put("oneTimeKey",key);result.put("contractCheck",DataApiContractGate.reportMap(report,json));
         result.put("hasContractSample",true);
         return result;

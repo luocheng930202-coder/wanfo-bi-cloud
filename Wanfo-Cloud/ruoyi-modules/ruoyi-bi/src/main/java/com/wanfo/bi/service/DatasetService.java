@@ -24,6 +24,7 @@ import com.wanfo.bi.query.QueryResult;
 import com.wanfo.bi.security.BiResourceAuthorizer;
 import com.wanfo.bi.security.CapabilityProvider;
 import com.wanfo.bi.security.BiAccessException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DatasetService
 {
+    @Autowired(required = false)
+    private LineageRebuildTrigger lineageRebuild;
+
+    private void scheduleLineageRebuild() { if (lineageRebuild != null) lineageRebuild.afterChange(); }
     private DatasetSqlNodeService sqlNodes;
     @org.springframework.beans.factory.annotation.Autowired
     public void configureSqlNodes(DatasetSqlNodeService value){sqlNodes=value;}
@@ -93,7 +98,8 @@ public class DatasetService
         String normalized=String.valueOf(probe.get("normalizedSql"));var model=new com.wanfo.bi.domain.dataset.DatasetJoinModel();model.setSourceSql(normalized);model.setSqlParameters(parameters.getSqlParameters());
         form.setModelJson(new tools.jackson.databind.ObjectMapper().writeValueAsString(model));form.setType("table");form.setSourceTable(null);form.setSqlText(null);form.setWarehouseModelId(null);form.setGroupId(group);form.setCacheEnabled("0");form.setCacheTtl(300);form.setCreateBy(operator);
         form.setUnionSql(DatasetSqlNodeService.project(normalized,fields.stream().map(BiDatasetFieldDO::getOriginName).toList()));
-        datasetMapper.insert(form);datasetMapper.updateUnionAndModel(form.getId(),form.getUnionSql(),form.getModelJson(),operator);resources.register("dataset",form.getId());fields.forEach(f->f.setDatasetId(form.getId()));fieldMapper.insertBatch(fields);
+        datasetMapper.insert(form);datasetMapper.updateUnionAndModel(form.getId(),form.getUnionSql(),form.getModelJson(),operator);resources.register("dataset",form.getId());fields.forEach(f->f.setDatasetId(form.getId()));        fieldMapper.insertBatch(fields);
+        scheduleLineageRebuild();
         return Map.of("id",form.getId(),"fieldCount",fields.size());
     }
 
@@ -494,6 +500,7 @@ public class DatasetService
         result.put("id", form.getId());
         result.put("fieldCount", fields.size());
         result.put("unionSql", form.getUnionSql());
+        scheduleLineageRebuild();
         return result;
     }
 
@@ -561,6 +568,7 @@ public class DatasetService
         {
             throw new IllegalArgumentException("SQL 无法执行: " + probe.get("message"));
         }
+        scheduleLineageRebuild();
         return result;
     }
 

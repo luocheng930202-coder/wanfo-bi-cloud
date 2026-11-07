@@ -4,7 +4,7 @@ const MAX_BYTES = 480 * 1024
 
 /** Snapshot of the chart or board currently on screen. The list later shows this image and does not query again. */
 export async function captureResourceCover(): Promise<string> {
-  const root = [...document.querySelectorAll<HTMLElement>('.bi-cover-source')]
+  const root = Array.from(document.querySelectorAll<HTMLElement>('.bi-cover-source'))
     .find(node => node.getClientRects().length > 0 && node.clientWidth > 40 && node.clientHeight > 40)
   const target = root ? coverTarget(root) : null
   if (!target) return ''
@@ -33,7 +33,7 @@ export async function captureResourceCover(): Promise<string> {
 
 function coverTarget(root: HTMLElement): HTMLElement | null {
   if (root.dataset.cover === 'chart') {
-    return [...root.querySelectorAll<HTMLElement>('.chart-canvas, .pivot-canvas, .el-table')].find(visible) || null
+    return Array.from(root.querySelectorAll<HTMLElement>('.chart-canvas, .pivot-canvas, .el-table')).find(visible) || null
   }
   const sheet = root.querySelector<HTMLElement>('.screen-sheet')
   if (sheet && visible(sheet)) return sheet

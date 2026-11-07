@@ -43,6 +43,7 @@ export interface CatalogBackfillPreview {
   CHART: number
   DASHBOARD: number
   METRIC: number
+  DATA_API: number
   total: number
   mode: 'DRY_RUN'
   copiedDefinitions: false

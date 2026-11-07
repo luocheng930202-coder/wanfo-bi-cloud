@@ -190,8 +190,7 @@ public final class ClickHouseBatchPublisher
         requireClickHouse(target);
         requireIdentifier(database, 64, "目标数据库");
         requireIdentifier(table, 128, "目标表");
-        if (!database.startsWith("wanfo_wh_") || !Set.of("wanfo_wh_ods", "wanfo_wh_dwd", "wanfo_wh_dws", "wanfo_wh_ads").contains(database))
-            throw new IllegalArgumentException("目标必须位于受控数仓逻辑层");
+        requireWritableDatabase(database);
         if (table.startsWith("__dp_stage_") || table.startsWith("system"))
             throw new IllegalArgumentException("目标表名保留或无效");
         if (runId < 1) throw new IllegalArgumentException("入仓运行 ID 无效");
@@ -359,8 +358,7 @@ public final class ClickHouseBatchPublisher
         requireClickHouse(target);
         requireIdentifier(database, 64, "目标数据库");
         requireIdentifier(table, 128, "目标表");
-        if (!Set.of("wanfo_wh_ods", "wanfo_wh_dwd", "wanfo_wh_dws", "wanfo_wh_ads").contains(database))
-            throw new IllegalArgumentException("目标必须位于受控数仓逻辑层");
+        requireWritableDatabase(database);
         if (runId < 1 || batchSize < 1 || batchSize > DEFAULT_BATCH_SIZE || maxRows < 1 || maxRows > MAX_BATCH_ROWS)
             throw new IllegalArgumentException("增量入仓运行参数无效");
         requireIdentifier(watermarkColumn, 128, "水位字段");
@@ -478,8 +476,7 @@ public final class ClickHouseBatchPublisher
     {
         requireClickHouse(target);
         requireIdentifier(database, 64, "目标数据库");
-        if (!Set.of("wanfo_wh_ods", "wanfo_wh_dwd", "wanfo_wh_dws", "wanfo_wh_ads").contains(database))
-            throw new IllegalArgumentException("目标必须位于受控数仓逻辑层");
+        requireWritableDatabase(database);
         if (runId < 1) throw new IllegalArgumentException("入仓运行 ID 无效");
         try (Statement statement = target.createStatement())
         {
@@ -658,6 +655,13 @@ public final class ClickHouseBatchPublisher
     {
         if (value == null || value.isBlank() || value.length() > 256 || value.chars().anyMatch(Character::isISOControl))
             throw new IllegalArgumentException("源字段名无效");
+    }
+
+    private static void requireWritableDatabase(String database)
+    {
+        String name = database.toLowerCase(Locale.ROOT);
+        if (name.equals("system") || name.equals("information_schema") || name.startsWith("system"))
+            throw new IllegalArgumentException("目标库名保留或无效");
     }
 
     private static void requireIdentifier(String value, int max, String label)

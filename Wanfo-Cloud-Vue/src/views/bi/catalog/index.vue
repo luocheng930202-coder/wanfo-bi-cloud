@@ -9,7 +9,7 @@
         <el-button v-if="canBackfill" @click="openAudit">审计记录</el-button>
         <el-button v-if="canBackfill" :loading="lineageRebuildLoading" @click="rebuildLineage">重建血缘</el-button>
         <el-button v-if="canBackfill" :loading="backfillLoading" @click="previewBackfill">回填 BI 资源</el-button>
-        <el-button v-if="canWarehouse" :disabled="!warehouseTargets.length" @click="openWarehouse">批量入仓</el-button>
+        <el-button v-if="canWarehouse" :disabled="!sources.length" @click="openWarehouse">批量入仓</el-button>
         <el-button v-if="canScan" :icon="Setting" :disabled="!sources.length" :title="sources.length ? '' : '当前账号没有获授权的数据源'" @click="openScans">扫描管理</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadAssets">刷新</el-button>
       </div>
@@ -323,12 +323,12 @@
       <template #footer><el-button @click="auditVisible = false">关闭</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="warehouseVisible" title="ClickHouse 批量入仓" width="min(920px, 96vw)" destroy-on-close @closed="stopWarehousePolling">
-      <el-alert class="scan-scope-note" type="warning" :closable="false" show-icon :title="warehouseForm.loadMode === 'INCREMENTAL' ? '增量模式按非空水位字段读取变化，并按业务键原子合并；源端更新需递增水位，源端删除不会自动同步。单次最多 10 万行，失败时目标表和检查点保持可重试。' : '当前仅管理员可执行未套用行级策略的物理表全量刷新：源端只读，先写入临时表并校验行数，再原子替换 ODS 目标表；单次最多 10 万行，超过上限或结构不兼容时保留原目标表。'" />
+    <el-dialog v-model="warehouseVisible" title="批量入仓" width="min(920px, 96vw)" destroy-on-close @closed="stopWarehousePolling">
+      <el-alert class="scan-scope-note" type="warning" :closable="false" show-icon :title="warehouseForm.loadMode === 'INCREMENTAL' ? '增量模式按非空水位字段读取变化，并按业务键原子合并；源端更新需递增水位，源端删除不会自动同步。单次最多 10 万行，失败时目标表和检查点保持可重试。' : '源端只读，先写入临时表并校验行数，再原子替换目标表。单次最多 10 万行，超过上限或结构不兼容时保留原目标表。'" />
       <el-form :model="warehouseForm" label-width="120px" class="scan-form">
         <el-form-item label="源数据源">
-          <el-select v-model="warehouseForm.sourceDatasourceId" placeholder="选择已授权的 JDBC 业务源" class="scan-source-select" @change="loadWarehouseTables">
-            <el-option v-for="source in warehouseSources" :key="source.id" :label="`${source.name} · ${source.type}`" :value="source.id" />
+          <el-select v-model="warehouseForm.sourceDatasourceId" placeholder="选择已授权的数据源" class="scan-source-select" @change="loadWarehouseTables">
+            <el-option v-for="source in sources" :key="source.id" :label="`${source.name} · ${source.type}`" :value="source.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="源表">
@@ -336,12 +336,12 @@
             <el-option v-for="table in warehouseTables" :key="table.name" :label="`${table.name} · ${table.type}`" :value="table.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="ClickHouse 目标">
-          <el-select v-model="warehouseForm.targetDatasourceId" placeholder="选择已授权的 ODS ClickHouse 目标" class="scan-source-select" @change="loadWarehouseRuns">
-            <el-option v-for="target in warehouseTargets" :key="target.id" :label="`${target.name} · ${target.sourceSchema}`" :value="target.id" />
+        <el-form-item label="目标数据源">
+          <el-select v-model="warehouseForm.targetDatasourceId" placeholder="选择已授权的数据源" class="scan-source-select" @change="loadWarehouseRuns">
+            <el-option v-for="target in sources" :key="target.id" :label="`${target.name} · ${target.type}`" :value="target.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="ODS 目标表"><el-input v-model="warehouseForm.targetTable" maxlength="128" placeholder="例如 retail_order_header" /></el-form-item>
+        <el-form-item label="目标表"><el-input v-model="warehouseForm.targetTable" maxlength="128" placeholder="例如 retail_order_header" /></el-form-item>
         <el-form-item label="入仓模式">
           <el-radio-group v-model="warehouseForm.loadMode"><el-radio-button value="FULL">全量刷新</el-radio-button><el-radio-button value="INCREMENTAL">增量合并</el-radio-button></el-radio-group>
         </el-form-item>
@@ -352,7 +352,7 @@
         <el-form-item label="最大行数"><el-input-number v-model="warehouseForm.maxRows" :min="1" :max="100000" :step="10000" /></el-form-item>
         <div class="scan-form-actions">
           <el-button :icon="Refresh" :disabled="!warehouseForm.targetDatasourceId" :loading="warehouseLoading" @click="loadWarehouseRuns">刷新运行记录</el-button>
-          <el-button :disabled="!warehouseForm.targetDatasourceId" :loading="warehouseModelSubmitting" @click="refreshRetailModel">刷新零售月汇总</el-button>
+          <el-button :disabled="!retailTargetReady" :loading="warehouseModelSubmitting" @click="refreshRetailModel">刷新零售月汇总</el-button>
           <el-button type="primary" :loading="warehouseSubmitting" :disabled="!warehouseReady" @click="triggerWarehouse">{{ warehouseForm.loadMode === 'INCREMENTAL' ? '开始增量入仓' : '全量刷新入仓' }}</el-button>
         </div>
       </el-form>
@@ -430,8 +430,6 @@ const pageSize = ref(20)
 const sourceKind = ref<'CONNECTOR' | 'BI_RESOURCE'>('CONNECTOR')
 const filters = reactive<{ datasourceId?: number; type?: CatalogAssetType; query: string }>({ query: '' })
 const sourceNames = computed(() => new Map(sources.value.map(source => [source.id, source.name])))
-const warehouseSources = computed(() => sources.value.filter(source => !['clickhouse', 'ck'].includes(source.type.toLowerCase())))
-const warehouseTargets = computed(() => sources.value.filter(source => ['clickhouse', 'ck'].includes(source.type.toLowerCase()) && source.sourceSchema === 'wanfo_wh_ods'))
 
 const detailVisible = ref(false)
 const versionsVisible = ref(false)
@@ -479,6 +477,10 @@ const warehouseReconciliation = ref<WarehouseReconciliation>()
 const warehouseForm = reactive<{ sourceDatasourceId?: number; targetDatasourceId?: number; sourceTable: string; targetTable: string; maxRows: number; loadMode: 'FULL' | 'INCREMENTAL'; watermarkColumn: string; keyColumnsText: string }>({ sourceTable: '', targetTable: '', maxRows: 100000, loadMode: 'FULL', watermarkColumn: '', keyColumnsText: '' })
 const warehouseReady = computed(() => Boolean(warehouseForm.sourceDatasourceId && warehouseForm.targetDatasourceId && warehouseForm.sourceTable && warehouseForm.targetTable.trim()
   && (warehouseForm.loadMode === 'FULL' || (warehouseForm.watermarkColumn.trim() && warehouseForm.keyColumnsText.split(',').some(key => key.trim())))))
+const retailTargetReady = computed(() => {
+  const target = sources.value.find(source => source.id === warehouseForm.targetDatasourceId)
+  return !!target && ['clickhouse', 'ck'].includes(String(target.type || '').toLowerCase())
+})
 let warehousePollTimer: ReturnType<typeof setTimeout> | undefined
 let warehousePollAttempts = 0
 
@@ -569,10 +571,10 @@ async function openWarehouse() {
   if (!canScan.value) return
   warehouseVisible.value = true
   warehousePollAttempts = 0
-  if (!warehouseForm.sourceDatasourceId || !warehouseSources.value.some(source => source.id === warehouseForm.sourceDatasourceId))
-    warehouseForm.sourceDatasourceId = warehouseSources.value[0]?.id
-  if (!warehouseForm.targetDatasourceId || !warehouseTargets.value.some(source => source.id === warehouseForm.targetDatasourceId))
-    warehouseForm.targetDatasourceId = warehouseTargets.value[0]?.id
+  if (!warehouseForm.sourceDatasourceId || !sources.value.some(source => source.id === warehouseForm.sourceDatasourceId))
+    warehouseForm.sourceDatasourceId = sources.value[0]?.id
+  if (!warehouseForm.targetDatasourceId || !sources.value.some(source => source.id === warehouseForm.targetDatasourceId))
+    warehouseForm.targetDatasourceId = sources.value.find(source => source.id !== warehouseForm.sourceDatasourceId)?.id || sources.value[0]?.id
   await Promise.all([loadWarehouseTables(), loadWarehouseRuns()])
 }
 
@@ -612,8 +614,8 @@ async function triggerWarehouse() {
   try {
     await ElMessageBox.confirm(
       warehouseForm.loadMode === 'INCREMENTAL'
-        ? `将从“${sourceName(warehouseForm.sourceDatasourceId!)}.${warehouseForm.sourceTable}”按水位字段 ${warehouseForm.watermarkColumn.trim()} 读取变化，并按业务键 ${keyColumns.join(', ')} 合并到 ClickHouse ODS 表“${warehouseForm.targetTable.trim()}”，最多读取 ${warehouseForm.maxRows.toLocaleString()} 行。删除记录不会自动同步。继续吗？`
-        : `将从“${sourceName(warehouseForm.sourceDatasourceId!)}.${warehouseForm.sourceTable}”全量刷新到 ClickHouse ODS 表“${warehouseForm.targetTable.trim()}”，最多读取 ${warehouseForm.maxRows.toLocaleString()} 行。目标表仅在行数和结构校验通过后原子替换。继续吗？`,
+        ? `将从“${sourceName(warehouseForm.sourceDatasourceId!)}.${warehouseForm.sourceTable}”按水位字段 ${warehouseForm.watermarkColumn.trim()} 读取变化，并按业务键 ${keyColumns.join(', ')} 合并到目标表“${warehouseForm.targetTable.trim()}”，最多读取 ${warehouseForm.maxRows.toLocaleString()} 行。删除记录不会自动同步。继续吗？`
+        : `将从“${sourceName(warehouseForm.sourceDatasourceId!)}.${warehouseForm.sourceTable}”全量刷新到目标表“${warehouseForm.targetTable.trim()}”，最多读取 ${warehouseForm.maxRows.toLocaleString()} 行。目标表仅在行数和结构校验通过后原子替换。继续吗？`,
       warehouseForm.loadMode === 'INCREMENTAL' ? '确认增量入仓' : '确认全量入仓', { type: 'warning', confirmButtonText: '开始入仓' })
     warehouseSubmitting.value = true
     const request = {

@@ -1,7 +1,7 @@
 <template>
   <div class="warehouse-ops-page bi-page" v-loading="loading">
     <header class="page-head">
-      <div><div class="eyebrow">WAREHOUSE OPS</div><h1>数仓装载运维</h1><p>管理员触发 JDBC → Doris / StarRocks / ClickHouse 入仓，查看活动运行并重试失败任务。</p></div>
+      <div><div class="eyebrow">WAREHOUSE OPS</div><h1>数仓装载运维</h1><p>从已授权的 JDBC 数据源读表并装载，查看活动运行并重试失败任务。源和目标都不按类型过滤。</p></div>
       <el-button v-hasPermi="['bi:resource:admin']" :icon="Refresh" @click="refresh">刷新</el-button>
     </header>
 
@@ -13,7 +13,7 @@
 
     <section class="panel">
       <div class="panel-title">触发入仓</div>
-      <el-alert class="mb8" type="info" :closable="false" show-icon title="目标端支持 Doris、StarRocks、ClickHouse；分区与并行切片为可选高级参数。" />
+      <el-alert class="mb8" type="info" :closable="false" show-icon title="源、目标都列出已授权数据源。原子晋升目前写到 ClickHouse、Doris、StarRocks；分区与并行切片为可选高级参数。" />
       <el-form :model="form" label-width="120px" class="load-form">
         <el-form-item label="源数据源" required>
           <el-select v-model="form.sourceDatasourceId" filterable placeholder="JDBC 业务源" style="width:100%">
@@ -100,7 +100,6 @@ import { listDatasets, type DatasetSummary } from '@/api/bi/dataset'
 import { listWarehouseLoadRuns, opsOverview, retryWarehouseLoad, triggerWarehouseLoad, type WarehouseLoadOpsOverview, type WarehouseLoadRun } from '@/api/bi/warehouse'
 import { unwrapBiData } from '@/api/bi/response'
 
-const WAREHOUSE_TYPES = ['clickhouse', 'ck', 'doris', 'starrocks']
 const loading = ref(false)
 const runsLoading = ref(false)
 const submitting = ref(false)
@@ -125,8 +124,8 @@ const form = reactive({
   parallelSlices: undefined as number | undefined,
   filterDatasetId: undefined as number | undefined
 })
-const sourceOptions = computed(() => sources.value.filter(s => !WAREHOUSE_TYPES.includes(String(s.type || '').toLowerCase())))
-const targetOptions = computed(() => sources.value.filter(s => WAREHOUSE_TYPES.includes(String(s.type || '').toLowerCase())))
+const sourceOptions = computed(() => sources.value)
+const targetOptions = computed(() => sources.value)
 const datasetOptions = computed(() => datasets.value)
 const needsMergeKeys = computed(() => form.publishMode === 'MERGE' || form.loadMode === 'INCREMENTAL')
 const ready = computed(() => Boolean(form.sourceDatasourceId && form.targetDatasourceId && form.sourceTable.trim() && form.targetTable.trim()))

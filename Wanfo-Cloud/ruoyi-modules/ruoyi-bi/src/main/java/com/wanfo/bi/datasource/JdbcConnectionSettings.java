@@ -15,7 +15,11 @@ public final class JdbcConnectionSettings {
             case "sqlserver","mssql"->{p.setProperty("loginTimeout","5");p.setProperty("socketTimeout","60000");}
             case "oracle"->{p.setProperty("oracle.net.CONNECT_TIMEOUT","5000");p.setProperty("oracle.jdbc.ReadTimeout","60000");}
             case "clickhouse","ck"->{p.setProperty("connection_timeout","5000");p.setProperty("socket_timeout","60000");}
-            case "mysql","mariadb","doris","starrocks","tidb"->{p.setProperty("connectTimeout","5000");p.setProperty("socketTimeout","60000");}
+            case "mysql","mariadb","doris","starrocks","tidb"->{
+                p.setProperty("connectTimeout","5000");p.setProperty("socketTimeout","60000");
+                // MySQL Connector/J leaves REMARKS empty unless these are set. Comments stay uncertified source notes.
+                p.setProperty("remarks","true");p.setProperty("useInformationSchema","true");
+            }
             default->{ }
         }
         return p;

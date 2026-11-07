@@ -80,6 +80,7 @@ export interface LineageEdge {
   sourceMethod: string
   confidence: number
   effectiveStatus: string
+  relationNote?: string
 }
 
 export interface LineageGraph {

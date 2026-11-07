@@ -13,7 +13,7 @@ public class TokenConstants
     public static final String PREFIX = "Bearer ";
 
     /**
-     * 令牌秘钥
+     * 令牌秘钥。由部署环境注入，IDEA 在运行配置中设置同一变量。
      */
     public final static String SECRET = System.getenv("WANFO_JWT_SECRET");
 

@@ -332,6 +332,7 @@ flowchart LR
 
 - 扫描表/列有上限（服务内常量）  
 - 跨引擎完备依赖仍 backlog  
+- 表/字段来源注释尚未采集，目录也不按字段展示；仅注释变更不得并入结构阻断。见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.1  
 
 ### 4.8 延伸阅读
 
@@ -345,8 +346,8 @@ flowchart LR
 
 ### 5.1 定位与边界
 
-- **是**：JDBC 源到仓的受控装载、retail 模型物化、行范围映射  
-- **不是**：开放 SQL 写仓；无界全表无超时  
+- **是**：任意已启用 JDBC 数据源读表后装载；retail 模型物化、行范围映射。源不按连接器类型过滤，ClickHouse、Doris、StarRocks 也可以作为源  
+- **不是**：开放 SQL 写仓；无界全表无超时；API、文件、对象存储不走这条 JDBC 装载  
 
 ### 5.2 业务主路径
 
@@ -388,7 +389,7 @@ flowchart TB
 
 ### 5.6 门禁与失败语义
 
-- 目标必须是受控仓逻辑层  
+- 源须能 JDBC 读表。原子写入目前为 ClickHouse、Doris、StarRocks：ClickHouse 的 schema 为 `wanfo_wh_ods` 时仍按层写入 `wanfo_wh_ods/dwd/dws/ads`，其他 schema 写入该数据源配置的库；Doris/StarRocks 写入其默认库  
 - 失败保留旧可见表（交换语义）；暂存可清理  
 - 泳道暂停/软并发  
 
@@ -668,6 +669,7 @@ flowchart TB
 ### 9.7 已知边界
 
 - 自动建变更单、独立 override 审批流 backlog  
+- 血缘采集仍缺物理字段边、多表/SQL 源表、管道/对象入仓/CDC、Data API 边，以及扫描或发布后的自动重建。见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.2  
 
 ### 9.8 延伸阅读
 
@@ -726,6 +728,7 @@ flowchart LR
 ### 10.6 门禁与失败语义
 
 - 发布指标需权限与口径字段；enforce 标准不满足则管道发布失败  
+- 指标集只打包已发布指标，供分析侧按主题引用；草稿不能加入指标集  
 - 运行时维度必须 ⊆ `allowedDimensions`；复合禁止运行时维度  
 - 在线抽样标识符白名单，防注入  
 - V64 **干净切换**：清空旧 scalar/table 指标及 Data API 绑定，不自动迁移  
@@ -932,6 +935,7 @@ Service：`BackupDrillService`；API：`/bi/ops/backup-drills`；前端：`/bi-a
 
 - **是**：分析消费与投递  
 - **不是**：本文展开全部图表视觉/模板市场设计（见专题）  
+- 图表/看板/大屏列表封面仍按卡片现场取数。待优化见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.4：布局缩略图存元库，不进素材库，不为此引入对象存储。  
 
 ### 15.2 主路径与衔接
 
@@ -975,6 +979,7 @@ flowchart LR
 |---|---|---|
 | 图表 | `/bi/chart` | `/bi-admin/chart`、`chart-workspace` |
 | 看板 | `/bi/dashboard` | `/bi-admin/dashboard*` |
+| 分享大屏/看板 | `/bi/share/{token}` | `/bi-share/{token}`。链接是 history 路径；旧的 `#/bi-share/` 会转到该路径。打开后仍须登录。取数沿用分享身份；`*:*:*` 在该执行范围内同样放行资源权限。创建者范围免登录见 [PLATFORM-EXTENSION-ROADMAP.md](PLATFORM-EXTENSION-ROADMAP.md) §10.5，尚未实现 |
 | 订阅 | `/bi/subscription` | `/bi-admin/subscription` |
 | 导出 | `/bi/export` | `/bi-admin/export` |
 
@@ -1063,6 +1068,13 @@ flowchart LR
 | 2026-11-03 | 素材/图片白名单扩至 GIF/SVG（≤512KB；SVG 消毒后 `<img>` 渲染） |
 | 2026-11-03 | 设计器外观：可选画布背景图 `appearance.backgroundImage` |
 | 2026-11-03 | 内置素材：拷贝 DataEase board/图形 SVG，素材 Tab/组件库可直接插入，免上传 |
+| 2026-11-06 | 指标页：列表筛选与分栏编辑；指标集成员限定已发布指标 |
+| 2026-11-06 | 数仓装载：源不再按类型过滤；目标库按数据源 schema，不再锁死 ClickHouse ODS |
+| 2026-11-07 | 未来优化登记（未实现）：资产来源注释、血缘采集补齐、只读 AI 助手。见路线图 §10 |
+| 2026-11-07 | 未来优化登记（未实现）：图表/看板/大屏列表改为布局缩略图，存元库封面表。见路线图 §10.4 |
+| 2026-11-07 | 分享链接改为 `/bi-share/{token}`；地址栏中的 `#/bi-share/` 会转到该页，不再停在看板列表 |
+| 2026-11-07 | 分享取数：执行身份内的 `*:*:*` 同样放行资源权限；大屏分享补查已绑定的 3D 场景数据 |
+| 2026-11-07 | 未来优化登记（未实现）：创建者数据权限的分享链接免登录。见路线图 §10.5 |
 
 ---
 

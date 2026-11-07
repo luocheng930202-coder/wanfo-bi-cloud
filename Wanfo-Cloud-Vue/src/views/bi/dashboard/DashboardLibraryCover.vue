@@ -1,6 +1,6 @@
 <template>
   <div class="board-cover">
-    <BiResourceThumbnail kind="dashboard" :id="board.id" :name="board.name" :version="board.version" :actions="board.resourceActions" :published="board.published" :refresh-key="refreshKey" />
+    <BiResourceThumbnail kind="dashboard" :marker="board.kind" :id="board.id" :name="board.name" :version="board.version" :cover-url="board.coverUrl" :actions="board.resourceActions" :published="board.published" :refresh-key="refreshKey" />
     <div class="cover-actions">
       <el-button v-if="board.published && can('consume', 'bi:dashboard:consume')" :icon="View" :disabled="disabled" @click="emit('action', 'view')">查看</el-button>
       <el-button v-if="can('edit', 'bi:dashboard:edit')" :icon="EditPen" :disabled="disabled" @click="emit('action', 'edit')">编辑</el-button>

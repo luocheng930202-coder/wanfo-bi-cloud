@@ -27,6 +27,9 @@ public class ChartDefinitionService {
     @org.springframework.beans.factory.annotation.Autowired
     public void configureHistory(ResourceHistoryStore history){this.history=history;}
     private void remember(com.wanfo.bi.domain.BiChartDO row,String operation,int version){if(history!=null)history.record("chart",row.getId(),version,operation,row.getDefinitionJson(),row.getUpdateBy());}
+    private ResourceCoverService covers;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureCovers(ResourceCoverService covers){this.covers=covers;}
     private final BiChartMapper mapper;
     private final BiDatasetTableMapper datasets;
     private final ChartQueryService queries;
@@ -40,11 +43,18 @@ public class ChartDefinitionService {
         this.mapper=mapper;this.datasets=datasets;this.queries=queries;this.resources=resources;this.caps=caps;this.actors=actors;this.json=json;this.templateLeases=templateLeases;
     }
     public List<Map<String,Object>> list() {
-        caps.require("bi:chart:list");List<Map<String,Object>> result=new ArrayList<>();
-        for(var row:mapper.list()) {
-            if(!resources.allowed("chart",row.getId(),"view") || !dataAllowed(row.getDatasetId())) continue;
-            result.add(Map.of("id",row.getId(),"name",row.getName(),"type",row.getType(),"datasetId",row.getDatasetId(),"version",row.getVersion(),
-                "resourceActions",java.util.stream.Stream.of("edit","query","remove","grant").filter(a->resources.allowed("chart",row.getId(),a)).toList()));
+        caps.require("bi:chart:list");List<BiChartDO> visible=new ArrayList<>();
+        for(var row:mapper.list()) if(resources.allowed("chart",row.getId(),"view") && dataAllowed(row.getDatasetId())) visible.add(row);
+        var coverVersions=covers==null?Map.<Long,Integer>of():covers.versions("chart",visible.stream().map(BiChartDO::getId).toList());
+        List<Map<String,Object>> result=new ArrayList<>();
+        for(var row:visible) {
+            var item=new LinkedHashMap<String,Object>();
+            item.put("id",row.getId());item.put("name",row.getName());item.put("type",row.getType());item.put("datasetId",row.getDatasetId());
+            item.put("version",row.getVersion());item.put("updateTime",row.getUpdateTime());
+            item.put("resourceActions",java.util.stream.Stream.of("edit","query","remove","grant").filter(a->resources.allowed("chart",row.getId(),a)).toList());
+            Integer cover=coverVersions.get(row.getId());
+            if(cover!=null && cover.equals(row.getVersion())) item.put("coverUrl","/bi/resource-cover/chart/"+row.getId()+"?v="+row.getVersion());
+            result.add(item);
         }
         return result;
     }

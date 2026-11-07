@@ -50,7 +50,7 @@ export interface DashboardInput {filters:Record<string,FilterValue>;links:Record
 export interface ViewControl {key:string;label:string;type:FilterControl['type'];defaultValue:FilterValue}
 export interface ScreenScene {width:number;height:number;fit:'contain'|'width'|'none';refreshSeconds?:number}
 export interface DashboardDefinition {schemaVersion:1;name:string;panels:Panel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;interaction?:DashboardInteraction}
-export interface DashboardSummary {id:number;name:string;version:number;published:boolean;resourceActions:string[]}
+export interface DashboardSummary {id:number;name:string;version:number;published:boolean;kind?:string;updateTime?:string;coverUrl?:string;resourceActions:string[]}
 export interface ViewPanel {parentKey?:string;key:string;title:string;type:ChartDefinition['type'];x:number;y:number;w:number;h:number;componentType?:ComponentType;dataBound?:boolean;style?:PanelStyle;content?:PanelContent;drillFields?:string[]}
 export interface DashboardView {id:number;name:string;revision:number;panels:ViewPanel[];kind?:'dashboard'|'screen';layout?:'grid'|'absolute';scene?:ScreenScene;appearance?:DashboardAppearance;controls?:ViewControl[];links?:{key:string;sourcePanel:string}[]}
 export interface PanelResult {data:ChartResult;presentation:{style?:ChartDefinition['style'];advanced?:ChartDefinition['advanced'];type:ChartDefinition['type'];dimensions:string[];metrics:string[];fieldLabels?:Record<string,string>;queryDimensions?:QueryModel['dimensions'];queryMetrics?:QueryModel['metrics'];pivotRowFields?:string[];pivotColFields?:string[];drillFields?:string[];drillPath?:DrillPathSegment[];drillLevel?:number;canDrillDown?:boolean}}

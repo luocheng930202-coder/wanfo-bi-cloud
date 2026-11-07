@@ -42,6 +42,9 @@ public class DashboardService {
     @org.springframework.beans.factory.annotation.Autowired
     public void configureHistory(ResourceHistoryStore history){this.history=history;}
     private void remember(BiDashboardDO row,String operation,int version){if(history!=null)history.record("dashboard",row.getId(),version,operation,row.getDefinitionJson(),"baseline".equals(operation)?row.getUpdateBy():actor());}
+    private ResourceCoverService covers;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureCovers(ResourceCoverService covers){this.covers=covers;}
     private final BiDashboardMapper mapper;
     private final ChartDefinitionService charts;
     private final ChartQueryService queries;
@@ -61,18 +64,40 @@ public class DashboardService {
         return row;
     }
     public List<Map<String,Object>> list() {
-        caps.require("bi:dashboard:list");var result=new ArrayList<Map<String,Object>>();
+        caps.require("bi:dashboard:list");var visible=new ArrayList<BiDashboardDO>();var managed=new ArrayList<Boolean>();
         for(var row:mapper.list()) {
             if(!resources.allowed("dashboard",row.getId(),"view"))continue;
             boolean manages=(caps.has("bi:dashboard:edit") && resources.allowed("dashboard",row.getId(),"edit"))
                     || (caps.has("bi:dashboard:publish") && resources.allowed("dashboard",row.getId(),"publish"));
-            if(!manages && row.getPublishedJson()==null)continue;
-            String name=manages?row.getName():snapshot(row).name();
-            result.add(Map.of("id",row.getId(),"name",name,"version",manages?row.getVersion():row.getPublishedVersion(),"published",row.getPublishedJson()!=null,
-                "resourceActions",java.util.stream.Stream.of("edit","publish","consume","grant","remove").filter(a->resources.allowed("dashboard",row.getId(),a)).toList()));
+            boolean published=row.getPublishedJson()!=null || Integer.valueOf(1).equals(row.getPublishedFlag());
+            if(!manages && !published)continue;
+            visible.add(row);managed.add(manages);
+        }
+        var coverVersions=covers==null?Map.<Long,Integer>of():covers.versions("dashboard",visible.stream().map(BiDashboardDO::getId).toList());
+        var result=new ArrayList<Map<String,Object>>();
+        for(int i=0;i<visible.size();i++) {
+            var row=visible.get(i);boolean manages=managed.get(i);
+            boolean published=row.getPublishedJson()!=null || Integer.valueOf(1).equals(row.getPublishedFlag());
+            String name;Integer version;String kind;
+            if(manages){name=row.getName();version=row.getVersion();kind=row.getDraftKind()==null?kindOf(row.getDefinitionJson()):row.getDraftKind();}
+            else {
+                if(row.getPublishedName()!=null && !row.getPublishedName().isBlank()) name=row.getPublishedName();
+                else if(row.getPublishedJson()!=null) name=snapshot(row).name();
+                else name=row.getName();
+                version=row.getPublishedVersion();
+                kind=row.getPublishedKind()==null?kindOf(row.getPublishedJson()):row.getPublishedKind();
+            }
+            var item=new LinkedHashMap<String,Object>();
+            item.put("id",row.getId());item.put("name",name);item.put("version",version);item.put("published",published);
+            item.put("kind",kind==null?"dashboard":kind);item.put("updateTime",row.getUpdateTime());
+            item.put("resourceActions",java.util.stream.Stream.of("edit","publish","consume","grant","remove").filter(a->resources.allowed("dashboard",row.getId(),a)).toList());
+            Integer cover=coverVersions.get(row.getId());
+            if(cover!=null && version!=null && cover.equals(version)) item.put("coverUrl","/bi/resource-cover/dashboard/"+row.getId()+"?v="+version);
+            result.add(item);
         }
         return result;
     }
+    private String kindOf(String json){if(json==null||json.isBlank())return "dashboard";try{var value=read(json,Definition.class);return "screen".equals(value.kind())?"screen":"dashboard";}catch(RuntimeException ex){return "dashboard";}}
     private <T> T read(String value,Class<T> type) {
         try{return json.readValue(value,type);}catch(RuntimeException e){throw new IllegalArgumentException("看板定义无效，请联系管理员");}
     }

@@ -5,7 +5,7 @@ import org.apache.ibatis.annotations.*;
 
 public interface BiChartMapper {
     String COLS="id,dataset_id AS datasetId,name,type,definition_json AS definitionJson,version,create_by AS createBy,update_by AS updateBy";
-    @Select("SELECT "+COLS+" FROM bi_chart_view WHERE del_flag='0' AND definition_json IS NOT NULL ORDER BY id DESC")
+    @Select("SELECT id,dataset_id AS datasetId,name,type,version,update_time AS updateTime FROM bi_chart_view WHERE del_flag='0' AND definition_json IS NOT NULL ORDER BY id DESC")
     List<BiChartDO> list();
     @Select("SELECT "+COLS+" FROM bi_chart_view WHERE id=#{id} AND del_flag='0'")
     BiChartDO get(Long id);

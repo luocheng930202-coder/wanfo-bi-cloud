@@ -4,7 +4,7 @@ import com.wanfo.bi.domain.BiDashboardDO;
 import org.apache.ibatis.annotations.*;
 public interface BiDashboardMapper {
     String COLS="id,name,definition_json AS definitionJson,published_json AS publishedJson,version,published_version AS publishedVersion,create_by AS createBy,update_by AS updateBy";
-    @Select("SELECT "+COLS+" FROM bi_dashboard WHERE del_flag='0' AND definition_json IS NOT NULL ORDER BY id DESC") List<BiDashboardDO> list();
+    @Select("SELECT id,name,version,published_version AS publishedVersion,update_time AS updateTime,CASE WHEN published_json IS NULL THEN 0 ELSE 1 END AS publishedFlag,JSON_UNQUOTE(JSON_EXTRACT(published_json,'$.name')) AS publishedName,JSON_UNQUOTE(JSON_EXTRACT(definition_json,'$.kind')) AS draftKind,JSON_UNQUOTE(JSON_EXTRACT(published_json,'$.kind')) AS publishedKind FROM bi_dashboard WHERE del_flag='0' AND definition_json IS NOT NULL ORDER BY id DESC") List<BiDashboardDO> list();
     @Select("SELECT "+COLS+" FROM bi_dashboard WHERE id=#{id} AND del_flag='0'") BiDashboardDO get(Long id);
     @Insert("INSERT INTO bi_dashboard(name,definition_json,version,create_by,update_by,create_time,update_time) VALUES(#{name},#{definitionJson},0,#{createBy},#{updateBy},NOW(),NOW())")
     @Options(useGeneratedKeys=true,keyProperty="id") int insert(BiDashboardDO row);

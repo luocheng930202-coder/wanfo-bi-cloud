@@ -6,7 +6,7 @@
   <div class="workbench-stats"><router-link v-for="item in headlineStats" :key="item.key" :to="statPath(item.key)"><span>{{ item.label }}</span><strong>{{ statValue(item.key) }}</strong></router-link></div>
   <section class="workbench-section"><div class="section-heading"><h2>最近编辑</h2><el-tabs v-model="recentKind"><el-tab-pane label="全部" name="all"/><el-tab-pane label="看板" name="dashboard"/><el-tab-pane label="大屏" name="screen"/><el-tab-pane label="图表" name="chart"/></el-tabs><el-input v-model="recentSearch" clearable placeholder="搜索资源名称" class="resource-search"/></div>
    <el-alert v-if="recentError" :title="recentError" type="warning" :closable="false"/>
-   <div v-loading="recentLoading" class="workbench-resources"><article v-for="row in filteredRecent.slice(0,6)" :key="row.kind+':'+row.id"><div class="workbench-cover" v-loading="!metadataReady" role="group" :aria-label="row.name"><BiResourceThumbnail v-if="metadataReady" :kind="row.kind==='chart'?'chart':'dashboard'" :id="row.id" :name="row.name" :version="meta(row).version||0" :actions="meta(row).resourceActions||[]"/></div><button class="resource-name" @click="openRecent(row)">{{ row.name }}</button><div class="resource-meta"><span>{{ kindLabel(row) }}</span><el-button link type="primary" @click="openRecent(row)">{{ openLabel(row) }}</el-button></div></article></div><el-empty v-if="!recentLoading&&!filteredRecent.length&&!recentError" description="暂无匹配的最近编辑资源" :image-size="70"/>
+   <div v-loading="recentLoading" class="workbench-resources"><article v-for="row in filteredRecent.slice(0,6)" :key="row.kind+':'+row.id"><div class="workbench-cover" v-loading="!metadataReady" role="group" :aria-label="row.name"><BiResourceThumbnail v-if="metadataReady" :kind="row.kind==='chart'?'chart':'dashboard'" :id="row.id" :name="row.name" :version="meta(row).version||0" :cover-url="meta(row).coverUrl" :actions="meta(row).resourceActions||[]"/></div><button class="resource-name" @click="openRecent(row)">{{ row.name }}</button><div class="resource-meta"><span>{{ kindLabel(row) }}</span><el-button link type="primary" @click="openRecent(row)">{{ openLabel(row) }}</el-button></div></article></div><el-empty v-if="!recentLoading&&!filteredRecent.length&&!recentError" description="暂无匹配的最近编辑资源" :image-size="70"/>
   </section>
   <div class="workbench-bottom"><section class="workbench-section"><div class="section-heading"><h2>近期任务</h2><el-button v-if="checkPermi(['bi:task:list'])" link type="primary" @click="router.push('/bi-admin/task-center')">任务中心 →</el-button></div><el-alert v-if="taskError" :title="taskError" type="warning" :closable="false"/><el-table v-else-if="checkPermi(['bi:task:list'])" :data="taskRows"><el-table-column prop="name" label="任务名称" min-width="160" show-overflow-tooltip/><el-table-column prop="type" label="类型" width="145"/><el-table-column label="最近运行" min-width="140"><template #default="{row}">{{ row.startedAt||row.createdAt||'—' }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="{row}"><span :class="['task-state',row.status]">{{ taskLabel(row.status) }}</span></template></el-table-column><el-table-column label="操作" width="65"><template #default="{row}"><el-button link type="primary" @click="router.push('/bi-admin/task-center')">查看</el-button></template></el-table-column></el-table><el-empty v-else description="暂无任务查看权限" :image-size="60"/></section>
   <section class="workbench-section"><div class="section-heading"><h2>待处理</h2><span class="muted">{{ todos.length }} 类</span></div><button v-for="todo in todos" :key="todo.key" class="todo-entry" @click="todo.run()"><span><strong>{{ todo.title }}</strong><small>{{ todo.hint }}</small></span><b>{{ todo.count }} 项 →</b></button><el-empty v-if="!todos.length" description="暂无待处理事项" :image-size="65"/></section></div>
@@ -43,7 +43,7 @@ const taskRows=ref<TaskRunItem[]>([])
 const taskError=ref('')
 const summaryError=ref('')
 const recentError=ref('')
-const resourceMeta=ref<Record<string,{version?:number;resourceActions?:string[]}>>({})
+const resourceMeta=ref<Record<string,{version?:number;coverUrl?:string;resourceActions?:string[]}>>({})
 const recentLoading = ref(false)
 const loading = ref(false)
 const failedTaskCount = ref(0)
@@ -221,7 +221,7 @@ const shortcuts=computed(()=>[
 function statPath(key:string){return '/bi-admin/'+({datasource:'datasource',dataset:'dataset',chart:'chart',dashboard:'dashboard',screen:'dashboard'}[key]||'workbench')}
 function meta(row:WorkbenchRecentItem){return resourceMeta.value[(row.kind==='chart'?'chart':'dashboard')+':'+row.id]||{resourceActions:[]}}
 async function loadResourceMeta(){
- const entries:Record<string,{version?:number;resourceActions?:string[]}>= {}
+ const entries:Record<string,{version?:number;coverUrl?:string;resourceActions?:string[]}>= {}
  await Promise.all([
  checkPermi(['bi:chart:list'])?(async()=>{try{for(const r of (await listCharts()).data||[])entries['chart:'+r.id]=r}catch{/* previews retain permission-safe fallback */}})():Promise.resolve(),
  checkPermi(['bi:dashboard:list'])?(async()=>{try{for(const r of (await listDashboards()).data||[])entries['dashboard:'+r.id]=r}catch{/* previews retain permission-safe fallback */}})():Promise.resolve()
